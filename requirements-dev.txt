@@ -1,0 +1,5 @@
+# Install with: pip install -r requirements-dev.txt
+pytest>=7.4
+httpx>=0.25
+fastapi>=0.110
+pydantic>=2.5

@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(.specify/scripts/powershell/setup-tasks.ps1 -Json)",
+      "PowerShell(.specify/scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks)",
+      "Bash(mkdir -p services static/game/vendor data tests/contract tests/integration tests/unit/js)",
+      "PowerShell(Invoke-WebRequest -Uri \"https://unpkg.com/three@0.160.0/build/three.module.js\" -OutFile \"static/game/vendor/three.module.js\" -UseBasicParsing; \\(Get-Item static/game/vendor/three.module.js\\).Length)",
+      "Bash(python -m pip install -q -r requirements-dev.txt)",
+      "PowerShell(python --version)",
+      "PowerShell(pip --version)",
+      "PowerShell(py --version)",
+      "PowerShell(py -m pip --version)",
+      "PowerShell(.specify/extensions/git/scripts/powershell/auto-commit.ps1 after_implement)"
+    ]
+  }
+}
