@@ -31,7 +31,11 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+- [ ] I. Modular Design: Does the approach separate core logic from routes/UI?
+- [ ] II. Test-Driven Development: Are reproduction tests planned before implementation?
+- [ ] III. Independent User Stories: Is the feature broken into vertical, testable slices?
+- [ ] IV. Consistent API Design: Do endpoints follow `/api/plugins/subway_scaler/` pattern?
+- [ ] V. Performance and Simplicity: Does the design avoid unnecessary complexity/dependencies?
 
 ## Project Structure
 
