@@ -31,13 +31,7 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-- [ ] **I. Self-Hosted/Docker**: Does this feature work in a single-user Docker environment?
-- [ ] **II. Vanilla Frontend**: Is it free of heavy frameworks? (JS/Canvas/Tailwind only)
-- [ ] **III. Plugin Isolation**: Does it respect the `load_sibling` isolation pattern?
-- [ ] **IV. Library Compatibility**: Does it support both official DLC and CDLC metadata?
-- [ ] **V. Test-First**: Are automated tests (pytest/Playwright) planned for all logic?
-- [ ] **VI. Observability**: Does it use structured logging and diagnostic bundles?
-- [ ] **VII. Simplicity**: Is this the simplest possible implementation? (YAGNI)
+[Gates determined based on constitution file]
 
 ## Project Structure
 

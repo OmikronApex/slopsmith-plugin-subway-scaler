@@ -1,70 +1,50 @@
-<!--
-Sync Impact Report:
-- Version change: Initial -> 0.1.0
-- List of modified principles:
-  - Added I. Self-Hosted, Single-User, Docker-First
-  - Added II. Vanilla Frontend — No Frameworks
-  - Added III. Plugin Isolation via load_sibling
-  - Added IV. Backwards-Compatible CDLC Library
-  - Added V. Test-First Development (NON-NEGOTIABLE)
-  - Added VI. Observability Over Chattiness
-  - Added VII. Simplicity & Migration Awareness
-- Added sections: Technology Stack, Development Workflow
-- Removed sections: N/A
-- Templates requiring updates:
-  - .specify/templates/plan-template.md: ✅ updated
-  - .specify/templates/spec-template.md: ✅ updated
-  - .specify/templates/tasks-template.md: ✅ updated
-- Follow-up TODOs:
-  - None
--->
-
-# Slopsmith Plugin: Subway Scaler Constitution
+# [PROJECT_NAME] Constitution
+<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
 
 ## Core Principles
 
-### I. Self-Hosted, Single-User, Docker-First
-The application is designed to run in a private, self-hosted Docker container. It assumes a single user and minimizes external dependencies to ensure reliability and ease of deployment in home-server environments.
-**Rationale**: Most Rocksmith users play in a private setting; self-hosting ensures they own their data and experience.
+### [PRINCIPLE_1_NAME]
+<!-- Example: I. Library-First -->
+[PRINCIPLE_1_DESCRIPTION]
+<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
 
-### II. Vanilla Frontend — No Frameworks
-Frontend must use Vanilla JavaScript, Canvas 2D, and Tailwind CSS (via CDN). React, Vue, or other heavy frameworks are strictly prohibited.
-**Rationale**: To ensure long-term maintainability and avoid the "framework fatigue" or breaking updates common in the modern JS ecosystem.
+### [PRINCIPLE_2_NAME]
+<!-- Example: II. CLI Interface -->
+[PRINCIPLE_2_DESCRIPTION]
+<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
 
-### III. Plugin Isolation via `load_sibling`
-Plugins are discovered and loaded at startup. They must remain isolated from each other, communicating only through defined API boundaries and the `load_sibling` pattern.
-**Rationale**: Prevents a single plugin failure from crashing the entire app and ensures a clean, modular architecture.
+### [PRINCIPLE_3_NAME]
+<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
+[PRINCIPLE_3_DESCRIPTION]
+<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
 
-### IV. Backwards-Compatible CDLC Library
-Metadata extraction and file handling must support both official Rocksmith DLC and community-created CDLC. Compatibility with older PSARC formats must be maintained.
-**Rationale**: The core value of Slopsmith is its library; breaking support for any portion of the user's collection is unacceptable.
+### [PRINCIPLE_4_NAME]
+<!-- Example: IV. Integration Testing -->
+[PRINCIPLE_4_DESCRIPTION]
+<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
 
-### V. Test-First Development (NON-NEGOTIABLE)
-All functional changes MUST be preceded by automated tests. Tests are NOT optional. Use `pytest` for backend logic and `Playwright` for UI interactions.
-**Rationale**: High reliability is required for a tool that handles large media collections and real-time visualization.
+### [PRINCIPLE_5_NAME]
+<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
+[PRINCIPLE_5_DESCRIPTION]
+<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
 
-### VI. Observability Over Chattiness
-Favor structured logging (JSON/Text) and comprehensive diagnostic bundles (`Settings -> Diagnostics`) over noisy, uninformative console output.
-**Rationale**: Essential for troubleshooting in containerized environments where the maintainer is not the end-user.
+## [SECTION_2_NAME]
+<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
 
-### VII. Simplicity & Migration Awareness
-Prioritize simple, readable code over clever abstractions (YAGNI). All schema changes or breaking updates must include an automated migration path.
-**Rationale**: Ensures the project remains accessible to community contributors and stable for long-term use.
+[SECTION_2_CONTENT]
+<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
 
-## Technology Stack
-- **Backend**: Python 3.11+, FastAPI, SQLite.
-- **Frontend**: Vanilla JS, HTML5 Canvas 2D, Tailwind CSS.
-- **Media**: FFmpeg, vgmstream, FluidSynth, rubberband.
-- **Containerization**: Docker, Docker Compose.
-- **Workflow Tools**: RsCli (F#) for SNG compilation.
+## [SECTION_3_NAME]
+<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
 
-## Development Workflow
-- **Specification-First**: Features must be specified in `.specify/` before implementation.
-- **TDD Cycle**: Write failing test → Implement minimal code → Pass test → Refactor.
-- **Plugin Pattern**: New features should be implemented as plugins whenever possible.
-- **Code Review**: Verify compliance with the 7 Core Principles and check for generic agent-neutral guidance.
+[SECTION_3_CONTENT]
+<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
 
 ## Governance
-This Constitution supersedes all other documentation and local development practices. Amendments require a formal update to this file and a semantic version bump. All Pull Requests must be reviewed for compliance with the Core Principles. Use `CLAUDE.md` for runtime development guidance but ensure all shared instructions remain generic.
+<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
 
-**Version**: 0.1.0 | **Ratified**: 2026-05-12 | **Last Amended**: 2026-05-12
+[GOVERNANCE_RULES]
+<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+
+**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
+<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
