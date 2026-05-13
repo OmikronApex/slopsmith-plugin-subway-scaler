@@ -23,10 +23,13 @@ export function createScene(canvas) {
   const scene = new THREE.Scene();
   scene.fog = new THREE.Fog(0x101a2a, 25, 70);
 
-  const cam = cameraFor45Deg(CAMERA_DISTANCE);
+  const camBase = cameraFor45Deg(CAMERA_DISTANCE);
   const camera = new THREE.PerspectiveCamera(55, (canvas.width / canvas.height) || 16 / 9, 0.1, 200);
-  camera.position.set(cam.x, cam.y, cam.z);
-  camera.lookAt(cam.lookAt[0], cam.lookAt[1], cam.lookAt[2]);
+  camera.position.set(camBase.x, camBase.y, camBase.z);
+  camera.lookAt(camBase.lookAt[0], camBase.lookAt[1], camBase.lookAt[2]);
+
+  let targetCameraX = 0;
+  let currentCameraX = 0;
 
   scene.add(new THREE.AmbientLight(0xffffff, 0.45));
   const sun = new THREE.DirectionalLight(0xffffff, 0.9);
@@ -71,6 +74,27 @@ export function createScene(canvas) {
     g.add(roof);
     return g;
   }
+  
+  function makeTextSprite(message) {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = 64;
+    canvas.height = 64;
+    ctx.font = 'Bold 48px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'white';
+    ctx.strokeStyle = 'black';
+    ctx.lineWidth = 4;
+    ctx.strokeText(message, 32, 32);
+    ctx.fillText(message, 32, 32);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    const mat = new THREE.SpriteMaterial({ map: texture });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(0.8, 0.8, 1);
+    return sprite;
+  }
 
   const character = new THREE.Mesh(
     new THREE.CapsuleGeometry(0.28, 0.6, 4, 8),
@@ -83,6 +107,7 @@ export function createScene(canvas) {
   // Flat queue: carts[i] = { stringIdx, fret, colour, mesh } | null. Index = row.
   let carts = [];
   let trackPlanks = []; // { fret, mesh }
+  let trackLabels = []; // { fret, mesh }
   let anchorFret = 0;
 
   let tween = null;
@@ -93,6 +118,12 @@ export function createScene(canvas) {
   function clearScene() {
     for (const t of trackPlanks) scene.remove(t.mesh);
     trackPlanks = [];
+    for (const l of trackLabels) {
+      scene.remove(l.mesh);
+      if (l.mesh.material.map) l.mesh.material.map.dispose();
+      l.mesh.material.dispose();
+    }
+    trackLabels = [];
     for (const c of carts) if (c && c.mesh) scene.remove(c.mesh);
     carts = [];
   }
@@ -106,10 +137,27 @@ export function createScene(canvas) {
   function rebuildTracks() {
     for (const t of trackPlanks) scene.remove(t.mesh);
     trackPlanks = [];
-    const fretSet = new Set();
-    for (const c of carts) if (c) fretSet.add(c.fret);
-    const sortedFrets = [...fretSet].sort((a, b) => a - b);
-    for (const fret of sortedFrets) {
+    for (const l of trackLabels) {
+      scene.remove(l.mesh);
+      if (l.mesh.material.map) l.mesh.material.map.dispose();
+      l.mesh.material.dispose();
+    }
+    trackLabels = [];
+    if (carts.length === 0) return;
+
+    let min = Infinity;
+    let max = -Infinity;
+    for (const c of carts) {
+      if (!c) continue;
+      if (c.fret < min) min = c.fret;
+      if (c.fret > max) max = c.fret;
+    }
+    if (!isFinite(min)) return;
+
+    // Ensure we show at least the 4-fret "box" span if we have notes
+    if (max - min < 3) max = min + 3;
+
+    for (let fret = min; fret <= max; fret++) {
       const x = laneX(fret, anchorFret);
       const plank = new THREE.Mesh(
         new THREE.BoxGeometry(1.4, 0.06, TRACK_PLANK_HALF_DEPTH * 2),
@@ -118,7 +166,14 @@ export function createScene(canvas) {
       plank.position.set(x, -0.05, -TRACK_PLANK_HALF_DEPTH + 4);
       scene.add(plank);
       trackPlanks.push({ fret, mesh: plank });
+
+      const label = makeTextSprite(fret.toString());
+      label.position.set(x, 0.1, 1.8);
+      scene.add(label);
+      trackLabels.push({ fret, mesh: label });
     }
+
+    targetCameraX = (laneX(min, anchorFret) + laneX(max, anchorFret)) / 2;
   }
 
   function fretToX(fret) {
@@ -223,10 +278,16 @@ export function createScene(canvas) {
 
     if (falling) {
       for (const t of trackPlanks) t.mesh.position.y -= dt * 8;
+      for (const l of trackLabels) l.mesh.position.y -= dt * 8;
       for (const c of carts) if (c && c.mesh) c.mesh.position.y -= dt * 8;
       character.position.y -= dt * 8;
     }
     if (succeeded) character.rotation.y += dt * 2;
+    
+    // Smoothly update camera X to target
+    currentCameraX += (targetCameraX - currentCameraX) * 0.1;
+    camera.position.x = currentCameraX;
+    camera.lookAt(currentCameraX, 0, camBase.lookAt[2]);
 
     renderer.render(scene, camera);
   }

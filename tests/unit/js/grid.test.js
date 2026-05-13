@@ -21,11 +21,10 @@ describe('grid.laneX', () => {
     for (let i = 1; i < xs.length; i++) expect(xs[i]).toBeGreaterThan(xs[i - 1]);
   });
 
-  it('uses logarithmic spacing (low-fret gaps wider than high-fret gaps)', () => {
-    // From fret 0 perspective: gap 0→1 should be wider than gap 11→12.
-    const lowGap = laneX(1, 0) - laneX(0, 0);
-    const highGap = laneX(12, 0) - laneX(11, 0);
-    expect(lowGap).toBeGreaterThan(highGap);
+  it('uses linear spacing (all gaps are equal)', () => {
+    const gap1 = laneX(1, 0) - laneX(0, 0);
+    const gap2 = laneX(12, 0) - laneX(11, 0);
+    expect(gap1).toBeCloseTo(gap2, 9);
   });
 });
 

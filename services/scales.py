@@ -5,6 +5,8 @@ plus pentatonics and blues. Expansion follows data-model.md §ExpectedNote.
 """
 from __future__ import annotations
 
+import json
+import os
 from typing import Optional
 
 from services.schemas import Note, Scale
@@ -24,31 +26,35 @@ def make_note(midi: int) -> Note:
     return Note(midi=midi, name=midi_to_name(midi), frequencyHz=midi_to_frequency(midi))
 
 
-_RAW_SCALES: list[tuple[str, str, list[int]]] = [
-    ("major", "Major", [0, 2, 4, 5, 7, 9, 11, 12]),
-    ("natural-minor", "Natural Minor", [0, 2, 3, 5, 7, 8, 10, 12]),
-    ("harmonic-minor", "Harmonic Minor", [0, 2, 3, 5, 7, 8, 11, 12]),
-    ("melodic-minor", "Melodic Minor (ascending)", [0, 2, 3, 5, 7, 9, 11, 12]),
-    ("ionian", "Ionian", [0, 2, 4, 5, 7, 9, 11, 12]),
-    ("dorian", "Dorian", [0, 2, 3, 5, 7, 9, 10, 12]),
-    ("phrygian", "Phrygian", [0, 1, 3, 5, 7, 8, 10, 12]),
-    ("lydian", "Lydian", [0, 2, 4, 6, 7, 9, 11, 12]),
-    ("mixolydian", "Mixolydian", [0, 2, 4, 5, 7, 9, 10, 12]),
-    ("aeolian", "Aeolian", [0, 2, 3, 5, 7, 8, 10, 12]),
-    ("locrian", "Locrian", [0, 1, 3, 5, 6, 8, 10, 12]),
-    ("major-pentatonic", "Major Pentatonic", [0, 2, 4, 7, 9, 12]),
-    ("minor-pentatonic", "Minor Pentatonic", [0, 3, 5, 7, 10, 12]),
-    ("blues", "Blues", [0, 3, 5, 6, 7, 10, 12]),
-]
+def load_scales_from_json(path: str) -> list[Scale]:
+    """Loads scale definitions from a JSON file."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return [Scale(**s) for s in data["scales"]]
+    except Exception as e:
+        raise ValueError(f"Failed to load scales from {path}: {e}")
 
-SCALES: dict[str, Scale] = {
-    sid: Scale(id=sid, name=name, intervals=intervals)
-    for sid, name, intervals in _RAW_SCALES
-}
+
+# Initialize scale catalog from JSON
+_default_path = os.path.join(os.path.abspath(os.path.dirname(__file__)), "..", "scales.json")
+try:
+    _loaded = load_scales_from_json(_default_path)
+    SCALES: dict[str, Scale] = {s.id: s for s in _loaded}
+except Exception:
+    # Mandatory for plugin operation
+    SCALES = {}
 
 
 def list_scales() -> list[Scale]:
     return list(SCALES.values())
+
+
+def get_scale(scale_id: str) -> Scale:
+    """Retrieves a single scale by ID."""
+    if scale_id not in SCALES:
+        raise ScaleNotFound(scale_id)
+    return SCALES[scale_id]
 
 
 class ScaleNotFound(Exception):
