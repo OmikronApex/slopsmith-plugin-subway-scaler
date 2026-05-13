@@ -1,0 +1,12 @@
+node_modules/
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+data/settings.json
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/

@@ -1,9 +1,10 @@
 {
-  "id": "subway_scaler",
+  "id": "subway-scaler",
   "name": "Subway Scaler",
   "version": "1.0.0",
   "private": false,
-  "nav": { "label": "Subway Scaler", "screen": "plugin-subway_scaler" },
+  "bundled": true,
+  "nav": { "label": "Subway Scaler", "screen": "plugin-subway-scaler" },
   "screen": "screen.html",
   "script": "screen.js",
   "routes": "routes.py"
