@@ -21,7 +21,13 @@
       "Bash(python -m pytest -q)",
       "PowerShell(python -m pytest -q 2>&1)",
       "PowerShell(py -m pytest -q 2>&1)",
-      "Bash(.venv/Scripts/python.exe -m pytest -q)"
+      "Bash(.venv/Scripts/python.exe -m pytest -q)",
+      "Bash(.specify/extensions/git/scripts/bash/create-new-feature.sh --json --short-name \"scale-json-tabulator\" \"Relocate the Scale definitions to a seperate .json file, include proper tabulator for encoding frets/strings. Ensure the tabulator is encoding the scales like they would naturally be played across multiple strings, not all on a single string.\")",
+      "Bash(mkdir -p \"specs/004-scale-json-tabulator\")",
+      "Bash(powershell -NoProfile -Command \".specify/scripts/powershell/setup-plan.ps1 -Json\")",
+      "Bash(ConvertFrom-Json)",
+      "PowerShell(.\\\\.specify\\\\scripts\\\\powershell\\\\setup-plan.ps1 -Json)",
+      "PowerShell(.\\\\.specify\\\\scripts\\\\powershell\\\\setup-tasks.ps1 -Json)"
     ]
   }
 }
