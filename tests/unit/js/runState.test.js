@@ -89,6 +89,15 @@ describe('Run state machine', () => {
     expect(run.cursor).toBe(0);
   });
 
+  it('upcoming(n) returns next n notes from sequence', () => {
+    const run = new Run({ sequence: C_MAJOR, timePerNoteMs: 1000 });
+    const up = run.upcoming(3);
+    expect(up).toHaveLength(3);
+    expect(up[0]).toBe(C_MAJOR[0]);
+    expect(up[1]).toBe(C_MAJOR[1]);
+    expect(up[2]).toBe(C_MAJOR[2]);
+  });
+
   it('difficultyToTimePerNoteMs', () => {
     expect(difficultyToTimePerNoteMs('easy')).toBe(4000);
     expect(difficultyToTimePerNoteMs('medium')).toBe(2500);

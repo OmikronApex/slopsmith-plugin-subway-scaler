@@ -7,7 +7,7 @@ from services.errors import error_response
 from services.schemas import ScaleListResponse, ScaleNotesResponse
 from services import scales as scales_service
 
-router = APIRouter(prefix="/api/plugins/subway_scaler", tags=["scales"])
+router = APIRouter(prefix="/api/plugins/subway-scaler", tags=["scales"])
 
 
 @router.get("/scales", response_model=ScaleListResponse)

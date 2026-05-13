@@ -1,9 +1,9 @@
-"""Contract test for GET /api/plugins/subway_scaler/scales/{scale_id}/notes."""
+"""Contract test for GET /api/plugins/subway-scaler/scales/{scale_id}/notes."""
 from __future__ import annotations
 
 
 def test_c_major_one_octave(client):
-    r = client.get("/api/plugins/subway_scaler/scales/major/notes", params={"root_midi": 60, "octaves": 1})
+    r = client.get("/api/plugins/subway-scaler/scales/major/notes", params={"root_midi": 60, "octaves": 1})
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["scaleId"] == "major"
@@ -20,7 +20,7 @@ def test_c_major_one_octave(client):
 
 def test_descending_appended(client):
     r = client.get(
-        "/api/plugins/subway_scaler/scales/major/notes",
+        "/api/plugins/subway-scaler/scales/major/notes",
         params={"root_midi": 60, "octaves": 1, "descending": "true"},
     )
     assert r.status_code == 200
@@ -31,18 +31,18 @@ def test_descending_appended(client):
 
 
 def test_scale_not_found(client):
-    r = client.get("/api/plugins/subway_scaler/scales/no-such-scale/notes", params={"root_midi": 60})
+    r = client.get("/api/plugins/subway-scaler/scales/no-such-scale/notes", params={"root_midi": 60})
     assert r.status_code == 404
     assert r.json()["error"]["code"] == "scale-not-found"
 
 
 def test_invalid_root(client):
-    r = client.get("/api/plugins/subway_scaler/scales/major/notes", params={"root_midi": 5})
+    r = client.get("/api/plugins/subway-scaler/scales/major/notes", params={"root_midi": 5})
     assert r.status_code == 422
     assert r.json()["error"]["code"] == "invalid-root"
 
 
 def test_invalid_octaves(client):
-    r = client.get("/api/plugins/subway_scaler/scales/major/notes", params={"root_midi": 60, "octaves": 3})
+    r = client.get("/api/plugins/subway-scaler/scales/major/notes", params={"root_midi": 60, "octaves": 3})
     assert r.status_code == 422
     assert r.json()["error"]["code"] == "invalid-octaves"

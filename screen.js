@@ -3,7 +3,7 @@ async function refreshSubwayScalerStatus() {
     if (!statusEl) return;
     statusEl.textContent = 'Refreshing...';
     try {
-        const resp = await fetch('/api/plugins/subway_scaler/status');
+        const resp = await fetch('/api/plugins/subway-scaler/status');
         const data = await resp.json();
         statusEl.textContent = data.message;
     } catch (err) {
@@ -18,7 +18,7 @@ async function bootSubwayScaler() {
     if (!root) return;
     __subwayScalerBooted = true;
     try {
-        const mod = await import('/plugins/subway_scaler/static/game/main.js');
+        const mod = await import('/plugins/subway-scaler/static/game/main.js');
         await mod.bootstrap(root);
     } catch (err) {
         root.textContent = 'Failed to load game: ' + err.message;
@@ -29,7 +29,7 @@ async function bootSubwayScaler() {
 (function() {
     if (window.slopsmith) {
         window.slopsmith.on('screen:changed', (e) => {
-            if (e.detail.id === 'plugin-subway_scaler') {
+            if (e.detail.id === 'plugin-subway-scaler') {
                 refreshSubwayScalerStatus();
                 bootSubwayScaler();
             }

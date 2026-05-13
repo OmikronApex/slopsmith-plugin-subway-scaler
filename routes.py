@@ -8,16 +8,16 @@ STATIC_DIR = PLUGIN_DIR / "static"
 
 
 def setup(app: FastAPI, context: dict):
-    @app.get("/api/plugins/subway_scaler/status")
+    @app.get("/api/plugins/subway-scaler/status")
     def get_status():
         return {"status": "ok", "message": "Subway Scaler is ready"}
 
     # Static asset mount for game JS modules + vendored Three.js
     if STATIC_DIR.exists():
         app.mount(
-            "/plugins/subway_scaler/static",
+            "/plugins/subway-scaler/static",
             StaticFiles(directory=str(STATIC_DIR)),
-            name="subway_scaler_static",
+            name="subway-scaler-static",
         )
 
     # Routers added in later phases

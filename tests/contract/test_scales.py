@@ -1,4 +1,4 @@
-"""Contract test for GET /api/plugins/subway_scaler/scales."""
+"""Contract test for GET /api/plugins/subway-scaler/scales."""
 from __future__ import annotations
 
 
@@ -9,7 +9,7 @@ REQUIRED_IDS = {
 
 
 def test_get_scales_ok(client):
-    r = client.get("/api/plugins/subway_scaler/scales")
+    r = client.get("/api/plugins/subway-scaler/scales")
     assert r.status_code == 200, r.text
     body = r.json()
     assert "scales" in body

@@ -1,7 +1,7 @@
 // Audio capture + YIN worklet pipeline. Exposes start/stop/pause/resume + onDetection.
 import { quantize } from './notes.js';
 
-const WORKLET_URL = '/plugins/subway_scaler/static/game/yin-worklet.js';
+const WORKLET_URL = '/plugins/subway-scaler/static/game/yin-worklet.js';
 
 export async function enumerateInputs() {
   if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return [];

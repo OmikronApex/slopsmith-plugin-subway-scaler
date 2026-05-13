@@ -6,8 +6,8 @@ import { startAudio, enumerateInputs } from './audio.js';
 import { Run, difficultyToTimePerNoteMs } from './runState.js';
 import { quantize, midiToName } from './notes.js';
 
-const API = '/api/plugins/subway_scaler';
-const STATIC = '/plugins/subway_scaler/static/game';
+const API = '/api/plugins/subway-scaler';
+const STATIC = '/plugins/subway-scaler/static/game';
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
@@ -160,7 +160,7 @@ export async function bootstrap(root) {
     if (!run || !run.currentExpected()) return;
     const exp = run.currentExpected();
     expectedEl.textContent = `Play: ${exp.note.name}`;
-    const upcoming = run.upcoming(3).map(e => e.note.name);
+    const upcoming = run.upcoming(3).map(e => e.name);
     scene.setUpcomingNotes(upcoming);
   }
 

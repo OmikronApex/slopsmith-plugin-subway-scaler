@@ -7,7 +7,7 @@ from services.errors import error_response
 from services.schemas import PlayerSettings
 from services import settings as settings_service
 
-router = APIRouter(prefix="/api/plugins/subway_scaler", tags=["settings"])
+router = APIRouter(prefix="/api/plugins/subway-scaler", tags=["settings"])
 
 
 @router.get("/settings", response_model=PlayerSettings)
