@@ -1,12 +1,12 @@
-# Quickstart: Guitar Subway Scaler (v2 — 45° camera + scale-only carts)
+# Quickstart: Guitar Subway Scaler (v5 — one cart per row + Rocksmith colours)
 
-Manual acceptance for the audio + 3D path. Pure-JS modules (`fretboard.js`, `grid.js`, `scaleMap.js`) are covered by Vitest; this script verifies the wiring and the new visual rules.
+Manual acceptance for the audio + 3D path. Pure modules covered by Vitest.
 
 ## Prerequisites
 
-- Slopsmith host running with the Subway Scaler plugin loaded.
-- A microphone or a guitar / bass via an audio interface.
-- 002 quickstart has been performed at least once (audio device permission granted).
+- Slopsmith host running with the plugin loaded.
+- A microphone or guitar/bass via interface.
+- 002 quickstart performed once (audio device permission granted).
 
 ## 1. Backend smoke
 
@@ -15,67 +15,56 @@ curl http://localhost:<host-port>/api/plugins/subway-scaler/instruments
 curl http://localhost:<host-port>/api/plugins/subway-scaler/settings
 ```
 
-Expect `guitar-standard` and `bass-4-standard`; settings include `instrumentId` and `strictTuning`. No new endpoints in v2.
+Expect `guitar-standard` + `bass-4-standard`; settings include `instrumentId`, `strictTuning`. No new endpoints in v5.
 
-## 2. Scene layout sanity
+## 2. One cart per row
 
-1. Open the Subway Scaler screen, instrument = "Guitar (Standard)", scale = "C major", root = C4.
-2. Without starting a run, observe the scene.
-3. The camera is angled **diagonally downward at 45°**: you can see both the lane separation (X) and the row depth (rows receding behind one another).
-4. Each of the 6 rows shows carts **only at the (string, fret) cells whose pitch is in C major** within the 9-lane window centred on fret 0. Verify a few:
-   - Row 0 (low E2 string): expect carts at fret 0 (E2 is not in C major — actually E IS in C major; expect cart). Frets 1 (F), 3 (G), 5 (A), 7 (B), 8 (C), 10 (D), 12 (E). Frets without carts: 2, 4, 6, 9, 11.
-   - Row 5 (high E4 string): same pattern as row 0 shifted up two octaves; same pitch-class membership.
-5. Within each row, carts are **queued behind one another** along the row's depth axis — none overlap or pile up.
+1. Open the Subway Scaler screen, instrument = "Guitar (Standard)", scale = C major, root = C4.
+2. Press Start Run.
+3. Count visible cart rows. Each upcoming note must have its **own row** — no row contains two carts (even for consecutive same-string notes).
 
-**Pass criteria**: visible 45° angle; no carts at out-of-scale cells; no two carts in the same row overlap.
+**Pass criteria**: For `VISIBLE_ROWS = 6`, expect 6 distinct rows of single carts on screen at start.
 
-## 3. Switching scale updates the carts
+## 3. Lanes ordered by fret (low → high, left → right)
 
-1. Change the scale picker to "Minor Pentatonic" (5 notes per octave).
-2. Without leaving the screen, the cart set updates: rows now show fewer carts than before (only pitch classes in the pentatonic).
-3. Spot-check: no cart appears at a cell that produces a non-scale pitch.
+1. With the queue from §2 visible, observe the track planks under the carts.
+2. Confirm each distinct fret used by the visible queue has one plank, and planks are arranged ascending by fret from left (lowest) to right (highest).
 
-**Pass criteria**: cart set updates immediately on scale change; new set is a strict subset of the previous one for a pentatonic relative to its parent diatonic.
+**Pass criteria**: Plank count equals the count of distinct frets across the 6 visible carts; left-to-right order is fret-ascending.
 
-## 4. Same-string lateral lane change (P1)
+## 4. Rocksmith string colours
 
-1. Set scale = "C major" again. Start a run.
-2. Play E2 (low E open). Character lands on the cart at row 0, fret 0.
-3. Play F2 (string 0 fret 1). Character performs a **lateral** hop right; remains on row 0.
-4. Play G2 (string 0 fret 3). Another lateral hop. The lane window re-centres so the cart is visible.
+1. Play a scale that uses multiple strings (e.g. C major across the neck).
+2. As carts come into view, confirm cart **body** colours match the palette:
+   - String 0 → Red
+   - String 1 → Yellow
+   - String 2 → Blue
+   - String 3 → Orange
+   - String 4 → Green
+   - String 5 → Purple
+3. Confirm cart **roofs** are a uniform dark gray for every cart.
 
-**Pass criteria**: character moves between scale-cart positions in the same row; no row change; animation begins ≤ 50 ms after the HUD updates.
+**Pass criteria**: Body colour matches the palette index for the cart's string; all roofs identical dark gray.
 
-## 5. String-change row jump (P2)
+## 5. Bass mode (4-colour palette)
 
-1. Continuing the run, play A2 (string 1, fret 0).
-2. Character performs a **row jump** to row 1 (A2 string) and lands on the cart at fret 0.
-3. Play D3 (string 2, fret 0). Another row jump to row 2.
+1. Return to menu, switch instrument to "Bass 4-string (Standard)".
+2. Start a run.
+3. Verify only Red / Yellow / Blue / Orange appear on cart bodies — no Green or Purple.
 
-**Pass criteria**: row jumps are visibly taller/longer than lateral hops; each landing is on an existing scale cart.
+## 6. Queue advance on accept
 
-## 6. Bass mode (P3)
+1. With a run in progress, play the front-row note correctly.
+2. Front row disappears; the row immediately behind shifts forward to become the new front; a new cart appears at the tail (if more upcoming).
+3. Character slides laterally (X-only) to the new front cart's lane. No vertical motion.
 
-1. Pause, return to menu. Switch instrument to "Bass 4-string (Standard)". Keep scale = C major.
-2. Start a new run.
-3. Confirm exactly **4 rows** are visible, each populated with scale-only carts.
-4. Play E1 (string 0 open) → character lands on the leftmost cart of row 0.
+**Pass criteria**: Always one cart per row before and after the advance; character Y constant.
 
-**Pass criteria**: 4 rows; switching back to guitar restores 6.
+## 7. Out-of-range slot
 
-## 7. Out-of-scale played note (sanity)
+1. Pick a scale containing a note below the instrument's lowest open string (rare).
+2. Confirm its slot in the queue is empty (no cart) but still occupies a Z row — subsequent rows do not shift forward to fill it.
 
-1. In C major guitar mode, play F#3 (MIDI 54, not in C major).
-2. The resolver still resolves it to a fingering for the HUD, but no cart exists at that cell — the character either stays put or moves to the cell's spatial position without a cart underneath.
-3. The HUD shows the note name.
+## 8. Camera invariant
 
-**Pass criteria**: scene does not crash; clear visual signal that the note was off-scale (no cart to land on).
-
-## 8. Out-of-range played note (sanity)
-
-1. In guitar mode, play D2 (MIDI 38, below low E).
-2. HUD shows "D2"; character does not move; no error.
-
-## 9. Persistence
-
-1. Reload the screen. Instrument picker reflects last selection; cart set repopulates for the persisted (scale, instrument) pair.
+1. Throughout play, check the horizon: the camera does not bob, tilt, or shift Y.

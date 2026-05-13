@@ -1,21 +1,19 @@
-// Subway-Surfer scene for Guitar Subway Scaler (v4).
+// Subway-Surfer scene for Guitar Subway Scaler (v5).
 //
-// Queue model: groups of consecutive same-string notes share one z-row.
-// Within a row, carts spread along X by fret. Lateral within row = same-string
-// fret change. Forward to next row = string change.
-//
-// Axes: +X right, +Y up, +Z toward camera (front row at Z=0 closest to camera).
-// Camera fixed (no vertical motion). Character slides flat (no Y arc).
+// Flat queue: one cart per row. Each cart sits at (laneX(fret, anchorFret), 0, queueZ(rowIndex)).
+// Body colour = Rocksmith string palette indexed by stringIdx. Roof = single dark gray.
+// Camera fixed at 45° top-down (cameraFor45Deg). Character slides X-only on accept.
 
 import * as THREE from './vendor/three.module.js';
 import { laneX, queueZ, cameraFor45Deg } from './grid.js';
+import { colourForString } from './stringPalette.js';
 
 const CHAR_Y = 1.1;
 const FRONT_Z = 0;
 const LATERAL_MS = 120;
-const ROW_JUMP_MS = 220;
 const CAMERA_DISTANCE = 9;
 const TRACK_PLANK_HALF_DEPTH = 30;
+const ROOF_COLOUR = 0x444444;
 
 export function createScene(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -35,16 +33,37 @@ export function createScene(canvas) {
   sun.position.set(4, 12, 8);
   scene.add(sun);
 
-  const cartMat = new THREE.MeshStandardMaterial({ color: 0x66aaff });
-  const activeCartMat = new THREE.MeshStandardMaterial({
-    color: 0xffaa33, emissive: 0x331a00, emissiveIntensity: 0.5,
-  });
   const trackMat = new THREE.MeshStandardMaterial({ color: 0x2a3142 });
-  const roofMat = new THREE.MeshStandardMaterial({ color: 0x666666 });
+  const roofMat = new THREE.MeshStandardMaterial({ color: ROOF_COLOUR });
 
-  function makeCart(material) {
+  // Cached body materials, one per palette colour. Front cart uses a separate
+  // emissive-tinted clone (per-colour) so the highlight does not steal the string colour.
+  const bodyMatByColour = new Map();
+  const activeMatByColour = new Map();
+  function bodyMaterial(colourHex) {
+    let m = bodyMatByColour.get(colourHex);
+    if (!m) {
+      m = new THREE.MeshStandardMaterial({ color: colourHex });
+      bodyMatByColour.set(colourHex, m);
+    }
+    return m;
+  }
+  function activeMaterial(colourHex) {
+    let m = activeMatByColour.get(colourHex);
+    if (!m) {
+      m = new THREE.MeshStandardMaterial({
+        color: colourHex,
+        emissive: colourHex,
+        emissiveIntensity: 0.35,
+      });
+      activeMatByColour.set(colourHex, m);
+    }
+    return m;
+  }
+
+  function makeCart(bodyMat) {
     const g = new THREE.Group();
-    const body = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.8, 1.3), material);
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.8, 1.3), bodyMat);
     body.position.y = 0.45;
     g.add(body);
     const roof = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.08, 1.4), roofMat);
@@ -60,11 +79,10 @@ export function createScene(canvas) {
   character.position.set(0, CHAR_Y, FRONT_Z + 0.1);
   scene.add(character);
 
-  // Row-grouped queue. rows[k] = array of { fret, stringIdx, mesh } | null.
-  // cursorInRow = index of next-due cart within rows[0].
-  let rows = [];
-  let cursorInRow = 0;
-  let trackPlanks = [];
+  let instrument = null;
+  // Flat queue: carts[i] = { stringIdx, fret, colour, mesh } | null. Index = row.
+  let carts = [];
+  let trackPlanks = []; // { fret, mesh }
   let anchorFret = 0;
 
   let tween = null;
@@ -75,14 +93,13 @@ export function createScene(canvas) {
   function clearScene() {
     for (const t of trackPlanks) scene.remove(t.mesh);
     trackPlanks = [];
-    for (const r of rows) for (const c of r) if (c && c.mesh) scene.remove(c.mesh);
-    rows = [];
-    cursorInRow = 0;
+    for (const c of carts) if (c && c.mesh) scene.remove(c.mesh);
+    carts = [];
   }
 
   function computeAnchor() {
     let lo = Infinity;
-    for (const r of rows) for (const c of r) if (c && c.fret < lo) lo = c.fret;
+    for (const c of carts) if (c && c.fret < lo) lo = c.fret;
     anchorFret = isFinite(lo) ? lo : 0;
   }
 
@@ -90,7 +107,7 @@ export function createScene(canvas) {
     for (const t of trackPlanks) scene.remove(t.mesh);
     trackPlanks = [];
     const fretSet = new Set();
-    for (const r of rows) for (const c of r) if (c) fretSet.add(c.fret);
+    for (const c of carts) if (c) fretSet.add(c.fret);
     const sortedFrets = [...fretSet].sort((a, b) => a - b);
     for (const fret of sortedFrets) {
       const x = laneX(fret, anchorFret);
@@ -108,33 +125,32 @@ export function createScene(canvas) {
     return laneX(fret, anchorFret);
   }
 
-  function placeAllCarts() {
-    for (let k = 0; k < rows.length; k++) {
-      for (let i = 0; i < rows[k].length; i++) {
-        const c = rows[k][i];
-        if (!c) continue;
-        const isActive = k === 0 && i === cursorInRow;
-        const mat = isActive ? activeCartMat : cartMat;
-        if (!c.mesh) {
-          c.mesh = makeCart(mat);
-          scene.add(c.mesh);
-        } else if (c.mesh.children[0]) {
-          c.mesh.children[0].material = mat;
-        }
-        c.mesh.position.set(fretToX(c.fret), 0, queueZ(k));
+  function placeCarts() {
+    for (let i = 0; i < carts.length; i++) {
+      const c = carts[i];
+      if (!c) continue;
+      const isFront = i === 0;
+      const mat = isFront ? activeMaterial(c.colour) : bodyMaterial(c.colour);
+      if (!c.mesh) {
+        c.mesh = makeCart(mat);
+        scene.add(c.mesh);
+      } else if (c.mesh.children[0]) {
+        c.mesh.children[0].material = mat;
       }
+      c.mesh.position.set(fretToX(c.fret), 0, queueZ(i));
     }
   }
 
-  function snapCharToActive() {
-    const front = rows[0];
-    if (!front || !front[cursorInRow]) return;
-    character.position.x = fretToX(front[cursorInRow].fret);
+  function snapCharToFront() {
+    const front = carts[0];
+    if (!front) return;
+    character.position.x = fretToX(front.fret);
     character.position.y = CHAR_Y;
     character.position.z = queueZ(0) + 0.1;
   }
 
-  function setInstrument() {
+  function setInstrument(inst) {
+    instrument = inst;
     clearScene();
     tween = null;
     falling = false;
@@ -142,72 +158,52 @@ export function createScene(canvas) {
     character.position.set(0, CHAR_Y, FRONT_Z + 0.1);
   }
 
-  // rowsInput: array of rows. Each row = array of { stringIdx, fret } | null.
-  function setQueue(rowsInput) {
-    for (const r of rows) for (const c of r) if (c && c.mesh) scene.remove(c.mesh);
-    rows = rowsInput.map(row => row.map(p => p ? { stringIdx: p.stringIdx, fret: p.fret, mesh: null } : null));
-    cursorInRow = 0;
+  // positions: flat array of { stringIdx, fret } | null. One row per entry.
+  function setQueue(positions) {
+    for (const c of carts) if (c && c.mesh) scene.remove(c.mesh);
+    carts = positions.map(p => p
+      ? { stringIdx: p.stringIdx, fret: p.fret, colour: colourForString(p.stringIdx, instrument), mesh: null }
+      : null);
     computeAnchor();
     rebuildTracks();
-    placeAllCarts();
-    snapCharToActive();
+    placeCarts();
+    snapCharToFront();
   }
 
-  function appendQueue(position, sameStringAsLast) {
-    if (!position) {
-      if (sameStringAsLast && rows.length) rows[rows.length - 1].push(null);
-      else rows.push([null]);
-    } else if (sameStringAsLast && rows.length) {
-      rows[rows.length - 1].push({ stringIdx: position.stringIdx, fret: position.fret, mesh: null });
-    } else {
-      rows.push([{ stringIdx: position.stringIdx, fret: position.fret, mesh: null }]);
-    }
+  function appendQueue(position) {
+    carts.push(position
+      ? { stringIdx: position.stringIdx, fret: position.fret, colour: colourForString(position.stringIdx, instrument), mesh: null }
+      : null);
     computeAnchor();
     rebuildTracks();
-    placeAllCarts();
+    placeCarts();
   }
 
   function advanceQueue() {
     if (tween) {
       character.position.x = tween.toX;
-      character.position.z = tween.toZ;
       character.position.y = CHAR_Y;
       tween = null;
     }
-    if (!rows.length) return;
-    const consumed = rows[0][cursorInRow];
+    const consumed = carts.shift();
     if (consumed && consumed.mesh) scene.remove(consumed.mesh);
-    rows[0][cursorInRow] = null;
-
-    let nextCursor = cursorInRow + 1;
-    while (nextCursor < rows[0].length && rows[0][nextCursor] == null) nextCursor++;
-    let rowShift = false;
-    if (nextCursor >= rows[0].length) {
-      rows.shift();
-      cursorInRow = 0;
-      while (rows.length && rows[0].every(c => c == null)) rows.shift();
-      rowShift = true;
-    } else {
-      cursorInRow = nextCursor;
-    }
 
     computeAnchor();
     rebuildTracks();
-    placeAllCarts();
+    placeCarts();
 
-    const front = rows[0] && rows[0][cursorInRow];
+    const front = carts[0];
     if (!front) return;
     tween = {
       fromX: character.position.x, toX: fretToX(front.fret),
-      fromZ: character.position.z, toZ: queueZ(0) + 0.1,
-      durMs: rowShift ? ROW_JUMP_MS : LATERAL_MS,
+      durMs: LATERAL_MS,
       startMs: performance.now(),
     };
   }
 
   function dropOffCliff() { falling = true; }
   function showSuccess() { succeeded = true; }
-  // Legacy shims kept so older run-state wiring in main.js still resolves.
+  // Legacy shims (older run-state wiring may still call these).
   function setUpcomingNotes() {}
   function jumpToNext() {}
   function lateralLaneChange() {}
@@ -222,13 +218,12 @@ export function createScene(canvas) {
       const t = Math.min(1, (nowMs - tween.startMs) / tween.durMs);
       const e = 1 - (1 - t) * (1 - t);
       character.position.x = tween.fromX + (tween.toX - tween.fromX) * e;
-      character.position.z = tween.fromZ + (tween.toZ - tween.fromZ) * e;
       if (t >= 1) tween = null;
     }
 
     if (falling) {
       for (const t of trackPlanks) t.mesh.position.y -= dt * 8;
-      for (const r of rows) for (const c of r) if (c && c.mesh) c.mesh.position.y -= dt * 8;
+      for (const c of carts) if (c && c.mesh) c.mesh.position.y -= dt * 8;
       character.position.y -= dt * 8;
     }
     if (succeeded) character.rotation.y += dt * 2;
@@ -249,6 +244,14 @@ export function createScene(canvas) {
     rowJump,
     setCarts,
     render,
-    _state() { return { rowCount: rows.length, cursorInRow, trackCount: trackPlanks.length, anchorFret }; },
+    _state() {
+      let lo = Infinity;
+      for (const c of carts) if (c && c.fret < lo) lo = c.fret;
+      return {
+        queueLen: carts.length,
+        trackCount: trackPlanks.length,
+        anchorFret: isFinite(lo) ? lo : null,
+      };
+    },
   };
 }

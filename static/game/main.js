@@ -158,11 +158,9 @@ export async function bootstrap(root) {
 
   const scene = createScene(canvas);
 
-  const VISIBLE_ROWS = 4; // rows of cart groups to show ahead of the player
+  const VISIBLE_ROWS = 6;
   // Full per-sequence resolved positions. Indexed by note-sequence index.
   let sequencePositions = [];
-  // Per-note row index: same value for consecutive same-string notes.
-  let positionRowIdx = [];
 
   function buildSequencePositions(notes, inst) {
     const out = [];
@@ -175,26 +173,7 @@ export async function bootstrap(root) {
     return out;
   }
 
-  // Compute row indices: consecutive positions sharing stringIdx share a row.
-  // Nulls inherit the previous row index (best-effort).
-  function buildRowIndices(positions) {
-    const out = [];
-    let cur = 0;
-    let prev = null;
-    for (const p of positions) {
-      if (p == null) {
-        out.push(cur);
-        continue;
-      }
-      if (prev != null && p.stringIdx !== prev.stringIdx) cur += 1;
-      out.push(cur);
-      prev = p;
-    }
-    return out;
-  }
-
-  // Slice the current run's remaining sequence into VISIBLE_ROWS groups starting
-  // at run.cursor and call scene.setQueue.
+  // v5: flat 1-to-1 mapping of upcoming notes to scene rows.
   function refreshSceneQueueFromRun() {
     if (!run) return;
     const start = run.cursor;
@@ -202,17 +181,8 @@ export async function bootstrap(root) {
       scene.setQueue([]);
       return;
     }
-    const startRow = positionRowIdx[start];
-    const visibleRows = [];
-    for (let i = start; i < sequencePositions.length; i++) {
-      const rowOffset = positionRowIdx[i] - startRow;
-      if (rowOffset >= VISIBLE_ROWS) break;
-      if (!visibleRows[rowOffset]) visibleRows[rowOffset] = [];
-      visibleRows[rowOffset].push(sequencePositions[i]);
-    }
-    // Fill any gaps with empty arrays so indices stay correct.
-    for (let k = 0; k < visibleRows.length; k++) if (!visibleRows[k]) visibleRows[k] = [];
-    scene.setQueue(visibleRows);
+    const slice = sequencePositions.slice(start, start + VISIBLE_ROWS);
+    scene.setQueue(slice);
   }
 
   const debugOn = typeof window !== 'undefined' && /[?&]debug=1/.test(window.location.search);
@@ -296,7 +266,6 @@ export async function bootstrap(root) {
       run.start(performance.now());
       // Resolve the full sequence to (string, fret) positions and seed the scene queue.
       sequencePositions = buildSequencePositions(notesResp.notes, currentInstrument());
-      positionRowIdx = buildRowIndices(sequencePositions);
       refreshSceneQueueFromRun();
       setExpected();
       overlay.classList.add('hidden');
