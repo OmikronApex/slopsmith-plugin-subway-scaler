@@ -1,4 +1,4 @@
-# Data Model: Guitar Subway Scaler (v2)
+# Data Model: Guitar Subway Scaler (v5)
 
 ## Entities
 
@@ -10,14 +10,12 @@
 | `name` | string | non-empty |
 | `kind` | enum | `"guitar" \| "bass"` |
 | `stringCount` | int | 4 or 6 |
-| `tuning` | int[] | length 4 or 6, each in `[21, 108]`, strictly increasing |
+| `tuning` | int[] | length 4 or 6, strictly increasing, each in `[21, 108]` |
 | `maxFret` | int | 12 ≤ n ≤ 24 |
 
-Registry: `guitar-standard` (tuning `[40,45,50,55,59,64]`, maxFret 24), `bass-4-standard` (tuning `[28,33,38,43]`, maxFret 24). Shipped in v1.
+### PlayerSettings (unchanged from v1)
 
-### PlayerSettings (extended) — unchanged
-
-Adds `instrumentId: string = "guitar-standard"` and `strictTuning: bool = false`. Shipped in v1.
+`instrumentId`, `strictTuning` already shipped.
 
 ### NoteEvent (transient, client-side) — unchanged
 
@@ -31,50 +29,39 @@ Adds `instrumentId: string = "guitar-standard"` and `strictTuning: bool = false`
 { stringIdx: number, fret: number } | null
 ```
 
-### Lane (transient, client-side) — unchanged
+### StringColourPalette (NEW v5, static)
+
+Module-level constant in `static/game/stringPalette.js`:
+
+```ts
+const STRING_COLOURS: readonly number[];  // hex RGB ints, length 6
+```
+
+Indexed 0..5: Red, Yellow, Blue, Orange, Green, Purple. Bass mode uses indices 0..3.
+
+### Lane / Track Plank (transient, client-side)
 
 ```ts
 { fret: number, x: number }
 ```
 
-### Row (transient, client-side) — unchanged shape, refined semantics
+One per distinct fret in the visible queue. Ordered by fret ASC. `x = laneX(fret, anchorFret)` where `anchorFret` = lowest fret in the visible queue.
+
+### Scene Cart (transient, client-side) — refined for v5
 
 ```ts
-{ stringIdx: number, z: number, openMidi: number }
+{
+  stringIdx: number,
+  fret: number,
+  rowIndex: number,    // 0-based, 0 == front
+  bodyColour: number,  // palette[stringIdx]
+  mesh: THREE.Group,
+}
 ```
 
-Carts in the row are placed at the row's Z minus a per-cart longitudinal offset (see ScaleCart below).
+Placement: `(laneX(fret, anchorFret), 0, queueZ(rowIndex))`. Body material colour from `STRING_COLOURS[stringIdx]`. Roof material = single shared dark gray (`0x444444`).
 
-### ScaleNoteSet (transient, client-side, NEW)
-
-Computed once per `(scaleId, rootMidi, octaves)` selection from the existing `GET /scales/{id}/notes` response:
-
-```ts
-{ pitchClasses: Set<number> }   // each value in [0, 11]
-```
-
-Built as `new Set(notesResponse.notes.map(n => n.midi % 12))`. Independent of instrument; reused across instrument changes within a run.
-
-### ScaleCell (transient, client-side, NEW)
-
-Output of `static/game/scaleMap.js::inScaleCells(...)`:
-
-```ts
-{ stringIdx: number, fret: number }
-```
-
-A `ScaleCell` exists in the result iff `(instrument.tuning[stringIdx] + fret) % 12 ∈ pitchClasses` AND `fret` is within the requested `fretRange`.
-
-### ScaleCart (transient, client-side, NEW)
-
-One per visible ScaleCell. Placed at:
-
-```text
-x = laneX(fret, activeFret)
-z = rowZ(stringIdx) − queueIndex * CART_GAP_Z
-```
-
-where `queueIndex` is the cart's 0-based position in the row's fret-ascending order. `CART_GAP_Z = 0.05`. `ScaleCart` has no separate data fields beyond the `ScaleCell` it represents plus the computed `(x, z)`.
+Invariant: **at most one Scene Cart per `rowIndex`** (FR-004, SC-003).
 
 ### PlayerLocation (transient, client-side) — unchanged
 
@@ -82,49 +69,35 @@ where `queueIndex` is the cart's 0-based position in the row's fret-ascending or
 { stringIdx: number, fret: number, x: number, y: number, z: number }
 ```
 
-`y` is the character's vertical offset during a jump arc; `(x, z)` mirror the targeted cell. Note: the character lands on the cell's `(x, rowZ(stringIdx))` — **not** on the cart's offset Z. Carts queue behind the cell's spatial centre; the character occupies the centre.
+`y` constant during normal play; only changes on `falling` state.
 
 ## Relationships
 
-- `PlayerSettings.instrumentId` references `Instrument.id` (validated at PUT). Unchanged.
-- A `NoteEvent` + prev `FretboardPosition` + active `Instrument` deterministically yields a new `FretboardPosition`. Unchanged.
-- `(scaleId, rootMidi, octaves)` deterministically yields a `ScaleNoteSet`.
-- A `ScaleNoteSet` + active `Instrument` + visible `fretRange` deterministically yields the ordered list of `ScaleCell`s (sorted by `stringIdx ASC, fret ASC`).
-- Each `ScaleCell` projects to exactly one `ScaleCart` via the geometry above.
+- `PlayerSettings.instrumentId` → `Instrument.id` (validated at PUT).
+- `NoteEvent` + prev `FretboardPosition` + `Instrument` ⇒ new `FretboardPosition`.
+- `FretboardPosition.stringIdx` ⇒ `STRING_COLOURS[stringIdx]` (clamped by `instrument.stringCount`).
+- Visible queue = first `VISIBLE_ROWS` entries of `sequencePositions.slice(run.cursor)`.
 
 ## State transitions
 
-Run state machine (`runState.js`) unchanged. The scene refreshes its cart set in two situations:
-
 ```text
 on run start:
-    scaleNoteSet = pitchClassesOf(notesResponse)
-    cells = scaleMap.inScaleCells(scaleNoteSet, instrument, fretWindow)
-    scene.setCarts(cells)             # NEW API; replaces per-lane pool from v1
-    prevPos = null
+    sequencePositions = buildSequencePositions(notesResp.notes, instrument)
+    refreshSceneQueueFromRun()
+    # = scene.setQueue(sequencePositions.slice(cursor, cursor + VISIBLE_ROWS))
 
-on note event e:
-    pos = fretboard.resolve(e.midi, prevPos, instrument)
-    if pos is null:
-        return
-    if prevPos is null or pos.stringIdx == prevPos.stringIdx:
-        scene.lateralLaneChange(pos)
-    else:
-        scene.rowJump(pos)
-    if scene.activeFret slid the lane window:
-        scene.setCarts(scaleMap.inScaleCells(scaleNoteSet, instrument, newFretWindow))
-    prevPos = pos
-
-on instrument change between runs:
-    scene.setInstrument(instrument)   # rebuilds rows
-    scene.setCarts(scaleMap.inScaleCells(scaleNoteSet, instrument, fretWindow))
+on note accepted:
+    run.cursor++
+    scene.advanceQueue()        # tween char to next front
+    refreshSceneQueueFromRun()  # extend tail if more upcoming
 ```
 
-`scene.setCarts(cells)` replaces the current set of carts atomically — no partial updates.
+The v4 `buildRowIndices` / `positionRowIdx` pair is removed.
 
 ## Invariants
 
-- **Cell ⇒ Cart**: every visible cell in the active window has exactly one cart (SC-006).
-- **No cart for non-scale cell**: the cart set is closed under the scaleMap output (SC-006).
-- **No same-row overlap**: any two carts on the same row differ in `z` by at least `CART_GAP_Z` (SC-007).
-- **Camera angle**: pitch fixed at 45° (SC-008).
+- **One cart per row** (FR-003, FR-004, SC-003): the scene's row list and the visible-queue positions are 1-to-1.
+- **Body = palette[stringIdx]** (FR-008, SC-004) for every visible cart.
+- **Roof uniform** (FR-009, SC-005).
+- **Camera Y constant** (FR-002, SC-007).
+- **Plank count = |distinct frets|** (FR-006, SC-006).
