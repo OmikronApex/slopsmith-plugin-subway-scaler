@@ -33,10 +33,12 @@ async function fetchJson(url, opts) {
   return data;
 }
 
-function rootSelectOptions(selectedMidi) {
-  // C2 (36) .. B6 (95)
+function rootSelectOptions(selectedMidi, instrument) {
+  // Start from the first fret of the lowest string of the instrument
+  const min = (instrument && instrument.tuning) ? (instrument.tuning[0] + 1) : 36;
+  const max = 95;
   const opts = [];
-  for (let m = 36; m <= 95; m++) {
+  for (let m = min; m <= max; m++) {
     opts.push(el('option', { value: String(m), ...(m === selectedMidi ? { selected: 'selected' } : {}) }, midiToName(m)));
   }
   return opts;
@@ -83,7 +85,7 @@ export async function bootstrap(root) {
     ...scales.map(s => el('option', { value: s.id, ...(s.id === state.scaleId ? { selected: 'selected' } : {}) }, s.name)));
   scaleSelect.addEventListener('change', () => { state.scaleId = scaleSelect.value; });
 
-  const rootSelect = el('select', {}, ...rootSelectOptions(state.rootMidi));
+  const rootSelect = el('select', {}, ...rootSelectOptions(state.rootMidi, currentInstrument()));
   rootSelect.addEventListener('change', () => { state.rootMidi = parseInt(rootSelect.value, 10); });
 
   const octSelect = el('select', {},
@@ -104,7 +106,19 @@ export async function bootstrap(root) {
 
   const instrumentSelect = el('select', {},
     ...instruments.map(i => el('option', { value: i.id, ...(i.id === state.instrumentId ? { selected: 'selected' } : {}) }, i.name)));
-  instrumentSelect.addEventListener('change', () => { state.instrumentId = instrumentSelect.value; });
+  instrumentSelect.addEventListener('change', () => { 
+    state.instrumentId = instrumentSelect.value;
+    const inst = currentInstrument();
+    rootSelect.innerHTML = '';
+    const newOpts = rootSelectOptions(state.rootMidi, inst);
+    for (const o of newOpts) rootSelect.appendChild(o);
+    
+    const min = inst.tuning[0] + 1;
+    if (state.rootMidi < min) {
+      state.rootMidi = min;
+      rootSelect.value = String(min);
+    }
+  });
 
   const startBtn = el('button', { class: 'start-btn' }, 'Start Run');
   const audioBtn = el('button', { class: 'audio-btn' }, 'Audio Settings');
@@ -158,7 +172,7 @@ export async function bootstrap(root) {
 
   const scene = createScene(canvas);
 
-  const VISIBLE_ROWS = 6;
+  const VISIBLE_ROWS = 8;
   // Full per-sequence resolved positions. Indexed by note-sequence index.
   let sequencePositions = [];
 
@@ -207,9 +221,11 @@ export async function bootstrap(root) {
   let prevFretPos = null;
 
   function rangeWarning(notes) {
-    // Roughly C2..C7
+    const inst = currentInstrument();
+    const min = inst.tuning[0] + 1;
+    const max = 96;
     for (const n of notes) {
-      if (n.midi < 36 || n.midi > 96) return `Note ${n.name} (MIDI ${n.midi}) is outside the reliable detection range (C2–C7).`;
+      if (n.midi < min || n.midi > max) return `Note ${n.name} (MIDI ${n.midi}) is outside the supported range for this instrument (${midiToName(min)}–${midiToName(max)}).`;
     }
     return null;
   }

@@ -21,21 +21,34 @@ export function resolve(midi, prevPos, instrument) {
   if (candidates.length === 0) return null;
 
   if (prevPos == null) {
-    // Lowest fret wins; tie → higher string index (closer to the played pitch's "natural" string).
-    candidates.sort((a, b) => (a.fret - b.fret) || (b.stringIdx - a.stringIdx));
-    return candidates[0];
+    // START OF SCALE: Prefer lowest pitch string (index 0) to anchor the box.
+    // If multiple strings can play it, the lowest string (String 0) wins.
+    candidates.sort((a, b) => a.stringIdx - b.stringIdx);
+    const first = candidates[0];
+    return { ...first, anchorFret: first.fret };
   }
 
+  const anchorFret = prevPos.anchorFret;
   let best = null;
   let bestCost = Infinity;
+
   for (const c of candidates) {
-    const ds = c.stringIdx - prevPos.stringIdx;
-    const df = c.fret - prevPos.fret;
-    let cost = Math.sqrt(ds * ds + df * df);
-    if (c.stringIdx === prevPos.stringIdx) cost -= SAME_STRING_BIAS;
+    const ds = Math.abs(c.stringIdx - prevPos.stringIdx);
+    const df = Math.abs(c.fret - prevPos.fret);
+    
+    // Penalty for leaving the 4-fret box anchored at the start of the scale.
+    const boxDist = Math.abs(c.fret - anchorFret);
+    const boxPenalty = boxDist > 4 ? (boxDist - 4) * 20 : 0;
+    
+    // Cost function: prioritize staying in the box, then minimize string jumps.
+    let cost = boxPenalty + (ds * 5) + df;
+    
+    // Small bias to stay on same string if multiple candidates in box
+    if (c.stringIdx === prevPos.stringIdx) cost -= 0.5;
+
     if (cost < bestCost) {
       bestCost = cost;
-      best = c;
+      best = { ...c, anchorFret };
     }
   }
   return best;

@@ -32,6 +32,22 @@ class Scale(BaseModel):
         return v
 
 
+class StringFretPair(BaseModel):
+    string: int = Field(..., ge=1, le=6)
+    fret: int = Field(..., ge=0, le=24)
+
+
+class ScalePattern(BaseModel):
+    scaleId: str
+    rootNote: str
+    pattern: list[StringFretPair]
+
+
+class TabulateRequest(BaseModel):
+    root_note: str
+    instrument_id: str = "guitar-standard"
+
+
 class Note(BaseModel):
     midi: int = Field(..., ge=21, le=108)
     name: str

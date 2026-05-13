@@ -1,10 +1,10 @@
 // Pure geometry helpers for the vertical subway scene.
 //
-// Lanes (columns) = frets, log-spaced via d(n) = 1 - 2^(-n/12).
+// Lanes (columns) = frets, equally distanced.
 // Rows (depth) = strings. Row 0 (lowest pitch) sits at the front (largest Z).
 // See specs/003-guitar-subway-scaler/research.md §4–§5.
 
-export const LANE_X_SCALE = 18;
+export const LANE_X_SCALE = 1.6;
 export const ROW_DZ = 3.0;
 export const WINDOW = 9;
 export const QUEUE_DZ = 2.2;
@@ -15,7 +15,7 @@ export function queueZ(queueIndex) {
 }
 
 function fretDistance(n) {
-  return 1 - Math.pow(2, -n / 12);
+  return n;
 }
 
 export function laneX(fret, activeFret) {

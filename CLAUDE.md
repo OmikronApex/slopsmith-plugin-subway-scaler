@@ -12,5 +12,6 @@ Migrate scale definitions to JSON file with tabulator for multi-string encoding.
 - Research: [research.md](specs/004-scale-json-tabulator/research.md)
 - Quickstart: [quickstart.md](specs/004-scale-json-tabulator/quickstart.md)
 - Contracts: [contracts/](specs/004-scale-json-tabulator/contracts/)
+- Tasks: [tasks.md](specs/004-scale-json-tabulator/tasks.md)
 
 <!-- SPECKIT END -->
