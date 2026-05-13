@@ -30,6 +30,8 @@ def test_get_returns_stored_after_put(client):
         "lastOctaves": 2,
         "lastDifficulty": "hard",
         "strictOctave": True,
+        "instrumentId": "guitar-standard",
+        "strictTuning": False,
         "audio": {
             "deviceId": "abc",
             "deviceLabel": "USB Mic",

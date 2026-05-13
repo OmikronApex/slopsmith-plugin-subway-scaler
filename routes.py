@@ -23,6 +23,8 @@ def setup(app: FastAPI, context: dict):
     # Routers added in later phases
     from services.scales_router import router as scales_router
     from services.settings_router import router as settings_router
+    from services.instruments_router import router as instruments_router
 
     app.include_router(scales_router)
     app.include_router(settings_router)
+    app.include_router(instruments_router)

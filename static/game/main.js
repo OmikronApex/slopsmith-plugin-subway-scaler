@@ -5,6 +5,7 @@ import { createScene } from './scene.js';
 import { startAudio, enumerateInputs } from './audio.js';
 import { Run, difficultyToTimePerNoteMs } from './runState.js';
 import { quantize, midiToName } from './notes.js';
+import { resolve as resolveFretboard } from './fretboard.js';
 
 const API = '/api/plugins/subway-scaler';
 const STATIC = '/plugins/subway-scaler/static/game';
@@ -47,10 +48,12 @@ export async function bootstrap(root) {
   root.className = 'subway-scaler';
 
   let scales = [];
+  let instruments = [];
   let settings = null;
   try {
-    [scales, settings] = await Promise.all([
+    [scales, instruments, settings] = await Promise.all([
       fetchJson(`${API}/scales`).then(d => d.scales),
+      fetchJson(`${API}/instruments`).then(d => d.instruments),
       fetchJson(`${API}/settings`),
     ]);
   } catch (err) {
@@ -66,8 +69,14 @@ export async function bootstrap(root) {
     descending: false,
     difficulty: settings.lastDifficulty,
     strictOctave: settings.strictOctave,
+    instrumentId: settings.instrumentId || 'guitar-standard',
+    strictTuning: !!settings.strictTuning,
     audio: { ...settings.audio },
   };
+
+  function currentInstrument() {
+    return instruments.find(i => i.id === state.instrumentId) || instruments[0];
+  }
 
   const menu = el('div', { class: 'menu' });
   const scaleSelect = el('select', {},
@@ -93,6 +102,10 @@ export async function bootstrap(root) {
   const strictChk = el('input', { type: 'checkbox', ...(state.strictOctave ? { checked: 'checked' } : {}) });
   strictChk.addEventListener('change', () => { state.strictOctave = strictChk.checked; });
 
+  const instrumentSelect = el('select', {},
+    ...instruments.map(i => el('option', { value: i.id, ...(i.id === state.instrumentId ? { selected: 'selected' } : {}) }, i.name)));
+  instrumentSelect.addEventListener('change', () => { state.instrumentId = instrumentSelect.value; });
+
   const startBtn = el('button', { class: 'start-btn' }, 'Start Run');
   const audioBtn = el('button', { class: 'audio-btn' }, 'Audio Settings');
 
@@ -102,6 +115,7 @@ export async function bootstrap(root) {
   menu.appendChild(el('label', {}, 'Descending ', descChk));
   menu.appendChild(el('label', {}, 'Difficulty ', diffSelect));
   menu.appendChild(el('label', {}, 'Strict octave ', strictChk));
+  menu.appendChild(el('label', {}, 'Instrument ', instrumentSelect));
   menu.appendChild(startBtn);
   menu.appendChild(audioBtn);
   root.appendChild(menu);
@@ -144,9 +158,83 @@ export async function bootstrap(root) {
 
   const scene = createScene(canvas);
 
+  const VISIBLE_ROWS = 4; // rows of cart groups to show ahead of the player
+  // Full per-sequence resolved positions. Indexed by note-sequence index.
+  let sequencePositions = [];
+  // Per-note row index: same value for consecutive same-string notes.
+  let positionRowIdx = [];
+
+  function buildSequencePositions(notes, inst) {
+    const out = [];
+    let prev = null;
+    for (const n of notes) {
+      const pos = resolveFretboard(n.midi, prev, inst);
+      out.push(pos);
+      if (pos) prev = pos;
+    }
+    return out;
+  }
+
+  // Compute row indices: consecutive positions sharing stringIdx share a row.
+  // Nulls inherit the previous row index (best-effort).
+  function buildRowIndices(positions) {
+    const out = [];
+    let cur = 0;
+    let prev = null;
+    for (const p of positions) {
+      if (p == null) {
+        out.push(cur);
+        continue;
+      }
+      if (prev != null && p.stringIdx !== prev.stringIdx) cur += 1;
+      out.push(cur);
+      prev = p;
+    }
+    return out;
+  }
+
+  // Slice the current run's remaining sequence into VISIBLE_ROWS groups starting
+  // at run.cursor and call scene.setQueue.
+  function refreshSceneQueueFromRun() {
+    if (!run) return;
+    const start = run.cursor;
+    if (start >= sequencePositions.length) {
+      scene.setQueue([]);
+      return;
+    }
+    const startRow = positionRowIdx[start];
+    const visibleRows = [];
+    for (let i = start; i < sequencePositions.length; i++) {
+      const rowOffset = positionRowIdx[i] - startRow;
+      if (rowOffset >= VISIBLE_ROWS) break;
+      if (!visibleRows[rowOffset]) visibleRows[rowOffset] = [];
+      visibleRows[rowOffset].push(sequencePositions[i]);
+    }
+    // Fill any gaps with empty arrays so indices stay correct.
+    for (let k = 0; k < visibleRows.length; k++) if (!visibleRows[k]) visibleRows[k] = [];
+    scene.setQueue(visibleRows);
+  }
+
+  const debugOn = typeof window !== 'undefined' && /[?&]debug=1/.test(window.location.search);
+  const fretHud = debugOn ? el('div', { class: 'fret-hud', style: 'position:absolute;top:4px;right:4px;background:rgba(0,0,0,.6);color:#fff;font:11px monospace;padding:2px 4px;border-radius:3px;' }) : null;
+  if (fretHud) gameWrap.appendChild(fretHud);
+
+  let currentScenicInstrumentId = null;
+  function applyInstrument() {
+    const inst = currentInstrument();
+    if (!inst) return null;
+    if (inst.id !== currentScenicInstrumentId) {
+      scene.setInstrument(inst);
+      currentScenicInstrumentId = inst.id;
+    }
+    return inst;
+  }
+  applyInstrument();
+
   let run = null;
   let audio = null;
   let rafId = null;
+  let prevFretPos = null;
 
   function rangeWarning(notes) {
     // Roughly C2..C7
@@ -182,6 +270,8 @@ export async function bootstrap(root) {
         lastOctaves: state.octaves,
         lastDifficulty: state.difficulty,
         strictOctave: state.strictOctave,
+        instrumentId: state.instrumentId,
+        strictTuning: state.strictTuning,
         audio: state.audio,
       };
       fetchJson(`${API}/settings`, {
@@ -189,6 +279,10 @@ export async function bootstrap(root) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(merged),
       }).catch(() => {});
+
+      // Apply selected instrument before the run starts; reset resolver history.
+      applyInstrument();
+      prevFretPos = null;
 
       const timePerNoteMs = difficultyToTimePerNoteMs(state.difficulty);
       run = new Run({
@@ -200,6 +294,10 @@ export async function bootstrap(root) {
         confidenceThreshold: state.audio.confidenceThreshold,
       });
       run.start(performance.now());
+      // Resolve the full sequence to (string, fret) positions and seed the scene queue.
+      sequencePositions = buildSequencePositions(notesResp.notes, currentInstrument());
+      positionRowIdx = buildRowIndices(sequencePositions);
+      refreshSceneQueueFromRun();
       setExpected();
       overlay.classList.add('hidden');
       feedbackEl.textContent = '';
@@ -210,9 +308,16 @@ export async function bootstrap(root) {
       audio = await startAudio({ deviceId: state.audio.deviceId });
       audio.onDetection(det => {
         if (!run) return;
+        if (fretHud && det && det.note) {
+          const st = scene._state ? scene._state() : null;
+          fretHud.textContent = `${det.note.name}` + (st ? `  q=${st.queueLen} tracks=${st.trackCount} f=${st.activeFret}` : '');
+        }
         const result = run.onDetection(det);
         if (result === 'accepted') {
-          scene.jumpToNext();
+          // Advance the visible queue. Recompute visible rows from the new cursor —
+          // simpler than incrementally appending under the row-grouped model.
+          scene.advanceQueue();
+          refreshSceneQueueFromRun();
           feedbackEl.textContent = '✓';
           setExpected();
         } else if (result === 'rejected') {
@@ -349,6 +454,8 @@ export async function bootstrap(root) {
         lastOctaves: state.octaves,
         lastDifficulty: state.difficulty,
         strictOctave: state.strictOctave,
+        instrumentId: state.instrumentId,
+        strictTuning: state.strictTuning,
         audio: state.audio,
       };
       fetchJson(`${API}/settings`, {

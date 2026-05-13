@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from services.schemas import PlayerSettings
 from services import scales as scales_service
+from services import instruments as instruments_service
 
 _LOG = logging.getLogger(__name__)
 
@@ -59,5 +60,8 @@ def validate_and_save(raw: dict) -> PlayerSettings:
 
     if s.lastScaleId not in scales_service.SCALES:
         raise InvalidSettings({"lastScaleId": f"unknown scale id: {s.lastScaleId}"})
+
+    if s.instrumentId not in instruments_service.INSTRUMENTS:
+        raise InvalidSettings({"instrumentId": f"unknown instrument id: {s.instrumentId}"})
 
     return save(s)
