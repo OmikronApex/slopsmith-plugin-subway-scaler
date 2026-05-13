@@ -12,6 +12,8 @@ def test_settings_round_trip_with_real_scale(client):
         "lastOctaves": 2,
         "lastDifficulty": "easy",
         "strictOctave": True,
+        "instrumentId": "bass-4-standard",
+        "strictTuning": True,
         "audio": {
             "deviceId": None,
             "deviceLabel": "",

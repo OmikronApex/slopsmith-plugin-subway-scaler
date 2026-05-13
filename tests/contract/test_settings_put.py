@@ -9,6 +9,8 @@ def _valid_body(**overrides):
         "lastOctaves": 1,
         "lastDifficulty": "medium",
         "strictOctave": False,
+        "instrumentId": "guitar-standard",
+        "strictTuning": False,
         "audio": {
             "deviceId": None,
             "deviceLabel": "",
@@ -74,3 +76,22 @@ def test_put_rejects_bad_stability(client):
     body["audio"]["stabilityFrames"] = 99
     r = client.put("/api/plugins/subway-scaler/settings", json=body)
     assert r.status_code == 422
+
+
+def test_put_rejects_unknown_instrument(client):
+    body = _valid_body()
+    body["instrumentId"] = "nope"
+    r = client.put("/api/plugins/subway-scaler/settings", json=body)
+    assert r.status_code == 422
+    err = r.json()["error"]
+    assert err["code"] == "invalid-settings"
+    assert "instrumentId" in err["fields"]
+    assert "unknown instrument id: nope" in err["fields"]["instrumentId"]
+
+
+def test_put_accepts_bass_instrument(client):
+    body = _valid_body()
+    body["instrumentId"] = "bass-4-standard"
+    body["strictTuning"] = True
+    r = client.put("/api/plugins/subway-scaler/settings", json=body)
+    assert r.status_code == 200, r.text

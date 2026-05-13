@@ -50,6 +50,46 @@ class ScaleNotesResponse(BaseModel):
     notes: list[Note]
 
 
+InstrumentKind = Literal["guitar", "bass"]
+
+
+class Instrument(BaseModel):
+    id: str
+    name: str
+    kind: InstrumentKind
+    stringCount: int = Field(..., ge=4, le=6)
+    tuning: list[int]
+    maxFret: int = Field(..., ge=12, le=24)
+
+    @field_validator("id")
+    @classmethod
+    def _validate_id(cls, v: str) -> str:
+        import re
+        if not re.fullmatch(r"[a-z0-9-]+", v):
+            raise ValueError("id must match ^[a-z0-9-]+$")
+        return v
+
+    @field_validator("tuning")
+    @classmethod
+    def _validate_tuning(cls, v: list[int]) -> list[int]:
+        if len(v) not in (4, 6):
+            raise ValueError("tuning length must be 4 or 6")
+        if any(not (21 <= x <= 108) for x in v):
+            raise ValueError("tuning values must be in [21, 108]")
+        for a, b in zip(v, v[1:]):
+            if b <= a:
+                raise ValueError("tuning must be strictly increasing")
+        return v
+
+    def model_post_init(self, _ctx) -> None:
+        if self.stringCount != len(self.tuning):
+            raise ValueError("stringCount must equal len(tuning)")
+
+
+class InstrumentListResponse(BaseModel):
+    instruments: list[Instrument]
+
+
 class AudioInputSettings(BaseModel):
     deviceId: Optional[str] = None
     deviceLabel: str = ""
@@ -65,6 +105,8 @@ class PlayerSettings(BaseModel):
     lastOctaves: int = Field(1, ge=1, le=2)
     lastDifficulty: Difficulty = "medium"
     strictOctave: bool = False
+    instrumentId: str = "guitar-standard"
+    strictTuning: bool = False
     audio: AudioInputSettings = Field(default_factory=AudioInputSettings)
 
     model_config = {"extra": "forbid"}

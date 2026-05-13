@@ -13,7 +13,15 @@
       "PowerShell(.specify/extensions/git/scripts/powershell/auto-commit.ps1 after_implement)",
       "PowerShell(.specify/extensions/git/scripts/powershell/create-new-feature.ps1 -Json -ShortName \"guitar-fret-mapping\" \"Map subway cart positions to guitar/bass fret and string; lateral jumps for same-string notes, forward jumps when changing strings\")",
       "Bash(mkdir -p specs/003-guitar-fret-mapping/checklists)",
-      "PowerShell(.specify/extensions/git/scripts/powershell/create-new-feature.ps1 -Json -ShortName \"subway-cart-fretboard-mapping\" \"The Plugin is meant for players that use either regular or a bass guitar. The position of the subway carts should correspond to the fret and string the note is played on.\")"
+      "PowerShell(.specify/extensions/git/scripts/powershell/create-new-feature.ps1 -Json -ShortName \"subway-cart-fretboard-mapping\" \"The Plugin is meant for players that use either regular or a bass guitar. The position of the subway carts should correspond to the fret and string the note is played on.\")",
+      "Bash(pwsh -NoProfile -Command \".specify/scripts/powershell/setup-plan.ps1 -Json\")",
+      "PowerShell(.specify/scripts/powershell/setup-plan.ps1 -Json)",
+      "Bash(pytest -q)",
+      "Bash(npx vitest *)",
+      "Bash(python -m pytest -q)",
+      "PowerShell(python -m pytest -q 2>&1)",
+      "PowerShell(py -m pytest -q 2>&1)",
+      "Bash(.venv/Scripts/python.exe -m pytest -q)"
     ]
   }
 }
