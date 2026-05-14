@@ -25,7 +25,6 @@ export class Run {
 
     this.state = 'idle';
     this.cursor = 0;
-    this.deadlineAt = 0;
     this.startedAt = 0;
     this.endedAt = null;
     this._pausedAt = 0;
@@ -37,7 +36,6 @@ export class Run {
     if (this.state !== 'idle') return;
     this.state = 'running';
     this.startedAt = nowMs;
-    this.deadlineAt = nowMs + this.timePerNoteMs;
   }
 
   currentExpected() {
@@ -62,8 +60,6 @@ export class Run {
 
   resume(nowMs) {
     if (this.state !== 'paused') return;
-    const remaining = this.deadlineAt - this._pausedAt;
-    this.deadlineAt = nowMs + Math.max(0, remaining);
     this.state = 'running';
   }
 
@@ -74,13 +70,7 @@ export class Run {
   }
 
   tick(nowMs) {
-    if (this.state !== 'running') return;
     // Primary failure is via scene.checkCollision() in main.js.
-    // This timer serves as a fallback/timeout.
-    if (nowMs >= this.deadlineAt + 1000) {
-      this.state = 'failed';
-      this.endedAt = nowMs;
-    }
   }
 
   _matches(expectedMidi, detectedMidi) {
@@ -122,7 +112,6 @@ export class Run {
     this.cursor = (this.cursor + 1) % this.sequence.length;
     this._stableMidi = null;
     this._stableCount = 0;
-    this.deadlineAt = (typeof performance !== 'undefined' ? performance.now() : Date.now()) + this.timePerNoteMs;
     return 'accepted';
   }
 }

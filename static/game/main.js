@@ -129,15 +129,11 @@ export async function bootstrap(root) {
   const canvas = el('canvas', { class: 'game-canvas', width: '800', height: '450' });
   const hud = el('div', { class: 'hud' });
   const expectedEl = el('div', { class: 'expected' });
-  const timeBar = el('div', { class: 'time-bar' });
-  const timeFill = el('div', { class: 'time-fill' });
-  timeBar.appendChild(timeFill);
   const feedbackEl = el('div', { class: 'feedback' });
   const overlay = el('div', { class: 'overlay hidden' });
   const pauseBtn = el('button', { class: 'pause-btn hidden' }, 'Pause');
   const abandonBtn = el('button', { class: 'abandon-btn hidden' }, 'Abandon');
   hud.appendChild(expectedEl);
-  hud.appendChild(timeBar);
   hud.appendChild(feedbackEl);
   hud.appendChild(pauseBtn);
   hud.appendChild(abandonBtn);
@@ -205,7 +201,10 @@ export async function bootstrap(root) {
   }
 
   async function start() {
-    const warning = null; // computed below from sequence
+    if (startBtn.disabled && run && run.state === 'running') return;
+    startBtn.disabled = true;
+    feedbackEl.textContent = '';
+    
     try {
       const notesResp = await gameClient.start(state.scaleId, state.difficulty, {
         rootMidi: state.rootMidi,
@@ -214,6 +213,7 @@ export async function bootstrap(root) {
       const rangeMsg = rangeWarning(notesResp.notes || []);
       if (rangeMsg) {
         showOverlay(`Cannot start: ${rangeMsg}`);
+        cleanup();
         return;
       }
       // Persist last-used settings
@@ -253,17 +253,66 @@ export async function bootstrap(root) {
         toleranceCents: state.audio.toleranceCents,
         confidenceThreshold: state.audio.confidenceThreshold,
       });
-      run.start(performance.now());
       setExpected();
+
+      let currentWaves = notesResp.waves || [];
+      const countdownStart = performance.now();
+      // Set a future game start time so waves stay at spawn during countdown
+      let gameStartTime = countdownStart + 3500; 
+      scene.setGameStartTime(gameStartTime);
+
+      // Start the rendering loop so we can see the initial state
+      const loop = (now) => {
+        if (!run) return;
+        
+        // Use visual collision detection as the primary failure source
+        if (run.state === 'running' && scene.checkCollision()) {
+          run.state = 'failed';
+        }
+
+        run.tick(now);
+        if (run.state === 'succeeded') {
+          scene.showSuccess();
+          showOverlay('Success! Scale complete.');
+          cleanup();
+          return;
+        }
+        if (run.state === 'failed') {
+          showOverlay('Run failed! Collision detected.');
+          cleanup();
+          return;
+        }
+
+        // Update waves and safe zones
+        if (currentWaves.length > 0) {
+          scene.setWaves(currentWaves, now);
+          safeZoneRenderer.update(currentWaves, 0, (track) => laneX(track, notesResp.num_lanes), now, gameStartTime, currentInstrument());
+        }
+
+        scene.render(now);
+        rafId = requestAnimationFrame(loop);
+      };
+      rafId = requestAnimationFrame(loop);
+
+      // 3-second countdown
+      for (let i = 3; i > 0; i--) {
+        showOverlay(i.toString(), false);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      showOverlay('GO!', false);
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Actually start the game
+      gameStartTime = performance.now();
+      scene.setGameStartTime(gameStartTime);
+      run.start(gameStartTime);
+
       overlay.classList.add('hidden');
-      feedbackEl.textContent = '';
       pauseBtn.classList.remove('hidden');
       abandonBtn.classList.remove('hidden');
-      startBtn.disabled = true;
-
       audio = await startAudio({ deviceId: state.audio.deviceId });
       audio.onDetection(async (det) => {
-        if (!run) return;
+        if (!run || run.state !== 'running') return;
         
         const result = run.onDetection(det);
         if (result === 'accepted') {
@@ -288,9 +337,7 @@ export async function bootstrap(root) {
         }
       });
 
-      let currentWaves = notesResp.waves || [];
-      const gameStartTime = performance.now();
-      scene.setGameStartTime(gameStartTime);
+      setExpected();
 
       gameClient.startPolling((pollState) => {
         if (!pollState) return;
@@ -308,42 +355,6 @@ export async function bootstrap(root) {
         }
       }, 200);
 
-      const loop = (now) => {
-        if (!run) return;
-        
-        // Use visual collision detection as the primary failure source
-        if (run.state === 'running' && scene.checkCollision()) {
-          run.state = 'failed';
-        }
-
-        run.tick(now);
-        const exp = run.currentExpected();
-        if (exp) {
-          const rem = Math.max(0, run.deadlineAt - now);
-          timeFill.style.width = `${Math.round(100 * rem / run.timePerNoteMs)}%`;
-        }
-        if (run.state === 'succeeded') {
-          scene.showSuccess();
-          showOverlay('Success! Scale complete.');
-          cleanup();
-          return;
-        }
-        if (run.state === 'failed') {
-          showOverlay('Run failed! Collision detected or time ran out.');
-          cleanup();
-          return;
-        }
-
-        // Update waves and safe zones
-        if (currentWaves.length > 0) {
-          scene.setWaves(currentWaves, now);
-          safeZoneRenderer.update(currentWaves, 0, (track) => laneX(track, notesResp.num_lanes), now, gameStartTime, currentInstrument());
-        }
-
-        scene.render(now);
-        rafId = requestAnimationFrame(loop);
-      };
-      rafId = requestAnimationFrame(loop);
     } catch (err) {
       const code = (err && err.name) || '';
       if (code === 'NotAllowedError') {
@@ -367,8 +378,13 @@ export async function bootstrap(root) {
     startBtn.disabled = false;
   }
 
-  function showOverlay(msg) {
+  function showOverlay(msg, isMessage = true) {
     overlay.textContent = msg;
+    if (isMessage) {
+      overlay.classList.add('message');
+    } else {
+      overlay.classList.remove('message');
+    }
     overlay.classList.remove('hidden');
   }
 

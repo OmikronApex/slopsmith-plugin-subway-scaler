@@ -39,7 +39,7 @@ export class SafeZoneRenderer {
       }
 
       const x = laneXFn(wave.safe_track);
-      const elapsed = nowMs - gameStartTime - wave.spawn_time_ms;
+      const elapsed = Math.max(0, nowMs - gameStartTime - wave.spawn_time_ms);
       const z = -30 + (elapsed * wave.speed_px_per_ms * 0.5); 
       
       mesh.position.set(x, 0.05, z); 

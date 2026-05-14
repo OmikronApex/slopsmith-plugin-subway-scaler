@@ -246,7 +246,7 @@ export function createScene(canvas) {
 
     // Update wave positions
     for (const w of activeWaves.values()) {
-      const elapsed = nowMs - gameStartTime - w.data.spawn_time_ms;
+      const elapsed = Math.max(0, nowMs - gameStartTime - w.data.spawn_time_ms);
       // Z position: starts at SPAWN_Z and moves towards FRONT_Z
       // If speed_px_per_ms is given, we use it.
       const z = SPAWN_Z + (elapsed * w.data.speed_px_per_ms * 0.5); // scaling speed for visual

@@ -134,17 +134,9 @@ class GameEngine:
         if session.status != "running":
             return {"success": False, "error": "game_not_running"}
             
-        # Check deadline with 500ms grace period to account for latency and visual drift
-        if timing_ms > session.next_deadline_ms + 500:
-            self.fail_session(session, "deadline_exceeded")
-            return {
-                "success": False,
-                "error": "too_late",
-                "game_state": {
-                    "status": session.status,
-                    "score": session.current_score
-                }
-            }
+        # Check deadline: removed as failure should only occur on collision with a cart.
+        # We still keep next_deadline_ms internally for wave spacing.
+        pass
 
         expected_note = session.notes[session.current_note_index]
         if midi == expected_note.midi:
@@ -176,7 +168,6 @@ class GameEngine:
                 "next_wave": next_wave
             }
         else:
-            self.fail_session(session, "wrong_note")
             return {
                 "success": False, 
                 "error": "wrong_note",
@@ -194,13 +185,8 @@ class GameEngine:
         if session.status != "running":
             return
         
-        now_ms = int(time.time() * 1000)
-        elapsed_ms = now_ms - session.started_at_ms
-        
-        # Check for timeout (doing nothing)
-        # Use a generous grace period (1000ms) to avoid race conditions with poll latency
-        if elapsed_ms > session.next_deadline_ms + 1000:
-            self.fail_session(session, "timeout")
+        # Timeout removed: failure should only occur on collision with a cart (detected on frontend).
+        pass
 
     def generate_next_wave(self, session: GameSession, next_note: Note) -> CartWave:
         wave_idx = len(session.waves)
