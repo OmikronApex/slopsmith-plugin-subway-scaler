@@ -52,6 +52,8 @@ class Note(BaseModel):
     midi: int = Field(..., ge=21, le=108)
     name: str
     frequencyHz: float
+    fret: Optional[int] = None
+    string: Optional[int] = None
 
 
 class ScaleListResponse(BaseModel):
@@ -136,3 +138,28 @@ class ErrorBody(BaseModel):
 
 class ErrorResponse(BaseModel):
     error: ErrorBody
+
+class SpeedMultiplier(BaseModel):
+    current_value: float = 1.0
+    base_increment: float = 1.02
+    notes_played: int = 0
+
+class Track(BaseModel):
+    length: float
+    spawn_z: float
+    exit_boundary: float
+    interaction_point_z: float
+    queue_positions: list[float]
+
+class GameState(BaseModel):
+    carts: list[dict]
+    track: Track
+    speed_multiplier: SpeedMultiplier
+
+class CartWave(BaseModel):
+    wave_id: str
+    safe_track: int = Field(..., ge=0, le=11)
+    safe_string: Optional[int] = Field(None, ge=1, le=6)
+    spawn_time_ms: int
+    speed_px_per_ms: float
+    duration_ms: int

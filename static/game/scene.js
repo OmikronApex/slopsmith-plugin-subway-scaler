@@ -1,19 +1,20 @@
-// Subway-Surfer scene for Guitar Subway Scaler (v5).
+// Subway-Surfer scene for Guitar Subway Scaler (v6).
 //
-// Flat queue: one cart per row. Each cart sits at (laneX(fret, anchorFret), 0, queueZ(rowIndex)).
-// Body colour = Rocksmith string palette indexed by stringIdx. Roof = single dark gray.
-// Camera fixed at 45° top-down (cameraFor45Deg). Character slides X-only on accept.
+// Dynamic waves: carts come towards the player at Z=0.
+// Lanes (X-axis) = strings.
+// Character slides X-only between strings.
 
 import * as THREE from './vendor/three.module.js';
-import { laneX, queueZ, cameraFor45Deg } from './grid.js';
+import { laneX, cameraFor45Deg } from './grid.js';
 import { colourForString } from './stringPalette.js';
 
 const CHAR_Y = 1.1;
 const FRONT_Z = 0;
 const LATERAL_MS = 120;
 const CAMERA_DISTANCE = 9;
-const TRACK_PLANK_HALF_DEPTH = 30;
+const TRACK_DEPTH = 120;
 const ROOF_COLOUR = 0x444444;
+const SPAWN_Z = -30; // Where carts appear
 
 export function createScene(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -39,27 +40,12 @@ export function createScene(canvas) {
   const trackMat = new THREE.MeshStandardMaterial({ color: 0x2a3142 });
   const roofMat = new THREE.MeshStandardMaterial({ color: ROOF_COLOUR });
 
-  // Cached body materials, one per palette colour. Front cart uses a separate
-  // emissive-tinted clone (per-colour) so the highlight does not steal the string colour.
   const bodyMatByColour = new Map();
-  const activeMatByColour = new Map();
   function bodyMaterial(colourHex) {
     let m = bodyMatByColour.get(colourHex);
     if (!m) {
       m = new THREE.MeshStandardMaterial({ color: colourHex });
       bodyMatByColour.set(colourHex, m);
-    }
-    return m;
-  }
-  function activeMaterial(colourHex) {
-    let m = activeMatByColour.get(colourHex);
-    if (!m) {
-      m = new THREE.MeshStandardMaterial({
-        color: colourHex,
-        emissive: colourHex,
-        emissiveIntensity: 0.35,
-      });
-      activeMatByColour.set(colourHex, m);
     }
     return m;
   }
@@ -104,166 +90,148 @@ export function createScene(canvas) {
   scene.add(character);
 
   let instrument = null;
-  // Flat queue: carts[i] = { stringIdx, fret, colour, mesh } | null. Index = row.
-  let carts = [];
-  let trackPlanks = []; // { fret, mesh }
-  let trackLabels = []; // { fret, mesh }
-  let anchorFret = 0;
-
+  let tracks = []; // { mesh, label }
+  let activeWaves = new Map(); // wave_id -> { mesh, data }
+  
   let tween = null;
-  let falling = false;
   let succeeded = false;
   let lastTime = 0;
+  let gameStartTime = 0;
+  let baseFret = 0;
+  let numLanes = 6;
 
-  function clearScene() {
-    for (const t of trackPlanks) scene.remove(t.mesh);
-    trackPlanks = [];
-    for (const l of trackLabels) {
-      scene.remove(l.mesh);
-      if (l.mesh.material.map) l.mesh.material.map.dispose();
-      l.mesh.material.dispose();
+  function clearWaves() {
+    for (const w of activeWaves.values()) {
+      scene.remove(w.mesh);
     }
-    trackLabels = [];
-    for (const c of carts) if (c && c.mesh) scene.remove(c.mesh);
-    carts = [];
+    activeWaves.clear();
   }
 
-  function computeAnchor() {
-    let lo = Infinity;
-    for (const c of carts) if (c && c.fret < lo) lo = c.fret;
-    anchorFret = isFinite(lo) ? lo : 0;
+  function clearScene() {
+    for (const t of tracks) {
+      scene.remove(t.mesh);
+      scene.remove(t.label);
+    }
+    tracks = [];
+    clearWaves();
   }
 
   function rebuildTracks() {
-    for (const t of trackPlanks) scene.remove(t.mesh);
-    trackPlanks = [];
-    for (const l of trackLabels) {
-      scene.remove(l.mesh);
-      if (l.mesh.material.map) l.mesh.material.map.dispose();
-      l.mesh.material.dispose();
-    }
-    trackLabels = [];
-    if (carts.length === 0) return;
-
-    let min = Infinity;
-    let max = -Infinity;
-    for (const c of carts) {
-      if (!c) continue;
-      if (c.fret < min) min = c.fret;
-      if (c.fret > max) max = c.fret;
-    }
-    if (!isFinite(min)) return;
-
-    // Ensure we show at least the 4-fret "box" span if we have notes
-    if (max - min < 3) max = min + 3;
-
-    for (let fret = min; fret <= max; fret++) {
-      const x = laneX(fret, anchorFret);
-      const plank = new THREE.Mesh(
-        new THREE.BoxGeometry(1.4, 0.06, TRACK_PLANK_HALF_DEPTH * 2),
-        trackMat,
+    const count = numLanes;
+    for (let i = 0; i < count; i++) {
+      const x = laneX(i, count);
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(1.4, 0.06, TRACK_DEPTH),
+        trackMat
       );
-      plank.position.set(x, -0.05, -TRACK_PLANK_HALF_DEPTH + 4);
-      scene.add(plank);
-      trackPlanks.push({ fret, mesh: plank });
-
-      const label = makeTextSprite(fret.toString());
+      mesh.position.set(x, -0.05, -TRACK_DEPTH / 2 + 5);
+      scene.add(mesh);
+      
+      const label = makeTextSprite((baseFret + i).toString());
       label.position.set(x, 0.1, 1.8);
       scene.add(label);
-      trackLabels.push({ fret, mesh: label });
+      
+      tracks.push({ mesh, label });
     }
-
-    targetCameraX = (laneX(min, anchorFret) + laneX(max, anchorFret)) / 2;
+    targetCameraX = 0;
   }
 
-  function fretToX(fret) {
-    return laneX(fret, anchorFret);
-  }
-
-  function placeCarts() {
-    for (let i = 0; i < carts.length; i++) {
-      const c = carts[i];
-      if (!c) continue;
-      const isFront = i === 0;
-      const mat = isFront ? activeMaterial(c.colour) : bodyMaterial(c.colour);
-      if (!c.mesh) {
-        c.mesh = makeCart(mat);
-        scene.add(c.mesh);
-      } else if (c.mesh.children[0]) {
-        c.mesh.children[0].material = mat;
-      }
-      c.mesh.position.set(fretToX(c.fret), 0, queueZ(i));
-    }
-  }
-
-  function snapCharToFront() {
-    const front = carts[0];
-    if (!front) return;
-    character.position.x = fretToX(front.fret);
-    character.position.y = CHAR_Y;
-    character.position.z = queueZ(0) + 0.1;
+  function reset() {
+    clearWaves();
+    tween = null;
+    succeeded = false;
+    character.position.set(laneX(0, numLanes), CHAR_Y, FRONT_Z + 0.1);
+    character.rotation.set(0, 0, 0);
   }
 
   function setInstrument(inst) {
     instrument = inst;
     clearScene();
-    tween = null;
-    falling = false;
-    succeeded = false;
-    character.position.set(0, CHAR_Y, FRONT_Z + 0.1);
-  }
-
-  // positions: flat array of { stringIdx, fret } | null. One row per entry.
-  function setQueue(positions) {
-    for (const c of carts) if (c && c.mesh) scene.remove(c.mesh);
-    carts = positions.map(p => p
-      ? { stringIdx: p.stringIdx, fret: p.fret, colour: colourForString(p.stringIdx, instrument), mesh: null }
-      : null);
-    computeAnchor();
     rebuildTracks();
-    placeCarts();
-    snapCharToFront();
+    reset();
+    gameStartTime = performance.now();
   }
 
-  function appendQueue(position) {
-    carts.push(position
-      ? { stringIdx: position.stringIdx, fret: position.fret, colour: colourForString(position.stringIdx, instrument), mesh: null }
-      : null);
-    computeAnchor();
-    rebuildTracks();
-    placeCarts();
-  }
-
-  function advanceQueue() {
-    if (tween) {
-      character.position.x = tween.toX;
-      character.position.y = CHAR_Y;
-      tween = null;
+  function setWaves(waves, nowMs) {
+    const currentIds = new Set(waves.map(w => w.wave_id));
+    for (const [id, w] of activeWaves.entries()) {
+      if (!currentIds.has(id)) {
+        scene.remove(w.mesh);
+        activeWaves.delete(id);
+      }
     }
-    const consumed = carts.shift();
-    if (consumed && consumed.mesh) scene.remove(consumed.mesh);
 
-    computeAnchor();
-    rebuildTracks();
-    placeCarts();
-
-    const front = carts[0];
-    if (!front) return;
-    tween = {
-      fromX: character.position.x, toX: fretToX(front.fret),
-      durMs: LATERAL_MS,
-      startMs: performance.now(),
-    };
+    for (const waveData of waves) {
+      let w = activeWaves.get(waveData.wave_id);
+      if (!w) {
+        // In Subway Scaler, a wave consists of carts in ALL tracks EXCEPT the safe_track.
+        const group = new THREE.Group();
+        for (let i = 0; i < numLanes; i++) {
+          if (i === waveData.safe_track) continue;
+          const cart = makeCart(bodyMaterial(0x888888));
+          cart.position.x = laneX(i, numLanes);
+          group.add(cart);
+        }
+        scene.add(group);
+        w = { mesh: group, data: waveData };
+        activeWaves.set(waveData.wave_id, w);
+      }
+      w.data = waveData; // Update data (speed might change)
+    }
   }
 
-  function dropOffCliff() { falling = true; }
-  function showSuccess() { succeeded = true; }
-  // Legacy shims (older run-state wiring may still call these).
-  function setUpcomingNotes() {}
-  function jumpToNext() {}
-  function lateralLaneChange() {}
-  function rowJump() {}
-  function setCarts() {}
+  function moveToTrack(trackIdx, immediate = false) {
+    const toX = laneX(trackIdx, numLanes);
+    if (immediate) {
+      character.position.x = toX;
+      tween = null;
+    } else {
+      tween = {
+        fromX: character.position.x,
+        toX,
+        durMs: LATERAL_MS,
+        startMs: performance.now(),
+      };
+    }
+  }
+
+  function showSuccess() {
+    succeeded = true;
+  }
+
+  function setGameStartTime(time) {
+    gameStartTime = time;
+  }
+
+  function setBaseFret(f, nL = 6) {
+    baseFret = f;
+    numLanes = nL;
+    clearScene();
+    rebuildTracks();
+  }
+
+  function checkCollision() {
+    if (!instrument || succeeded) return false;
+    
+    const charX = character.position.x;
+    const charZ = character.position.z;
+    
+    for (const w of activeWaves.values()) {
+      const waveZ = w.mesh.position.z;
+      
+      // Carts are 1.3 deep, character is ~0.5 deep.
+      // Sum of half-depths = 0.65 + 0.25 = 0.9.
+      if (Math.abs(charZ - waveZ) < 0.8) {
+        // Potential collision! Check if we are in the safe lane.
+        const safeX = laneX(w.data.safe_track, numLanes);
+        // Lanes are 1.6 apart. If we are > 0.6 away from safe center, we are hitting a cart.
+        if (Math.abs(charX - safeX) > 0.6) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
 
   function render(nowMs) {
     const dt = lastTime ? Math.min(0.05, (nowMs - lastTime) / 1000) : 0.016;
@@ -276,15 +244,17 @@ export function createScene(canvas) {
       if (t >= 1) tween = null;
     }
 
-    if (falling) {
-      for (const t of trackPlanks) t.mesh.position.y -= dt * 8;
-      for (const l of trackLabels) l.mesh.position.y -= dt * 8;
-      for (const c of carts) if (c && c.mesh) c.mesh.position.y -= dt * 8;
-      character.position.y -= dt * 8;
+    // Update wave positions
+    for (const w of activeWaves.values()) {
+      const elapsed = Math.max(0, nowMs - gameStartTime - w.data.spawn_time_ms);
+      // Z position: starts at SPAWN_Z and moves towards FRONT_Z
+      // If speed_px_per_ms is given, we use it.
+      const z = SPAWN_Z + (elapsed * w.data.speed_px_per_ms * 0.5); // scaling speed for visual
+      w.mesh.position.z = z;
     }
+
     if (succeeded) character.rotation.y += dt * 2;
     
-    // Smoothly update camera X to target
     currentCameraX += (targetCameraX - currentCameraX) * 0.1;
     camera.position.x = currentCameraX;
     camera.lookAt(currentCameraX, 0, camBase.lookAt[2]);
@@ -293,25 +263,27 @@ export function createScene(canvas) {
   }
 
   return {
+    threeScene: scene,
     setInstrument,
-    setQueue,
-    appendQueue,
-    advanceQueue,
-    dropOffCliff,
+    setWaves,
+    moveToTrack,
     showSuccess,
-    setUpcomingNotes,
-    jumpToNext,
-    lateralLaneChange,
-    rowJump,
-    setCarts,
+    setGameStartTime,
+    setBaseFret,
+    checkCollision,
+    reset,
     render,
+    // Shims for old API
+    setQueue() {},
+    appendQueue() {},
+    advanceQueue() {},
+    dropOffCliff() {},
+    setUpcomingNotes() {},
     _state() {
-      let lo = Infinity;
-      for (const c of carts) if (c && c.fret < lo) lo = c.fret;
       return {
-        queueLen: carts.length,
-        trackCount: trackPlanks.length,
-        anchorFret: isFinite(lo) ? lo : null,
+        queueLen: activeWaves.size,
+        trackCount: tracks.length,
+        anchorFret: 0,
       };
     },
   };

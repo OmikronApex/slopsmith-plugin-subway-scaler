@@ -25,7 +25,6 @@ export class Run {
 
     this.state = 'idle';
     this.cursor = 0;
-    this.deadlineAt = 0;
     this.startedAt = 0;
     this.endedAt = null;
     this._pausedAt = 0;
@@ -37,7 +36,6 @@ export class Run {
     if (this.state !== 'idle') return;
     this.state = 'running';
     this.startedAt = nowMs;
-    this.deadlineAt = nowMs + this.timePerNoteMs;
   }
 
   currentExpected() {
@@ -46,7 +44,12 @@ export class Run {
   }
 
   upcoming(n) {
-    return this.sequence.slice(this.cursor, this.cursor + n);
+    const result = [];
+    if (!this.sequence || this.sequence.length === 0) return result;
+    for (let i = 0; i < n; i++) {
+      result.push(this.sequence[(this.cursor + i) % this.sequence.length]);
+    }
+    return result;
   }
 
   pause(nowMs) {
@@ -57,8 +60,6 @@ export class Run {
 
   resume(nowMs) {
     if (this.state !== 'paused') return;
-    const remaining = this.deadlineAt - this._pausedAt;
-    this.deadlineAt = nowMs + Math.max(0, remaining);
     this.state = 'running';
   }
 
@@ -69,11 +70,7 @@ export class Run {
   }
 
   tick(nowMs) {
-    if (this.state !== 'running') return;
-    if (nowMs >= this.deadlineAt) {
-      this.state = 'failed';
-      this.endedAt = nowMs;
-    }
+    // Primary failure is via scene.checkCollision() in main.js.
   }
 
   _matches(expectedMidi, detectedMidi) {
@@ -112,15 +109,9 @@ export class Run {
     if (!this._matches(expected.note.midi, det.note.midi)) return 'rejected';
 
     // Accept
-    this.cursor++;
+    this.cursor = (this.cursor + 1) % this.sequence.length;
     this._stableMidi = null;
     this._stableCount = 0;
-    if (this.cursor >= this.sequence.length) {
-      this.state = 'succeeded';
-      this.endedAt = Date.now();
-    } else {
-      this.deadlineAt = (typeof performance !== 'undefined' ? performance.now() : Date.now()) + this.timePerNoteMs;
-    }
     return 'accepted';
   }
 }
