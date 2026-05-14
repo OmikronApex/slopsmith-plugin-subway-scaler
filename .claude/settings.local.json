@@ -1,4 +1,7 @@
 {
+  "env": {
+    "CLAUDE_CODE_GIT_BASH_PATH": "C:\\Program Files\\Git\\git-bash.exe"
+  },
   "permissions": {
     "allow": [
       "PowerShell(.specify/scripts/powershell/setup-tasks.ps1 -Json)",
@@ -27,7 +30,13 @@
       "Bash(powershell -NoProfile -Command \".specify/scripts/powershell/setup-plan.ps1 -Json\")",
       "Bash(ConvertFrom-Json)",
       "PowerShell(.\\\\.specify\\\\scripts\\\\powershell\\\\setup-plan.ps1 -Json)",
-      "PowerShell(.\\\\.specify\\\\scripts\\\\powershell\\\\setup-tasks.ps1 -Json)"
+      "PowerShell(.\\\\.specify\\\\scripts\\\\powershell\\\\setup-tasks.ps1 -Json)",
+      "Bash(Get-ChildItem \"C:\\\\Users\\\\rkasp\\\\PycharmProjects\\\\slopsmith-plugin-subway-scaler\\\\specs\" -ErrorAction SilentlyContinue)",
+      "Bash(Select-Object -ExpandProperty Name)",
+      "Bash(bash \".specify/extensions/git/scripts/bash/create-new-feature.sh\" --json --short-name \"track-switching-game\" \"Rework the game so it is not a character jumping between subway carts, but a character avoiding subwaycarts by changing tracks\")",
+      "Bash(mkdir -p \"C:\\\\Users\\\\rkasp\\\\PycharmProjects\\\\slopsmith-plugin-subway-scaler\\\\specs\\\\007-track-switching-game\\\\checklists\")",
+      "Bash(bash \".specify/extensions/git/scripts/bash/auto-commit.sh\" \"after_specify\")",
+      "Bash(pwsh -Command \".\\\\.specify\\\\scripts\\\\powershell\\\\setup-plan.ps1 -Json\")"
     ]
   }
 }

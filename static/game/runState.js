@@ -46,7 +46,12 @@ export class Run {
   }
 
   upcoming(n) {
-    return this.sequence.slice(this.cursor, this.cursor + n);
+    const result = [];
+    if (!this.sequence || this.sequence.length === 0) return result;
+    for (let i = 0; i < n; i++) {
+      result.push(this.sequence[(this.cursor + i) % this.sequence.length]);
+    }
+    return result;
   }
 
   pause(nowMs) {
@@ -70,7 +75,9 @@ export class Run {
 
   tick(nowMs) {
     if (this.state !== 'running') return;
-    if (nowMs >= this.deadlineAt) {
+    // Primary failure is via scene.checkCollision() in main.js.
+    // This timer serves as a fallback/timeout.
+    if (nowMs >= this.deadlineAt + 1000) {
       this.state = 'failed';
       this.endedAt = nowMs;
     }
@@ -112,15 +119,10 @@ export class Run {
     if (!this._matches(expected.note.midi, det.note.midi)) return 'rejected';
 
     // Accept
-    this.cursor++;
+    this.cursor = (this.cursor + 1) % this.sequence.length;
     this._stableMidi = null;
     this._stableCount = 0;
-    if (this.cursor >= this.sequence.length) {
-      this.state = 'succeeded';
-      this.endedAt = Date.now();
-    } else {
-      this.deadlineAt = (typeof performance !== 'undefined' ? performance.now() : Date.now()) + this.timePerNoteMs;
-    }
+    this.deadlineAt = (typeof performance !== 'undefined' ? performance.now() : Date.now()) + this.timePerNoteMs;
     return 'accepted';
   }
 }

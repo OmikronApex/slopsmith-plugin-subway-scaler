@@ -26,7 +26,10 @@ class Tabulator:
     def _note_to_midi_pc(self, note_name: str) -> int:
         """Converts note name to pitch class (0-11)."""
         names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
-        standard = note_name.replace("Db", "C#").replace("Eb", "D#").replace("Gb", "F#").replace("Ab", "G#").replace("Bb", "A#")
+        # Strip octave if present
+        import re
+        base_name = re.sub(r"\d+", "", note_name)
+        standard = base_name.replace("Db", "C#").replace("Eb", "D#").replace("Gb", "F#").replace("Ab", "G#").replace("Bb", "A#")
         if standard not in names:
             raise ValueError(f"Invalid note name: {note_name}")
         return names.index(standard)
@@ -55,21 +58,25 @@ class Tabulator:
         # For bass E string (idx 4), A1 is fret 5.
         start_string_idx = num_strings  # 1-based index from High to Low
         start_fret = 0
+        found_preferred = False
         
         for s_idx in range(num_strings, 0, -1):
             open_midi = high_to_low[s_idx-1]
             open_pc = open_midi % 12
             fret = (root_pc - open_pc) % 12
-            # If we want A1 (33) on E1 (28), it's fret 5.
-            # My current PC-based logic (note_pc - open_pc)%12 gives 5.
             
-            # Use the lowest string that can play the root (preferring frets > 0 to avoid open strings if requested?)
-            # User wants 5,7,8 on E string. So start_string_idx=4, start_fret=5.
-            if fret >= 0:
+            # Prefer frets 1-12 over 0 if available on a lower string
+            if 1 <= fret <= 12:
                 start_string_idx = s_idx
                 start_fret = fret
-                # Break at first (lowest) string found
+                found_preferred = True
                 break
+            
+            # Fallback to fret 0 if nothing else found yet
+            if fret == 0 and not found_preferred:
+                start_string_idx = s_idx
+                start_fret = fret
+                # Don't break, keep looking for a string that gives a 1-12 fret
 
         current_string_idx = start_string_idx
         

@@ -6,6 +6,9 @@ import { startAudio, enumerateInputs } from './audio.js';
 import { Run, difficultyToTimePerNoteMs } from './runState.js';
 import { quantize, midiToName } from './notes.js';
 import { resolve as resolveFretboard } from './fretboard.js';
+import { GameClient } from './game-client.js';
+import { SafeZoneRenderer } from './ui/SafeZoneRenderer.js';
+import { laneX } from './grid.js';
 
 const API = '/api/plugins/subway-scaler';
 const STATIC = '/plugins/subway-scaler/static/game';
@@ -67,8 +70,6 @@ export async function bootstrap(root) {
   const state = {
     scaleId: settings.lastScaleId,
     rootMidi: settings.lastRootMidi,
-    octaves: settings.lastOctaves,
-    descending: false,
     difficulty: settings.lastDifficulty,
     strictOctave: settings.strictOctave,
     instrumentId: settings.instrumentId || 'guitar-standard',
@@ -87,14 +88,6 @@ export async function bootstrap(root) {
 
   const rootSelect = el('select', {}, ...rootSelectOptions(state.rootMidi, currentInstrument()));
   rootSelect.addEventListener('change', () => { state.rootMidi = parseInt(rootSelect.value, 10); });
-
-  const octSelect = el('select', {},
-    el('option', { value: '1', ...(state.octaves === 1 ? { selected: 'selected' } : {}) }, '1 octave'),
-    el('option', { value: '2', ...(state.octaves === 2 ? { selected: 'selected' } : {}) }, '2 octaves'));
-  octSelect.addEventListener('change', () => { state.octaves = parseInt(octSelect.value, 10); });
-
-  const descChk = el('input', { type: 'checkbox', ...(state.descending ? { checked: 'checked' } : {}) });
-  descChk.addEventListener('change', () => { state.descending = descChk.checked; });
 
   const diffSelect = el('select', {},
     ...['easy', 'medium', 'hard'].map(d =>
@@ -125,8 +118,6 @@ export async function bootstrap(root) {
 
   menu.appendChild(el('label', {}, 'Scale ', scaleSelect));
   menu.appendChild(el('label', {}, 'Root ', rootSelect));
-  menu.appendChild(el('label', {}, 'Octaves ', octSelect));
-  menu.appendChild(el('label', {}, 'Descending ', descChk));
   menu.appendChild(el('label', {}, 'Difficulty ', diffSelect));
   menu.appendChild(el('label', {}, 'Strict octave ', strictChk));
   menu.appendChild(el('label', {}, 'Instrument ', instrumentSelect));
@@ -171,33 +162,8 @@ export async function bootstrap(root) {
   root.appendChild(audioPanel);
 
   const scene = createScene(canvas);
-
-  const VISIBLE_ROWS = 8;
-  // Full per-sequence resolved positions. Indexed by note-sequence index.
-  let sequencePositions = [];
-
-  function buildSequencePositions(notes, inst) {
-    const out = [];
-    let prev = null;
-    for (const n of notes) {
-      const pos = resolveFretboard(n.midi, prev, inst);
-      out.push(pos);
-      if (pos) prev = pos;
-    }
-    return out;
-  }
-
-  // v5: flat 1-to-1 mapping of upcoming notes to scene rows.
-  function refreshSceneQueueFromRun() {
-    if (!run) return;
-    const start = run.cursor;
-    if (start >= sequencePositions.length) {
-      scene.setQueue([]);
-      return;
-    }
-    const slice = sequencePositions.slice(start, start + VISIBLE_ROWS);
-    scene.setQueue(slice);
-  }
+  const gameClient = new GameClient(API);
+  const safeZoneRenderer = new SafeZoneRenderer(scene.threeScene || scene.scene);
 
   const debugOn = typeof window !== 'undefined' && /[?&]debug=1/.test(window.location.search);
   const fretHud = debugOn ? el('div', { class: 'fret-hud', style: 'position:absolute;top:4px;right:4px;background:rgba(0,0,0,.6);color:#fff;font:11px monospace;padding:2px 4px;border-radius:3px;' }) : null;
@@ -241,10 +207,11 @@ export async function bootstrap(root) {
   async function start() {
     const warning = null; // computed below from sequence
     try {
-      const notesResp = await fetchJson(
-        `${API}/scales/${encodeURIComponent(state.scaleId)}/notes?root_midi=${state.rootMidi}&octaves=${state.octaves}&descending=${state.descending}`,
-      );
-      const rangeMsg = rangeWarning(notesResp.notes);
+      const notesResp = await gameClient.start(state.scaleId, state.difficulty, {
+        rootMidi: state.rootMidi,
+        instrumentId: state.instrumentId
+      });
+      const rangeMsg = rangeWarning(notesResp.notes || []);
       if (rangeMsg) {
         showOverlay(`Cannot start: ${rangeMsg}`);
         return;
@@ -253,7 +220,6 @@ export async function bootstrap(root) {
       const merged = {
         lastScaleId: state.scaleId,
         lastRootMidi: state.rootMidi,
-        lastOctaves: state.octaves,
         lastDifficulty: state.difficulty,
         strictOctave: state.strictOctave,
         instrumentId: state.instrumentId,
@@ -268,6 +234,14 @@ export async function bootstrap(root) {
 
       // Apply selected instrument before the run starts; reset resolver history.
       applyInstrument();
+      if (notesResp.base_fret !== undefined) {
+        scene.setBaseFret(notesResp.base_fret, notesResp.num_lanes);
+      }
+      scene.reset();
+      safeZoneRenderer.reset();
+      if (notesResp.initial_track !== undefined) {
+        scene.moveToTrack(notesResp.initial_track, true);
+      }
       prevFretPos = null;
 
       const timePerNoteMs = difficultyToTimePerNoteMs(state.difficulty);
@@ -280,9 +254,6 @@ export async function bootstrap(root) {
         confidenceThreshold: state.audio.confidenceThreshold,
       });
       run.start(performance.now());
-      // Resolve the full sequence to (string, fret) positions and seed the scene queue.
-      sequencePositions = buildSequencePositions(notesResp.notes, currentInstrument());
-      refreshSceneQueueFromRun();
       setExpected();
       overlay.classList.add('hidden');
       feedbackEl.textContent = '';
@@ -291,18 +262,22 @@ export async function bootstrap(root) {
       startBtn.disabled = true;
 
       audio = await startAudio({ deviceId: state.audio.deviceId });
-      audio.onDetection(det => {
+      audio.onDetection(async (det) => {
         if (!run) return;
-        if (fretHud && det && det.note) {
-          const st = scene._state ? scene._state() : null;
-          fretHud.textContent = `${det.note.name}` + (st ? `  q=${st.queueLen} tracks=${st.trackCount} f=${st.activeFret}` : '');
-        }
+        
         const result = run.onDetection(det);
         if (result === 'accepted') {
-          // Advance the visible queue. Recompute visible rows from the new cursor —
-          // simpler than incrementally appending under the row-grouped model.
-          scene.advanceQueue();
-          refreshSceneQueueFromRun();
+          // Sync with backend
+          const playResult = await gameClient.playNote(det.note.midi, performance.now() - run.startedAt);
+          if (playResult && playResult.success) {
+            if (playResult.game_state && playResult.game_state.current_track !== undefined) {
+              scene.moveToTrack(playResult.game_state.current_track);
+            }
+            if (playResult.next_wave) {
+              currentWaves.push(playResult.next_wave);
+            }
+          }
+
           feedbackEl.textContent = '✓';
           setExpected();
         } else if (result === 'rejected') {
@@ -313,8 +288,34 @@ export async function bootstrap(root) {
         }
       });
 
+      let currentWaves = notesResp.waves || [];
+      const gameStartTime = performance.now();
+      scene.setGameStartTime(gameStartTime);
+
+      gameClient.startPolling((pollState) => {
+        if (!pollState) return;
+        
+        if (pollState.score !== undefined) {
+           feedbackEl.textContent = `Score: ${pollState.score}`;
+        }
+        
+        if (pollState.game_state && pollState.game_state.waves) {
+            currentWaves = pollState.game_state.waves;
+        }
+
+        if (pollState.status === 'failed') {
+          run.state = 'failed';
+        }
+      }, 200);
+
       const loop = (now) => {
         if (!run) return;
+        
+        // Use visual collision detection as the primary failure source
+        if (run.state === 'running' && scene.checkCollision()) {
+          run.state = 'failed';
+        }
+
         run.tick(now);
         const exp = run.currentExpected();
         if (exp) {
@@ -328,11 +329,17 @@ export async function bootstrap(root) {
           return;
         }
         if (run.state === 'failed') {
-          scene.dropOffCliff();
-          showOverlay('Failed — carts off the cliff.');
+          showOverlay('Run failed! Collision detected or time ran out.');
           cleanup();
           return;
         }
+
+        // Update waves and safe zones
+        if (currentWaves.length > 0) {
+          scene.setWaves(currentWaves, now);
+          safeZoneRenderer.update(currentWaves, 0, (track) => laneX(track, notesResp.num_lanes), now, gameStartTime, currentInstrument());
+        }
+
         scene.render(now);
         rafId = requestAnimationFrame(loop);
       };
@@ -351,6 +358,7 @@ export async function bootstrap(root) {
   }
 
   function cleanup() {
+    gameClient.stopPolling();
     if (rafId) cancelAnimationFrame(rafId);
     rafId = null;
     if (audio) { audio.stop(); audio = null; }
@@ -436,7 +444,6 @@ export async function bootstrap(root) {
       const merged = {
         lastScaleId: state.scaleId,
         lastRootMidi: state.rootMidi,
-        lastOctaves: state.octaves,
         lastDifficulty: state.difficulty,
         strictOctave: state.strictOctave,
         instrumentId: state.instrumentId,

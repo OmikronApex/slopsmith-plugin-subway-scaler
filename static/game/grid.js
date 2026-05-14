@@ -14,12 +14,8 @@ export function queueZ(queueIndex) {
   return z === 0 ? 0 : z;
 }
 
-function fretDistance(n) {
-  return n;
-}
-
-export function laneX(fret, activeFret) {
-  return LANE_X_SCALE * (fretDistance(fret) - fretDistance(activeFret));
+export function laneX(stringIdx, stringCount) {
+  return LANE_X_SCALE * (stringIdx - (stringCount - 1) / 2);
 }
 
 export function rowZ(stringIdx) {

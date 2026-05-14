@@ -1,0 +1,62 @@
+import * as THREE from '../vendor/three.module.js';
+import { colourForString } from '../stringPalette.js';
+
+/**
+ * SafeZoneRenderer handles the visualization of safe tracks.
+ * Renders colored highlights on the subway tracks to guide the player.
+ */
+export class SafeZoneRenderer {
+  constructor(scene) {
+    this.scene = scene;
+    this.zones = new Map(); // wave_id -> mesh
+    this.geometry = new THREE.PlaneGeometry(1.2, 30);
+    this.material = new THREE.MeshStandardMaterial({
+      color: 0x00ff00,
+      transparent: true,
+      opacity: 0.4,
+      side: THREE.DoubleSide
+    });
+  }
+
+  update(waves, currentTrack, laneXFn, nowMs, gameStartTime, instrument) {
+    // Clean up old waves
+    const currentIds = new Set(waves.map(w => w.wave_id));
+    for (const [id, mesh] of this.zones.entries()) {
+      if (!currentIds.has(id)) {
+        this.scene.remove(mesh);
+        this.zones.delete(id);
+      }
+    }
+
+    // Add/Update current waves
+    waves.forEach(wave => {
+      let mesh = this.zones.get(wave.wave_id);
+      if (!mesh) {
+        mesh = new THREE.Mesh(this.geometry, this.material.clone());
+        mesh.rotation.x = -Math.PI / 2;
+        this.scene.add(mesh);
+        this.zones.set(wave.wave_id, mesh);
+      }
+
+      const x = laneXFn(wave.safe_track);
+      const elapsed = nowMs - gameStartTime - wave.spawn_time_ms;
+      const z = -30 + (elapsed * wave.speed_px_per_ms * 0.5); 
+      
+      mesh.position.set(x, 0.05, z); 
+      
+      // Safe zone color corresponds to the string used
+      // Tabulator uses string 1 = highest pitch, so invert: lowest string → idx 0 (Red)
+      const stringCount = (instrument && instrument.stringCount) || 6;
+      const paletteIdx = wave.safe_string ? (stringCount - wave.safe_string) : 0;
+      const color = colourForString(paletteIdx, instrument);
+      mesh.material.color.setHex(color);
+    });
+  }
+
+  reset() {
+    for (const mesh of this.zones.values()) {
+      this.scene.remove(mesh);
+    }
+    this.zones.clear();
+  }
+}
