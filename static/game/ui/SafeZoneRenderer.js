@@ -9,7 +9,7 @@ export class SafeZoneRenderer {
   constructor(scene) {
     this.scene = scene;
     this.zones = new Map(); // wave_id -> mesh
-    this.geometry = new THREE.PlaneGeometry(1.2, 30);
+    this.geometry = new THREE.PlaneGeometry(1.2, 20);
     this.material = new THREE.MeshStandardMaterial({
       color: 0x00ff00,
       transparent: true,
@@ -40,9 +40,10 @@ export class SafeZoneRenderer {
 
       const x = laneXFn(wave.safe_track);
       const elapsed = Math.max(0, nowMs - gameStartTime - wave.spawn_time_ms);
-      const z = -30 + (elapsed * wave.speed_px_per_ms * 0.5); 
+      const z = -40 + (elapsed * wave.speed_px_per_ms * 0.5);
       
       mesh.position.set(x, 0.05, z); 
+      mesh.visible = elapsed > 0;
       
       // Safe zone color corresponds to the string used
       // Tabulator uses string 1 = highest pitch, so invert: lowest string → idx 0 (Red)

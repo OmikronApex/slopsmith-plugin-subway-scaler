@@ -163,3 +163,36 @@ class CartWave(BaseModel):
     spawn_time_ms: int
     speed_px_per_ms: float
     duration_ms: int
+
+
+VariantSide = Literal["LEFT", "RIGHT"]
+VariantStateLit = Literal["SPAWNING", "ACTIVE", "SWITCH_TRIGGERED", "SWITCHED", "TIMEOUT"]
+WindowStateLit = Literal["OPEN", "SWITCHED", "CLOSED"]
+
+
+class VariantTrackSet(BaseModel):
+    """A proposed alternate track set anchored at a different root_midi.
+
+    Spec: 008-track-variants. Offered at milestones (e.g., every 2 octave loops).
+    `base_lane` is the lane index of the variant's root note (the lane the
+    player must "land" on to switch) — used by the renderer to draw a target
+    highlight.
+    """
+    variant_id: str
+    root_midi: int = Field(..., ge=21, le=108)
+    base_fret: int = Field(..., ge=0, le=24)
+    num_lanes: int = Field(..., ge=3, le=12)
+    base_lane: int = Field(0, ge=0, le=11)
+    base_string: int = Field(1, ge=1, le=6)
+    side: VariantSide
+    state: VariantStateLit = "SPAWNING"
+    spawned_at_ms: int
+
+
+class SwitchWindow(BaseModel):
+    """Time-limited window during which playing the variant root triggers a switch."""
+    variant_id: str
+    opened_at_ms: int
+    deadline_ms: int
+    state: WindowStateLit = "OPEN"
+    trigger_midi: int

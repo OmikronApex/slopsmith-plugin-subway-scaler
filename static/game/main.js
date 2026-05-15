@@ -5,7 +5,6 @@ import { createScene } from './scene.js';
 import { startAudio, enumerateInputs } from './audio.js';
 import { Run, difficultyToTimePerNoteMs } from './runState.js';
 import { quantize, midiToName } from './notes.js';
-import { resolve as resolveFretboard } from './fretboard.js';
 import { GameClient } from './game-client.js';
 import { SafeZoneRenderer } from './ui/SafeZoneRenderer.js';
 import { laneX } from './grid.js';
@@ -97,6 +96,11 @@ export async function bootstrap(root) {
   const strictChk = el('input', { type: 'checkbox', ...(state.strictOctave ? { checked: 'checked' } : {}) });
   strictChk.addEventListener('change', () => { state.strictOctave = strictChk.checked; });
 
+  // Debug: invincible mode disables collision-driven failure (testing only).
+  state.invincible = false;
+  const invincibleChk = el('input', { type: 'checkbox' });
+  invincibleChk.addEventListener('change', () => { state.invincible = invincibleChk.checked; });
+
   const instrumentSelect = el('select', {},
     ...instruments.map(i => el('option', { value: i.id, ...(i.id === state.instrumentId ? { selected: 'selected' } : {}) }, i.name)));
   instrumentSelect.addEventListener('change', () => { 
@@ -120,6 +124,7 @@ export async function bootstrap(root) {
   menu.appendChild(el('label', {}, 'Root ', rootSelect));
   menu.appendChild(el('label', {}, 'Difficulty ', diffSelect));
   menu.appendChild(el('label', {}, 'Strict octave ', strictChk));
+  menu.appendChild(el('label', { title: 'Debug: ignore cart collisions' }, 'Invincible ', invincibleChk));
   menu.appendChild(el('label', {}, 'Instrument ', instrumentSelect));
   menu.appendChild(startBtn);
   menu.appendChild(audioBtn);
@@ -130,6 +135,7 @@ export async function bootstrap(root) {
   const hud = el('div', { class: 'hud' });
   const expectedEl = el('div', { class: 'expected' });
   const feedbackEl = el('div', { class: 'feedback' });
+  const variantHud = el('div', { class: 'variant-indicator hidden' });
   const overlay = el('div', { class: 'overlay hidden' });
   const pauseBtn = el('button', { class: 'pause-btn hidden' }, 'Pause');
   const abandonBtn = el('button', { class: 'abandon-btn hidden' }, 'Abandon');
@@ -137,7 +143,7 @@ export async function bootstrap(root) {
   hud.appendChild(feedbackEl);
   hud.appendChild(pauseBtn);
   hud.appendChild(abandonBtn);
-  const gameWrap = el('div', { class: 'game-wrap' }, canvas, hud, overlay);
+  const gameWrap = el('div', { class: 'game-wrap' }, canvas, hud, variantHud, overlay);
   root.appendChild(gameWrap);
 
   // --- Audio settings panel ---
@@ -181,6 +187,51 @@ export async function bootstrap(root) {
   let audio = null;
   let rafId = null;
   let prevFretPos = null;
+
+  // Variant state mirrors backend (feature 008-track-variants).
+  // shownVariantId tracks which variant we've already rendered in the scene.
+  let proposePending = false;
+  let timeoutPending = false;
+  let shownVariantId = null;
+  let activeVariant = null; // last seen from polling
+  let activeWindow = null;
+
+  // Lightweight oscillator cue (no asset). Plays a 3-note arpeggio when a
+  // variant appears so the player gets an audible "switch available" signal.
+  let cueCtx = null;
+  function playVariantCue() {
+    try {
+      if (!cueCtx) cueCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const now = cueCtx.currentTime;
+      const freqs = [523.25, 659.25, 783.99]; // C5, E5, G5 major triad
+      freqs.forEach((f, i) => {
+        const osc = cueCtx.createOscillator();
+        const gain = cueCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = f;
+        osc.connect(gain).connect(cueCtx.destination);
+        const start = now + i * 0.08;
+        gain.gain.setValueAtTime(0, start);
+        gain.gain.linearRampToValueAtTime(0.18, start + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + 0.25);
+        osc.start(start);
+        osc.stop(start + 0.3);
+      });
+    } catch (_) { /* audio unavailable: cue is best-effort */ }
+  }
+
+  function updateVariantHud() {
+    if (!activeVariant || !activeWindow) {
+      variantHud.classList.add('hidden');
+      variantHud.textContent = '';
+      return;
+    }
+    const remain = Math.max(0, activeWindow.deadline_ms - Date.now());
+    const secs = (remain / 1000).toFixed(1);
+    const name = midiToName(activeVariant.root_midi);
+    variantHud.classList.remove('hidden');
+    variantHud.textContent = `Switch → ${name} (${activeVariant.side.toLowerCase()}) ${secs}s`;
+  }
 
   function rangeWarning(notes) {
     const inst = currentInstrument();
@@ -265,8 +316,9 @@ export async function bootstrap(root) {
       const loop = (now) => {
         if (!run) return;
         
-        // Use visual collision detection as the primary failure source
-        if (run.state === 'running' && scene.checkCollision()) {
+        // Use visual collision detection as the primary failure source.
+        // Invincible mode (debug): skip the failure transition entirely.
+        if (run.state === 'running' && !state.invincible && scene.checkCollision()) {
           run.state = 'failed';
         }
 
@@ -313,7 +365,21 @@ export async function bootstrap(root) {
       audio = await startAudio({ deviceId: state.audio.deviceId });
       audio.onDetection(async (det) => {
         if (!run || run.state !== 'running') return;
-        
+
+        // Variant accept: if a switch window is open and the detected midi
+        // matches the variant's trigger, ask backend to finalize the switch.
+        if (activeVariant && activeWindow && det && det.note && det.note.midi === activeWindow.trigger_midi) {
+          const resp = await gameClient.acceptVariant(det.note.midi);
+          if (resp && resp.success) {
+            scene.acceptVariantTracks({ num_lanes: resp.num_lanes, base_fret: resp.base_fret });
+            shownVariantId = null;
+            activeVariant = null;
+            activeWindow = null;
+            updateVariantHud();
+            return; // Don't treat as a normal expected-note input.
+          }
+        }
+
         const result = run.onDetection(det);
         if (result === 'accepted') {
           // Sync with backend
@@ -341,11 +407,11 @@ export async function bootstrap(root) {
 
       gameClient.startPolling((pollState) => {
         if (!pollState) return;
-        
+
         if (pollState.score !== undefined) {
            feedbackEl.textContent = `Score: ${pollState.score}`;
         }
-        
+
         if (pollState.game_state && pollState.game_state.waves) {
             currentWaves = pollState.game_state.waves;
         }
@@ -353,6 +419,52 @@ export async function bootstrap(root) {
         if (pollState.status === 'failed') {
           run.state = 'failed';
         }
+
+        // Variant lifecycle (feature 008-track-variants).
+        activeVariant = pollState.active_variant || null;
+        activeWindow = pollState.active_window || null;
+
+        // Milestone trigger: ask backend to propose a variant if eligible.
+        const loops = pollState.octave_loops_completed || 0;
+        if (!activeVariant && !proposePending && loops >= 2) {
+          proposePending = true;
+          gameClient.proposeVariant().then((resp) => {
+            proposePending = false;
+            if (resp && resp.success) {
+              // Will be picked up on next poll; render eagerly too.
+              activeVariant = resp.variant;
+              activeWindow = resp.window;
+              if (shownVariantId !== resp.variant.variant_id) {
+                scene.proposeVariantTracks(resp.variant);
+                playVariantCue();
+                shownVariantId = resp.variant.variant_id;
+              }
+            }
+          }).catch(() => { proposePending = false; });
+        }
+
+        // Render variant if backend reports one we haven't shown yet.
+        if (activeVariant && shownVariantId !== activeVariant.variant_id) {
+          scene.proposeVariantTracks(activeVariant);
+          playVariantCue();
+          shownVariantId = activeVariant.variant_id;
+        }
+
+        // Timeout: deadline reached, ask backend to finalize.
+        if (activeVariant && activeWindow && !timeoutPending && Date.now() > activeWindow.deadline_ms) {
+          timeoutPending = true;
+          gameClient.timeoutVariant().then((resp) => {
+            timeoutPending = false;
+            if (resp && resp.success) {
+              scene.dismissVariantTracks();
+              shownVariantId = null;
+              activeVariant = null;
+              activeWindow = null;
+            }
+          }).catch(() => { timeoutPending = false; });
+        }
+
+        updateVariantHud();
       }, 200);
 
     } catch (err) {
@@ -376,6 +488,14 @@ export async function bootstrap(root) {
     pauseBtn.classList.add('hidden');
     abandonBtn.classList.add('hidden');
     startBtn.disabled = false;
+    // Variant cleanup.
+    if (scene.dismissVariantTracks) scene.dismissVariantTracks();
+    shownVariantId = null;
+    activeVariant = null;
+    activeWindow = null;
+    proposePending = false;
+    timeoutPending = false;
+    updateVariantHud();
   }
 
   function showOverlay(msg, isMessage = true) {

@@ -36,7 +36,13 @@
       "Bash(bash \".specify/extensions/git/scripts/bash/create-new-feature.sh\" --json --short-name \"track-switching-game\" \"Rework the game so it is not a character jumping between subway carts, but a character avoiding subwaycarts by changing tracks\")",
       "Bash(mkdir -p \"C:\\\\Users\\\\rkasp\\\\PycharmProjects\\\\slopsmith-plugin-subway-scaler\\\\specs\\\\007-track-switching-game\\\\checklists\")",
       "Bash(bash \".specify/extensions/git/scripts/bash/auto-commit.sh\" \"after_specify\")",
-      "Bash(pwsh -Command \".\\\\.specify\\\\scripts\\\\powershell\\\\setup-plan.ps1 -Json\")"
+      "Bash(pwsh -Command \".\\\\.specify\\\\scripts\\\\powershell\\\\setup-plan.ps1 -Json\")",
+      "Bash(./.specify/extensions/git/scripts/bash/create-new-feature.sh --json --short-name \"track-variants\" \"Add variation to the game by giving the player the option to switch to a higher or lower base note at certain points during the game loop\")",
+      "Bash(mkdir -p specs/008-track-variants)",
+      "Bash(./.specify/extensions/git/scripts/bash/auto-commit.sh after_specify)",
+      "Bash(./.specify/scripts/bash/setup-plan.sh --json)",
+      "Bash(./.specify/extensions/git/scripts/bash/auto-commit.sh after_plan)",
+      "Bash(./.specify/extensions/git/scripts/bash/auto-commit.sh after_tasks)"
     ]
   }
 }

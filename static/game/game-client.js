@@ -69,4 +69,34 @@ export class GameClient {
       this.pollingInterval = null;
     }
   }
+
+  async proposeVariant() {
+    if (!this.sessionId) return null;
+    const r = await fetch(`${this.baseUrl}/game/${this.sessionId}/variant/propose`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    return await r.json();
+  }
+
+  async acceptVariant(midi) {
+    if (!this.sessionId) return null;
+    const r = await fetch(`${this.baseUrl}/game/${this.sessionId}/variant/accept`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ midi }),
+    });
+    return await r.json();
+  }
+
+  async timeoutVariant() {
+    if (!this.sessionId) return null;
+    const r = await fetch(`${this.baseUrl}/game/${this.sessionId}/variant/timeout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    return await r.json();
+  }
 }

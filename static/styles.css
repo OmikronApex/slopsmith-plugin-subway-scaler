@@ -17,3 +17,6 @@
 .subway-scaler .audio-panel.hidden { display: none; }
 .subway-scaler .tuner { font-family: monospace; font-size: 1.2rem; }
 .subway-scaler .error-panel { background: #7f1d1d; color: white; padding: 0.75rem 1rem; border-radius: 8px; }
+/* Variant switching HUD (feature 008-track-variants) */
+.subway-scaler .variant-indicator { position: absolute; top: 8px; left: 8px; background: rgba(20, 50, 30, 0.85); border: 1px solid #4CAF50; color: #d8f5d8; font-family: monospace; font-size: 0.9rem; padding: 4px 10px; border-radius: 6px; z-index: 900; pointer-events: none; }
+.subway-scaler .variant-indicator.hidden { display: none; }
