@@ -21,12 +21,16 @@ def _play_loops(client, session_id, loops=2):
     from services.game_router import engine
     sess = engine.get_session(session_id)
     n = len(sess.notes)
+    t = 0
     for _ in range(loops):
         for _ in range(n):
             expected = sess.notes[sess.current_note_index].midi
-            r = client.post(f"{BASE}/{session_id}/play-note", json={"midi": expected, "timing_ms": 0})
+            r = client.post(f"{BASE}/{session_id}/play-note", json={"midi": expected, "timing_ms": t})
             assert r.status_code == 200
-            assert r.json()["success"], r.text
+            res = r.json()
+            assert res["success"], res.get("error")
+            # Advance timing to satisfy the gate
+            t = res["game_state"]["required_timestamp_ms"] + 1
 
 
 def test_full_variant_accept_flow_via_http(client):
@@ -47,7 +51,9 @@ def test_full_variant_accept_flow_via_http(client):
     propose = client.post(f"{BASE}/{sid}/variant/propose", json={"now_ms": 1000}).json()
     assert propose["success"] is True
     new_root = propose["variant"]["root_midi"]
-    assert new_root != original_root
+    side = propose["variant"]["side"]
+    expected_shift = 5 if side == "RIGHT" else 2
+    assert abs(new_root - original_root) == expected_shift
 
     # Poll exposes the active variant.
     state2 = client.get(f"{BASE}/{sid}").json()
@@ -65,7 +71,10 @@ def test_full_variant_accept_flow_via_http(client):
     state3 = client.get(f"{BASE}/{sid}").json()
     assert state3["active_variant"] is None
     assert state3["active_window"] is None
-    assert state3["next_expected_note"]["midi"] == new_root
+    # We now expect the second note (index 1) of the new scale
+    # Because index 0 (the root) was already "played" to accept the variant.
+    assert state3["current_note_index"] == 1
+    assert state3["next_expected_note"]["midi"] == accept["notes"][1]["midi"]
 
 
 def test_full_variant_timeout_flow_via_http(client):

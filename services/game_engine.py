@@ -18,9 +18,11 @@ from services.instruments import get as get_instrument
 # Variant feature: offer a variant track set every N completed octave loops.
 OCTAVES_PER_VARIANT = 2
 # Default switch window = next cart wave duration (clamped 4-8s).
-DEFAULT_WINDOW_MS = 6000
-# Variant root is shifted by a fifth (7 semitones) by default; alternate ± per side.
-VARIANT_SHIFT_SEMITONES = 7
+DEFAULT_WINDOW_MS = 10000
+# Variant root is shifted by a full note (2 semitones) for lower pitch,
+# and 5 semitones for higher pitch (to avoid overlap).
+VARIANT_SHIFT_UP = 5
+VARIANT_SHIFT_DOWN = 2
 
 class GameSession(BaseModel):
     session_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -42,6 +44,8 @@ class GameSession(BaseModel):
     # generated, independent of player input — waves come continuously.
     next_wave_note_index: int = 1
     total_waves_spawned: int = 0
+    total_notes_played: int = 0
+    required_timestamp_ms: int = 0
     # --- Variant switching (008-track-variants) ---
     root_midi: int = 60
     instrument_id: str = "guitar-standard"
@@ -132,8 +136,11 @@ class GameEngine:
         
         first_wave = CartWave(
             wave_id="w-0",
+            wave_index=0,
             safe_track=first_safe_track,
             safe_string=notes[0].string if notes else None,
+            safe_midi=notes[0].midi if notes else None,
+            note_name=notes[0].name if notes else None,
             spawn_time_ms=0,
             speed_px_per_ms=base_speed,
             duration_ms=base_duration
@@ -168,10 +175,19 @@ class GameEngine:
         # We still keep next_deadline_ms internally for wave spacing.
         pass
 
+        if timing_ms < session.required_timestamp_ms:
+            return {"success": False, "error": "too_early"}
+
         expected_note = session.notes[session.current_note_index]
         if midi == expected_note.midi:
             session.current_score += 100
             prev_idx = session.current_note_index
+            # Find the wave that was spawned for this note instance to set the next gate.
+            target_wave = next((w for w in session.waves if w.wave_index == session.total_notes_played), None)
+            if target_wave:
+                session.required_timestamp_ms = target_wave.spawn_time_ms + target_wave.duration_ms
+            
+            session.total_notes_played += 1
             session.current_note_index = (session.current_note_index + 1) % len(session.notes)
             # Detect completion of an asc+desc octave loop (last index → 0).
             if session.current_note_index == 0 and prev_idx == len(session.notes) - 1:
@@ -195,6 +211,7 @@ class GameEngine:
                     "status": session.status,
                     "score": session.current_score,
                     "current_track": session.current_track,
+                    "required_timestamp_ms": session.required_timestamp_ms,
                 },
             }
         else:
@@ -268,7 +285,7 @@ class GameEngine:
         
         # spawn_time_ms_i = sum(j=0 to i-1) of (base_duration / multiplier_j)
         # We can calculate this from the last wave's spawn time and multiplier
-        last_wave = session.waves[-1]
+        
         # We need the multiplier that was active when last wave was generated.
         # This is slightly tricky. Let's assume the gap is based on the current (increased) multiplier.
         # Actually, to be precise, the gap between w_{i-1} and w_i should be base_duration / mult_{i-1}.
@@ -283,8 +300,11 @@ class GameEngine:
         
         return CartWave(
             wave_id=f"w-{session.total_waves_spawned}",
+            wave_index=session.total_waves_spawned,
             safe_track=safe_track,
             safe_string=next_note.string,
+            safe_midi=next_note.midi,
+            note_name=next_note.name,
             spawn_time_ms=int(spawn_time_ms),
             speed_px_per_ms=current_speed,
             duration_ms=int(current_focus_duration)
@@ -330,36 +350,55 @@ class GameEngine:
 
     @staticmethod
     def _candidate_root_for_side(current_root: int, side: str) -> int:
-        # RIGHT = higher pitch; LEFT = lower pitch. Shift by a fifth (7 semitones).
-        return current_root + VARIANT_SHIFT_SEMITONES if side == "RIGHT" else current_root - VARIANT_SHIFT_SEMITONES
+        # RIGHT = higher pitch; LEFT = lower pitch.
+        if side == "RIGHT":
+            return current_root + VARIANT_SHIFT_UP
+        else:
+            return current_root - VARIANT_SHIFT_DOWN
 
-    def _variant_geometry(self, root_midi: int, instrument: Instrument):
+    def _variant_geometry(self, root_midi: int, instrument: Instrument, target_num_lanes: int, preferred_string: Optional[int] = None):
         """Compute variant base_fret + num_lanes anchored at the root.
 
         Independent of tabulator (which wraps pitch-class mod 12 and can yield
         wildly wide spans). Anchor the variant at the lowest string where the
-        root sits in fret 1-12 and reserve a tight 5-fret window from there.
+        root sits in fret 1-12 and reserve a tight window matching target_num_lanes.
         The variant base note is therefore always at lane 0 of the variant set,
         which makes the "play the new root to switch" prompt visually obvious.
         Returns (base_fret, num_lanes, base_lane_index, base_string_1based_from_high)
         or None when unplayable.
         """
-        # tuning is LOW→HIGH; scan from lowest string upward.
-        for low_idx, open_midi in enumerate(instrument.tuning):
+        def try_idx(idx):
+            open_midi = instrument.tuning[idx]
             fret = root_midi - open_midi
             if 1 <= fret <= 12:
                 base_fret = fret
-                # 5-fret window, clamped to the fretboard.
-                num_lanes = 5
+                # Match target_num_lanes, clamped to the fretboard.
+                num_lanes = target_num_lanes
                 if base_fret + num_lanes - 1 > instrument.maxFret:
                     num_lanes = max(3, instrument.maxFret - base_fret + 1)
-                base_string = instrument.stringCount - low_idx  # 1-based from HIGH
+                base_string = instrument.stringCount - idx  # 1-based from HIGH
                 return base_fret, num_lanes, 0, base_string
+            return None
+
+        # 1. Try preferred string first (keep it on the same string if possible)
+        if preferred_string is not None:
+            low_idx = instrument.stringCount - preferred_string
+            if 0 <= low_idx < len(instrument.tuning):
+                res = try_idx(low_idx)
+                if res:
+                    return res
+
+        # 2. scan from lowest string upward.
+        for low_idx in range(len(instrument.tuning)):
+            res = try_idx(low_idx)
+            if res:
+                return res
+
         # Fall back to open string if no fretted placement fits.
         for low_idx, open_midi in enumerate(instrument.tuning):
             if root_midi == open_midi:
                 base_string = instrument.stringCount - low_idx
-                return 0, 5, 0, base_string
+                return 0, target_num_lanes, 0, base_string
         return None
 
     def _fret_in_window(self, midi: int, instrument: Instrument, base_fret: int, num_lanes: int):
@@ -396,10 +435,12 @@ class GameEngine:
             return {"success": False, "error": "no_playable_variant"}
 
         new_root = self._candidate_root_for_side(session.root_midi, side)
-        # Clean geometry: tight 5-fret window anchored at the variant's root
-        # fret. Independent of tabulator's pitch-class wrap, which can produce
-        # 11-lane variants for roots like C that wrap from fret 8 to fret 0.
-        geom = self._variant_geometry(new_root, instrument)
+        # Clean geometry: tight window matching the session's track count
+        # anchored at the variant's root fret. Independent of tabulator's 
+        # pitch-class wrap, which can produce 11-lane variants for roots like C 
+        # that wrap from fret 8 to fret 0.
+        preferred_string = session.notes[0].string if session.notes else None
+        geom = self._variant_geometry(new_root, instrument, session.num_lanes, preferred_string=preferred_string)
         if geom is None:
             return {"success": False, "error": "no_playable_variant"}
         v_base_fret, v_num_lanes, v_base_lane, v_base_string = geom
@@ -451,9 +492,15 @@ class GameEngine:
         session.active_window.state = "SWITCHED"
 
         # Reseat session on the new root using the variant's clean geometry.
+        old_base_fret = session.base_fret
         session.root_midi = variant.root_midi
         session.base_fret = variant.base_fret
         session.num_lanes = variant.num_lanes
+
+        # Adjust existing waves to stay on the same absolute frets relative to the new base_fret.
+        fret_diff = old_base_fret - session.base_fret
+        for wave in session.waves:
+            wave.safe_track += fret_diff
         # Rebuild notes for the new root and assign frets within the variant
         # window (so safe_track calculation stays consistent with the rendered
         # tracks). Skip tabulator here — it wraps modulo 12 and would push notes
@@ -468,12 +515,27 @@ class GameEngine:
                 note.string = s
                 note.fret = f
         session.notes = new_notes
-        session.current_note_index = 0
+        session.current_note_index = 1 % len(new_notes) if new_notes else 0
+        session.total_notes_played = 1
+        session.required_timestamp_ms = 0 # Allow next note immediately after switch
         session.current_track = variant.base_lane
         session.octave_loops_completed = 0
+        
+        # Reset speed to difficulty base (multiplier 1.0) to give the player a breather.
+        session.speed_multiplier = 1.0
+        
+        # Clear all waves so the new scale starts fresh.
+        now_real = int(time.time() * 1000)
+        game_now = now_real - session.started_at_ms
+        session.waves = []
+        
+        # Start next wave after a small delay (base_duration)
+        duration_map = {"easy": 4000, "medium": 2500, "hard": 1500}
+        base_duration = duration_map.get(session.difficulty, 2500)
+        session.next_deadline_ms = game_now + base_duration
+
         # Restart the wave-spawn cursor so upcoming waves match the new scale.
-        # Existing waves keep flowing through the switch; new waves from the
-        # lookahead generator will use the new base_fret / num_lanes.
+        # Starting from index 1 because the root (index 0) was just played.
         session.next_wave_note_index = 1 % len(new_notes) if new_notes else 0
 
         # Finalize variant state.
@@ -498,6 +560,7 @@ class GameEngine:
             "base_fret": session.base_fret,
             "num_lanes": session.num_lanes,
             "notes": [n.model_dump() for n in session.notes],
+            "required_timestamp_ms": session.required_timestamp_ms,
         }
 
     def timeout_variant(self, session_id: str, now_ms: Optional[int] = None) -> dict:

@@ -114,7 +114,8 @@ async def get_session_route(session_id: str):
         "status": session.status,
         "game_state": {
             **game_state.model_dump(),
-            "waves": waves
+            "waves": waves,
+            "required_timestamp_ms": session.required_timestamp_ms,
         },
         "score": session.current_score,
         "current_note_index": session.current_note_index,

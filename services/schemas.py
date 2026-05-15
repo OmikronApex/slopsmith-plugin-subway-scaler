@@ -158,8 +158,11 @@ class GameState(BaseModel):
 
 class CartWave(BaseModel):
     wave_id: str
+    wave_index: int = 0
     safe_track: int = Field(..., ge=0, le=11)
     safe_string: Optional[int] = Field(None, ge=1, le=6)
+    safe_midi: Optional[int] = None
+    note_name: Optional[str] = None
     spawn_time_ms: int
     speed_px_per_ms: float
     duration_ms: int

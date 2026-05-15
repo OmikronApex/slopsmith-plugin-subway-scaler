@@ -97,7 +97,9 @@ def test_accept_switches_root_and_regenerates_notes(client):
     _force_milestone(client, s["session_id"])
     p = client.post(f"{BASE}/{s['session_id']}/variant/propose", json={"now_ms": 1000}).json()
     new_root = p["variant"]["root_midi"]
-    assert new_root != original_root
+    side = p["variant"]["side"]
+    expected_shift = 5 if side == "RIGHT" else 2
+    assert abs(new_root - original_root) == expected_shift
     r = client.post(
         f"{BASE}/{s['session_id']}/variant/accept",
         json={"midi": new_root, "now_ms": 1500},
