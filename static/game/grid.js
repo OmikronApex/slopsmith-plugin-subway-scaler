@@ -8,6 +8,7 @@ export const LANE_X_SCALE = 1.6;
 export const ROW_DZ = 3.0;
 export const WINDOW = 9;
 export const QUEUE_DZ = 2.2;
+export const SPAWN_Z = -100;
 
 export function queueZ(queueIndex) {
   const z = -queueIndex * QUEUE_DZ;
@@ -23,11 +24,21 @@ export function rowZ(stringIdx) {
   return z === 0 ? 0 : z;
 }
 
-// Camera placement that achieves a 45° downward pitch toward (0, 0, lookAtZ).
-// At distance d, set camera at (0, d, d + lookAtZ) so the line from camera to
-// lookAt has equal Y-drop and Z-distance ⇒ 45° pitch.
+// Camera placement for a given pitch angle (degrees) toward (0, 0, lookAtZ).
+// pitchDeg = 0 is horizontal, 90 is looking straight down.
+// distance is the Euclidean distance from the lookAt point.
+export function cameraForPitch(pitchDeg, distance, lookAtZ = -2) {
+  const rad = (pitchDeg * Math.PI) / 180;
+  const y = distance * Math.sin(rad);
+  const zRel = distance * Math.cos(rad);
+  return { x: 0, y, z: zRel + lookAtZ, lookAt: [0, 0, lookAtZ], pitchDeg };
+}
+
+// Legacy helper for 45° pitch.
 export function cameraFor45Deg(distance, lookAtZ = -2) {
-  return { x: 0, y: distance, z: distance + lookAtZ, lookAt: [0, 0, lookAtZ] };
+  // To match old behavior where distance was the component:
+  // old Y = distance, old Zrel = distance => true distance = sqrt(2) * distance.
+  return cameraForPitch(45, distance * Math.SQRT2, lookAtZ);
 }
 
 // Compute the visible window of lanes centred on `activeFret`, clamped to [0, maxFret].

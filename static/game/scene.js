@@ -1,20 +1,23 @@
-// Subway-Surfer scene for Guitar Subway Scaler (v6).
+// Subway-Surfer scene for Guitar Subway Scaler (v6.3 - safezone alignment).
 //
 // Dynamic waves: carts come towards the player at Z=0.
 // Lanes (X-axis) = strings.
 // Character slides X-only between strings.
 
 import * as THREE from './vendor/three.module.js';
-import { laneX, cameraFor45Deg } from './grid.js';
+import { laneX, cameraForPitch, SPAWN_Z } from './grid.js';
 import { colourForString } from './stringPalette.js';
 
 const CHAR_Y = 1.1;
 const FRONT_Z = 0;
 const LATERAL_MS = 120;
-const CAMERA_DISTANCE = 9;
+const CAMERA_PITCH = 30; // Shallower angle (deg) to see more upcoming track
+const CAMERA_DISTANCE = 15; // Euclidean distance
+const CAMERA_DISTANCE_VARIANT = 32; // Euclidean distance pulled back
 const TRACK_DEPTH = 120;
 const ROOF_COLOUR = 0x444444;
-const SPAWN_Z = -30; // Where carts appear
+const VARIANT_GAP = 3.5; // Lateral gap (world units) between primary and variant track set
+const VARIANT_TINT = 0x3a5a3a; // Greenish tint to mark variant tracks
 
 export function createScene(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -22,9 +25,9 @@ export function createScene(canvas) {
   renderer.setClearColor(0x101a2a);
 
   const scene = new THREE.Scene();
-  scene.fog = new THREE.Fog(0x101a2a, 25, 70);
+  scene.fog = new THREE.Fog(0x101a2a, 35, 100);
 
-  const camBase = cameraFor45Deg(CAMERA_DISTANCE);
+  const camBase = cameraForPitch(CAMERA_PITCH, CAMERA_DISTANCE);
   const camera = new THREE.PerspectiveCamera(55, (canvas.width / canvas.height) || 16 / 9, 0.1, 200);
   camera.position.set(camBase.x, camBase.y, camBase.z);
   camera.lookAt(camBase.lookAt[0], camBase.lookAt[1], camBase.lookAt[2]);
@@ -92,13 +95,25 @@ export function createScene(canvas) {
   let instrument = null;
   let tracks = []; // { mesh, label }
   let activeWaves = new Map(); // wave_id -> { mesh, data }
-  
+
+  // Variant tracks (feature 008-track-variants): a second track group offered
+  // at milestones. Positioned at +X (RIGHT) or -X (LEFT) of the primary set.
+  let variantTracks = []; // { mesh, label }
+  let variantOffsetX = 0; // 0 when no variant active
+  let variantTintMat = new THREE.MeshStandardMaterial({ color: VARIANT_TINT, transparent: true, opacity: 0 });
+  let variantBaseHighlight = null; // glowing marker on the variant base note lane
+  let variantBaseHighlightMat = null; // built per-variant with the correct string colour
+  let variantFade = null; // { from, to, startMs, durMs }
+
   let tween = null;
   let succeeded = false;
   let lastTime = 0;
   let gameStartTime = 0;
   let baseFret = 0;
   let numLanes = 6;
+  // Camera framing for variant overlay.
+  let targetCameraDistance = CAMERA_DISTANCE;
+  let currentCameraDistance = CAMERA_DISTANCE;
 
   function clearWaves() {
     for (const w of activeWaves.values()) {
@@ -134,6 +149,9 @@ export function createScene(canvas) {
       tracks.push({ mesh, label });
     }
     targetCameraX = 0;
+    currentCameraX = 0;
+    targetCameraDistance = CAMERA_DISTANCE;
+    currentCameraDistance = CAMERA_DISTANCE;
   }
 
   function reset() {
@@ -142,6 +160,108 @@ export function createScene(canvas) {
     succeeded = false;
     character.position.set(laneX(0, numLanes), CHAR_Y, FRONT_Z + 0.1);
     character.rotation.set(0, 0, 0);
+    targetCameraX = 0;
+    currentCameraX = 0;
+    targetCameraDistance = CAMERA_DISTANCE;
+    currentCameraDistance = CAMERA_DISTANCE;
+    variantFade = null;
+    variantTintMat.opacity = 0;
+    if (variantBaseHighlightMat) variantBaseHighlightMat.opacity = 0;
+  }
+
+  function clearVariantTracks() {
+    for (const t of variantTracks) {
+      scene.remove(t.mesh);
+      scene.remove(t.label);
+    }
+    variantTracks = [];
+    if (variantBaseHighlight) {
+      scene.remove(variantBaseHighlight);
+      variantBaseHighlight = null;
+    }
+  }
+
+  function buildTrackGroup(numLanesV, baseFretV, originX, mat) {
+    const out = [];
+    for (let i = 0; i < numLanesV; i++) {
+      const x = originX + laneX(i, numLanesV);
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(1.4, 0.06, TRACK_DEPTH),
+        mat
+      );
+      mesh.position.set(x, -0.05, -TRACK_DEPTH / 2 + 5);
+      scene.add(mesh);
+      const label = makeTextSprite((baseFretV + i).toString());
+      label.position.set(x, 0.1, 1.8);
+      scene.add(label);
+      out.push({ mesh, label });
+    }
+    return out;
+  }
+
+  function proposeVariantTracks(variant) {
+    // variant: { side: "LEFT"|"RIGHT", num_lanes, base_fret, base_lane, root_midi, ... }
+    if (variantTracks.length > 0) return; // already shown
+    const sign = variant.side === "RIGHT" ? 1 : -1;
+    const primaryHalf = numLanes * 0.8;
+    const variantHalf = variant.num_lanes * 0.8;
+    variantOffsetX = sign * (primaryHalf + VARIANT_GAP + variantHalf);
+    // Reset shared material to transparent before building so fade-in is visible.
+    variantTintMat.opacity = 0;
+    variantTracks = buildTrackGroup(variant.num_lanes, variant.base_fret, variantOffsetX, variantTintMat);
+    // Target highlight: a glowing marker coloured to match the string the
+    // variant's root note is actually played on. variant.base_string is
+    // 1-based from HIGH; colourForString expects 0-based LOW→HIGH.
+    const baseLane = typeof variant.base_lane === 'number' ? variant.base_lane : 0;
+    const baseLaneX = variantOffsetX + laneX(baseLane, variant.num_lanes);
+    const stringHigh1 = typeof variant.base_string === 'number' ? variant.base_string : 1;
+    const strCount = (instrument && instrument.stringCount) || 6;
+    const stringLow0 = strCount - stringHigh1;
+    const highlightColour = colourForString(stringLow0, instrument);
+    variantBaseHighlightMat = new THREE.MeshStandardMaterial({
+      color: highlightColour,
+      emissive: highlightColour,
+      emissiveIntensity: 0.4,
+      transparent: true,
+      opacity: 0,
+    });
+    variantBaseHighlight = new THREE.Mesh(
+      new THREE.BoxGeometry(1.4, 0.18, TRACK_DEPTH * 0.5),
+      variantBaseHighlightMat,
+    );
+    variantBaseHighlight.position.set(baseLaneX, 0.04, -TRACK_DEPTH * 0.25 + 2);
+    scene.add(variantBaseHighlight);
+    variantFade = { from: 0, to: 1, startMs: performance.now(), durMs: 500 };
+    // Reframe: zoom out and pan to midpoint.
+    targetCameraDistance = CAMERA_DISTANCE_VARIANT;
+    targetCameraX = variantOffsetX / 2;
+  }
+
+  function dismissVariantTracks() {
+    // Trigger a fade-out; defer actual removal until opacity reaches 0.
+    if (variantTracks.length === 0) return;
+    variantFade = { from: variantTintMat.opacity, to: 0, startMs: performance.now(), durMs: 500, removeOnEnd: true };
+    targetCameraDistance = CAMERA_DISTANCE;
+    targetCameraX = 0;
+  }
+
+  function acceptVariantTracks(newPrimary) {
+    // newPrimary: { num_lanes, base_fret } from /variant/accept response.
+    // Remove primary tracks and promote variant geometry to primary by rebuilding.
+    for (const t of tracks) {
+      scene.remove(t.mesh);
+      scene.remove(t.label);
+    }
+    tracks = [];
+    clearVariantTracks();
+    baseFret = newPrimary.base_fret;
+    numLanes = newPrimary.num_lanes;
+    rebuildTracks();
+    variantOffsetX = 0;
+    targetCameraDistance = CAMERA_DISTANCE;
+    targetCameraX = 0;
+    // Snap character to its (new) starting lane; runState will drive subsequent moves.
+    character.position.x = laneX(0, numLanes);
   }
 
   function setInstrument(inst) {
@@ -251,12 +371,34 @@ export function createScene(canvas) {
       // If speed_px_per_ms is given, we use it.
       const z = SPAWN_Z + (elapsed * w.data.speed_px_per_ms * 0.5); // scaling speed for visual
       w.mesh.position.z = z;
+      w.mesh.visible = elapsed > 0;
     }
 
     if (succeeded) character.rotation.y += dt * 2;
     
+    // Variant fade tween (transparent material opacity). Drives both the
+    // track-set tint and the base-lane highlight in lockstep.
+    if (variantFade) {
+      const t = Math.min(1, (nowMs - variantFade.startMs) / variantFade.durMs);
+      const eased = 1 - (1 - t) * (1 - t); // ease-out
+      const v = variantFade.from + (variantFade.to - variantFade.from) * eased;
+      variantTintMat.opacity = v;
+      if (variantBaseHighlightMat) variantBaseHighlightMat.opacity = v * 0.8;
+      if (t >= 1) {
+        if (variantFade.removeOnEnd) {
+          clearVariantTracks();
+          variantOffsetX = 0;
+        }
+        variantFade = null;
+      }
+    }
+
     currentCameraX += (targetCameraX - currentCameraX) * 0.1;
+    currentCameraDistance += (targetCameraDistance - currentCameraDistance) * 0.08;
+    const rad = (CAMERA_PITCH * Math.PI) / 180;
     camera.position.x = currentCameraX;
+    camera.position.y = currentCameraDistance * Math.sin(rad);
+    camera.position.z = currentCameraDistance * Math.cos(rad) + camBase.lookAt[2];
     camera.lookAt(currentCameraX, 0, camBase.lookAt[2]);
 
     renderer.render(scene, camera);
@@ -273,6 +415,9 @@ export function createScene(canvas) {
     checkCollision,
     reset,
     render,
+    proposeVariantTracks,
+    dismissVariantTracks,
+    acceptVariantTracks,
     // Shims for old API
     setQueue() {},
     appendQueue() {},

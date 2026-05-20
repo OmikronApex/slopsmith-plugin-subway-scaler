@@ -1,13 +1,9 @@
 from fastapi import APIRouter, HTTPException
 from services.schemas import Track, GameState, SpeedMultiplier, Note
-from services.speed_service import SpeedService
-from services.note_service import NoteService
 from services.game_engine import GameEngine
 
 router = APIRouter(prefix="/api/plugins/subway-scaler/game", tags=["game"])
 engine = GameEngine()
-speed_service = SpeedService()
-note_service: NoteService = None
 
 @router.get("/notes/{note_id}")
 async def get_note_timing(note_id: str):
@@ -44,7 +40,7 @@ async def start_game(payload: dict):
         
     track = Track(
         length=20.0,
-        spawn_z=-20.0,
+        spawn_z=-50.0,
         exit_boundary=0.0,
         interaction_point_z=-5.0,
         queue_positions=[-5.0, -10.0]
@@ -98,7 +94,7 @@ async def get_session_route(session_id: str):
     
     track = Track(
         length=20.0,
-        spawn_z=-20.0,
+        spawn_z=-50.0,
         exit_boundary=0.0,
         interaction_point_z=-5.0,
         queue_positions=[-5.0, -10.0]
@@ -111,23 +107,57 @@ async def get_session_route(session_id: str):
     )
     
     # Return all waves so frontend can render them
-    waves = session.waves[-10:] # Return last 10 waves
+    waves = session.waves
     
     return {
         "session_id": session.session_id,
         "status": session.status,
         "game_state": {
             **game_state.model_dump(),
-            "waves": waves
+            "waves": waves,
+            "required_timestamp_ms": session.required_timestamp_ms,
         },
         "score": session.current_score,
         "current_note_index": session.current_note_index,
-        "next_expected_note": session.notes[session.current_note_index] if session.notes else None
+        "next_expected_note": session.notes[session.current_note_index] if session.notes else None,
+        # Variant exposure (feature 008-track-variants).
+        "octave_loops_completed": session.octave_loops_completed,
+        "active_variant": session.active_variant.model_dump() if session.active_variant else None,
+        "active_window": session.active_window.model_dump() if session.active_window else None,
     }
 
-@router.post("/reset")
-async def reset_game():
-    """Resets the speed multiplier and game state.
-    """
-    speed_service.reset()
-    return {"status": "reset"}
+# -----------------------------------------------------------------------------
+# Variant switching (feature 008-track-variants)
+# -----------------------------------------------------------------------------
+
+@router.post("/{session_id}/variant/propose")
+async def propose_variant(session_id: str, payload: dict | None = None):
+    """Offer a variant track set if a milestone is reached."""
+    now_ms = (payload or {}).get("now_ms") if payload else None
+    result = engine.propose_variant(session_id, now_ms=now_ms)
+    if not result["success"] and result.get("error") == "session_not_found":
+        raise HTTPException(status_code=404, detail="Session not found")
+    return result
+
+
+@router.post("/{session_id}/variant/accept")
+async def accept_variant(session_id: str, payload: dict):
+    """Accept the active variant by playing its root MIDI within the switch window."""
+    midi = payload.get("midi")
+    now_ms = payload.get("now_ms")
+    if midi is None:
+        raise HTTPException(status_code=400, detail="midi is required")
+    result = engine.accept_variant(session_id, midi, now_ms=now_ms)
+    if not result["success"] and result.get("error") == "session_not_found":
+        raise HTTPException(status_code=404, detail="Session not found")
+    return result
+
+
+@router.post("/{session_id}/variant/timeout")
+async def timeout_variant(session_id: str, payload: dict | None = None):
+    """Mark the active variant as timed out (deadline passed)."""
+    now_ms = (payload or {}).get("now_ms") if payload else None
+    result = engine.timeout_variant(session_id, now_ms=now_ms)
+    if not result["success"] and result.get("error") == "session_not_found":
+        raise HTTPException(status_code=404, detail="Session not found")
+    return result

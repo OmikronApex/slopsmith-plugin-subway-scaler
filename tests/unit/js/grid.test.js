@@ -1,23 +1,25 @@
 import { describe, it, expect } from 'vitest';
-import { laneX, rowZ, windowedLanes, LANE_X_SCALE, ROW_DZ, WINDOW, cameraFor45Deg } from '../../../static/game/grid.js';
+import { laneX, rowZ, windowedLanes, LANE_X_SCALE, ROW_DZ, WINDOW, cameraFor45Deg, cameraForPitch } from '../../../static/game/grid.js';
 
 describe('grid.laneX', () => {
-  it('places the active fret at world-X 0', () => {
-    for (const active of [0, 5, 12, 19]) {
-      expect(laneX(active, active)).toBeCloseTo(0, 9);
+  it('places the middle lane at world-X 0', () => {
+    for (const count of [1, 3, 5, 11]) {
+      const middle = (count - 1) / 2;
+      expect(laneX(middle, count)).toBeCloseTo(0, 9);
     }
   });
 
-  it('lower frets are to the left, higher frets to the right', () => {
-    const active = 7;
-    expect(laneX(active - 1, active)).toBeLessThan(0);
-    expect(laneX(active + 1, active)).toBeGreaterThan(0);
+  it('lower indices are to the left, higher indices to the right', () => {
+    const count = 5;
+    const middle = 2;
+    expect(laneX(middle - 1, count)).toBeLessThan(0);
+    expect(laneX(middle + 1, count)).toBeGreaterThan(0);
   });
 
-  it('lane X is monotonically increasing in fret', () => {
-    const active = 7;
+  it('lane X is monotonically increasing in index', () => {
+    const count = 10;
     const xs = [];
-    for (let f = active - 4; f <= active + 4; f++) xs.push(laneX(f, active));
+    for (let i = 0; i < count; i++) xs.push(laneX(i, count));
     for (let i = 1; i < xs.length; i++) expect(xs[i]).toBeGreaterThan(xs[i - 1]);
   });
 
@@ -45,6 +47,17 @@ describe('grid.rowZ', () => {
   });
 });
 
+describe('grid.cameraForPitch', () => {
+  it('Y drop follows sin and Z distance follows cos', () => {
+    const dist = 10;
+    const pitch = 30;
+    const cam = cameraForPitch(pitch, dist, -2);
+    const rad = (pitch * Math.PI) / 180;
+    expect(cam.y).toBeCloseTo(dist * Math.sin(rad), 9);
+    expect(cam.z - cam.lookAt[2]).toBeCloseTo(dist * Math.cos(rad), 9);
+  });
+});
+
 describe('grid.cameraFor45Deg', () => {
   it('Y drop equals Z distance to lookAt point (45° pitch invariant)', () => {
     const cam = cameraFor45Deg(8);
@@ -57,8 +70,8 @@ describe('grid.cameraFor45Deg', () => {
   it('camera sits at (0, distance, distance + lookAtZ)', () => {
     const cam = cameraFor45Deg(8, -2);
     expect(cam.x).toBe(0);
-    expect(cam.y).toBe(8);
-    expect(cam.z).toBe(6);
+    expect(cam.y).toBeCloseTo(8, 9);
+    expect(cam.z).toBeCloseTo(6, 9);
     expect(cam.lookAt).toEqual([0, 0, -2]);
   });
 });

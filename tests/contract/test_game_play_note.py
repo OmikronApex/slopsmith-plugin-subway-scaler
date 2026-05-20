@@ -20,4 +20,5 @@ def test_game_play_note_contract(client):
     data = response.json()
     assert "success" in data
     assert "game_state" in data
-    assert "next_wave" in data
+    # next_wave was returned by the legacy "jumping" mechanic; waves now spawn
+    # continuously via update_session_state regardless of player input.

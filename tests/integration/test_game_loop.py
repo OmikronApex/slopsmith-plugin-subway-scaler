@@ -24,7 +24,7 @@ def test_game_loop_integration(client):
         
         play_resp = client.post(f"/api/plugins/subway-scaler/game/{session_id}/play-note", json={
             "midi": current_expected_midi,
-            "timing_ms": 100 * (i + 1)
+            "timing_ms": 10000 * (i + 1)
         })
         assert play_resp.status_code == 200
         assert play_resp.json()["success"] is True
