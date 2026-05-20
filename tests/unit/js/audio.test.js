@@ -3,7 +3,7 @@ import { enumerateInputs } from '../../../static/game/audio.js';
 
 describe('enumerateInputs', () => {
   beforeEach(() => {
-    globalThis.navigator = {
+    vi.stubGlobal('navigator', {
       mediaDevices: {
         enumerateDevices: vi.fn().mockResolvedValue([
           { kind: 'audioinput', deviceId: 'mic1', label: 'Internal Mic' },
@@ -12,11 +12,11 @@ describe('enumerateInputs', () => {
           { kind: 'videoinput', deviceId: 'cam1', label: 'Webcam' },
         ]),
       },
-    };
+    });
   });
 
   afterEach(() => {
-    delete globalThis.navigator;
+    vi.unstubAllGlobals();
   });
 
   it('returns only audioinput devices', async () => {
@@ -28,7 +28,7 @@ describe('enumerateInputs', () => {
   });
 
   it('returns empty when mediaDevices missing', async () => {
-    globalThis.navigator = {};
+    vi.stubGlobal('navigator', {});
     const inputs = await enumerateInputs();
     expect(inputs).toEqual([]);
   });

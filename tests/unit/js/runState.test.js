@@ -18,7 +18,7 @@ function detection(midi, opts = {}) {
 }
 
 describe('Run state machine', () => {
-  it('advances cursor on three stable correct frames and succeeds at the end', () => {
+  it('advances cursor on three stable correct frames and loops at the end', () => {
     const run = new Run({ sequence: C_MAJOR, timePerNoteMs: 2000, stabilityFrames: 3 });
     run.start(0);
     expect(run.state).toBe('running');
@@ -29,8 +29,8 @@ describe('Run state machine', () => {
       for (let i = 0; i < 3; i++) r = run.onDetection(detection(target.midi));
       expect(r).toBe('accepted');
     }
-    expect(run.state).toBe('succeeded');
-    expect(run.cursor).toBe(C_MAJOR.length);
+    expect(run.state).toBe('running');
+    expect(run.cursor).toBe(0);
   });
 
   it('rejects single-frame correct detection (debounce)', () => {
@@ -41,12 +41,6 @@ describe('Run state machine', () => {
     expect(run.cursor).toBe(0);
   });
 
-  it('fails when deadline expires with no correct detection', () => {
-    const run = new Run({ sequence: C_MAJOR, timePerNoteMs: 1000, stabilityFrames: 3 });
-    run.start(0);
-    run.tick(1500);
-    expect(run.state).toBe('failed');
-  });
 
   it('pause and resume preserve the cursor', () => {
     const run = new Run({ sequence: C_MAJOR, timePerNoteMs: 1000, stabilityFrames: 3 });

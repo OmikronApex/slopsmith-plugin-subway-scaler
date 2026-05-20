@@ -532,7 +532,7 @@ class GameEngine:
         # Start next wave after a small delay (base_duration)
         duration_map = {"easy": 4000, "medium": 2500, "hard": 1500}
         base_duration = duration_map.get(session.difficulty, 2500)
-        session.next_deadline_ms = game_now + base_duration
+        session.next_deadline_ms = game_now
 
         # Restart the wave-spawn cursor so upcoming waves match the new scale.
         # Starting from index 1 because the root (index 0) was just played.

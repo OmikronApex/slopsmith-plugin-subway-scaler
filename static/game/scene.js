@@ -1,21 +1,21 @@
-// Subway-Surfer scene for Guitar Subway Scaler (v6).
+// Subway-Surfer scene for Guitar Subway Scaler (v6.3 - safezone alignment).
 //
 // Dynamic waves: carts come towards the player at Z=0.
 // Lanes (X-axis) = strings.
 // Character slides X-only between strings.
 
 import * as THREE from './vendor/three.module.js';
-import { laneX, cameraFor45Deg } from './grid.js';
+import { laneX, cameraForPitch, SPAWN_Z } from './grid.js';
 import { colourForString } from './stringPalette.js';
 
 const CHAR_Y = 1.1;
 const FRONT_Z = 0;
 const LATERAL_MS = 120;
-const CAMERA_DISTANCE = 9;
-const CAMERA_DISTANCE_VARIANT = 14; // Pulled back to fit both track sets
+const CAMERA_PITCH = 30; // Shallower angle (deg) to see more upcoming track
+const CAMERA_DISTANCE = 15; // Euclidean distance
+const CAMERA_DISTANCE_VARIANT = 32; // Euclidean distance pulled back
 const TRACK_DEPTH = 120;
 const ROOF_COLOUR = 0x444444;
-const SPAWN_Z = -50; // Where carts appear
 const VARIANT_GAP = 3.5; // Lateral gap (world units) between primary and variant track set
 const VARIANT_TINT = 0x3a5a3a; // Greenish tint to mark variant tracks
 
@@ -25,9 +25,9 @@ export function createScene(canvas) {
   renderer.setClearColor(0x101a2a);
 
   const scene = new THREE.Scene();
-  scene.fog = new THREE.Fog(0x101a2a, 25, 70);
+  scene.fog = new THREE.Fog(0x101a2a, 35, 100);
 
-  const camBase = cameraFor45Deg(CAMERA_DISTANCE);
+  const camBase = cameraForPitch(CAMERA_PITCH, CAMERA_DISTANCE);
   const camera = new THREE.PerspectiveCamera(55, (canvas.width / canvas.height) || 16 / 9, 0.1, 200);
   camera.position.set(camBase.x, camBase.y, camBase.z);
   camera.lookAt(camBase.lookAt[0], camBase.lookAt[1], camBase.lookAt[2]);
@@ -149,6 +149,9 @@ export function createScene(canvas) {
       tracks.push({ mesh, label });
     }
     targetCameraX = 0;
+    currentCameraX = 0;
+    targetCameraDistance = CAMERA_DISTANCE;
+    currentCameraDistance = CAMERA_DISTANCE;
   }
 
   function reset() {
@@ -157,6 +160,13 @@ export function createScene(canvas) {
     succeeded = false;
     character.position.set(laneX(0, numLanes), CHAR_Y, FRONT_Z + 0.1);
     character.rotation.set(0, 0, 0);
+    targetCameraX = 0;
+    currentCameraX = 0;
+    targetCameraDistance = CAMERA_DISTANCE;
+    currentCameraDistance = CAMERA_DISTANCE;
+    variantFade = null;
+    variantTintMat.opacity = 0;
+    if (variantBaseHighlightMat) variantBaseHighlightMat.opacity = 0;
   }
 
   function clearVariantTracks() {
@@ -385,9 +395,10 @@ export function createScene(canvas) {
 
     currentCameraX += (targetCameraX - currentCameraX) * 0.1;
     currentCameraDistance += (targetCameraDistance - currentCameraDistance) * 0.08;
+    const rad = (CAMERA_PITCH * Math.PI) / 180;
     camera.position.x = currentCameraX;
-    camera.position.y = currentCameraDistance;
-    camera.position.z = currentCameraDistance + camBase.lookAt[2];
+    camera.position.y = currentCameraDistance * Math.sin(rad);
+    camera.position.z = currentCameraDistance * Math.cos(rad) + camBase.lookAt[2];
     camera.lookAt(currentCameraX, 0, camBase.lookAt[2]);
 
     renderer.render(scene, camera);

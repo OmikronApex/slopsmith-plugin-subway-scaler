@@ -71,3 +71,25 @@ describe('SafeZoneRenderer safe zone coloring', () => {
     expect(mesh.material.color.getHex()).toBe(0xE53935);
   });
 });
+
+describe('SafeZoneRenderer Z-positioning', () => {
+  it('aligns safe zone front edge with SPAWN_Z at spawn (elapsed=0)', () => {
+    const renderer = new SafeZoneRenderer(makeScene());
+    // SPAWN_Z is -100. Depth is 20. 
+    // We expect center to be SPAWN_Z - 10 = -110.
+    renderer.update([makeWave(6)], 0, () => 0, 1000, 1000, GUITAR);
+    const mesh = [...renderer.zones.values()][0];
+    expect(mesh.position.z).toBe(-110);
+  });
+
+  it('moves towards 0 at speed_px_per_ms * 0.5', () => {
+    const renderer = new SafeZoneRenderer(makeScene());
+    const wave = makeWave(6);
+    wave.speed_px_per_ms = 0.2;
+    // elapsed = 100ms. Move = 100 * 0.2 * 0.5 = 10 units.
+    // Initial center = -110. New center = -100.
+    renderer.update([wave], 0, () => 0, 1100, 1000, GUITAR);
+    const mesh = [...renderer.zones.values()][0];
+    expect(mesh.position.z).toBe(-100);
+  });
+});
