@@ -1,13 +1,13 @@
 // Subway Scaler game bootstrap.
 // Wires the menu UI, run lifecycle, audio pipeline, run state machine, and 3D scene.
 
-import { createScene } from './scene.js';
-import { startAudio, enumerateInputs } from './audio.js';
-import { Run, difficultyToTimePerNoteMs } from './runState.js';
+import { createScene } from './SceneManager.js';
+import { startAudio, enumerateInputs } from './AudioDetector.js';
+import { Run, difficultyToTimePerNoteMs } from './GameState.js';
 import { quantize, midiToName } from './notes.js';
 import { GameClient } from './game-client.js';
 import { SafeZoneRenderer } from './ui/SafeZoneRenderer.js';
-import { laneX } from './grid.js';
+import { laneX } from './TrackSystem.js';
 
 const API = '/api/plugins/subway-scaler';
 const STATIC = '/plugins/subway-scaler/static/game';

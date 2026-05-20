@@ -1,6 +1,6 @@
 import * as THREE from '../vendor/three.module.js';
 import { colourForString } from '../stringPalette.js';
-import { SPAWN_Z } from '../grid.js';
+import { SPAWN_Z } from '../TrackSystem.js';
 
 const SAFE_ZONE_DEPTH = 20;
 

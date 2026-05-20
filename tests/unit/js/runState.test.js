@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { Run, difficultyToTimePerNoteMs } from '../../../static/game/runState.js';
+import { Run, difficultyToTimePerNoteMs } from '../../../static/game/GameState.js';
 
 function note(midi, name) {
   return { midi, name, frequencyHz: 440 * Math.pow(2, (midi - 69) / 12) };

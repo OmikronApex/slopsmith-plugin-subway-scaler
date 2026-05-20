@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { laneX, rowZ, windowedLanes, LANE_X_SCALE, ROW_DZ, WINDOW, cameraFor45Deg, cameraForPitch } from '../../../static/game/grid.js';
+import { laneX, rowZ, windowedLanes, LANE_X_SCALE, ROW_DZ, WINDOW, cameraFor45Deg, cameraForPitch } from '../../../static/game/TrackSystem.js';
 
 describe('grid.laneX', () => {
   it('places the middle lane at world-X 0', () => {

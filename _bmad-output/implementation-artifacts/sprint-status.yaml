@@ -1,0 +1,90 @@
+# generated: 2026-05-21
+# last_updated: 2026-05-21
+# project: slopsmith-plugin-subway-scaler
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: _bmad-output/implementation-artifacts
+#
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - Developer typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+
+generated: 2026-05-21
+last_updated: 2026-05-21
+project: slopsmith-plugin-subway-scaler
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+
+development_status:
+  # ─── Epic 1: Foundation & Session Setup ───────────────────────────────────
+  epic-1: in-progress
+  1-1-rename-and-scaffold-js-module-files: review
+  1-2-implement-gamestate-module-with-phases-constants: backlog
+  1-3-implement-design-token-system: backlog
+  1-4-implement-game-session-config-endpoint: backlog
+  1-5-vendor-font-and-setup-css-foundation: backlog
+  1-6-session-setup-ui-and-settings-persistence: backlog
+  1-7-handle-session-config-fetch-failure-at-game-start: backlog
+  epic-1-retrospective: optional
+
+  # ─── Epic 2: Game Engine Migration ────────────────────────────────────────
+  epic-2: backlog
+  2-1-analyse-and-document-game-engine-py: backlog
+  2-2-implement-cartsystem-module: backlog
+  2-3-implement-difficultymanager-module: backlog
+  epic-2-retrospective: optional
+
+  # ─── Epic 3: Core Gameplay Loop ───────────────────────────────────────────
+  epic-3: backlog
+  3-1-implement-scenemanager-and-three-js-canvas: backlog
+  3-2-implement-tracksystem-and-safe-zone-rendering: backlog
+  3-3-implement-audiodetector-with-yin-adapter: backlog
+  3-4-implement-gameloop-with-phase-management: backlog
+  3-5-implement-first-wave-tutorial-hint: backlog
+  3-6-implement-score-display: backlog
+  3-7-implement-visual-feedback-on-correct-note: backlog
+  3-8-integration-test-session-config-to-score: backlog
+  epic-3-retrospective: optional
+
+  # ─── Epic 4: Session UX & Accessibility ───────────────────────────────────
+  epic-4: backlog
+  4-1-implement-overlay-container-with-rgb-shift-glitch-animation: backlog
+  4-2-implement-pause-overlay: backlog
+  4-3-implement-game-over-overlay: backlog
+  4-4-implement-aria-roles-and-keyboard-navigation: backlog
+  4-5-implement-touch-targets-and-final-accessibility-audit: backlog
+  epic-4-retrospective: optional
+
+  # ─── Epic 5: Variant System ───────────────────────────────────────────────
+  epic-5: backlog
+  5-1-implement-variant-offer-trigger: backlog
+  5-2-implement-variant-track-geometry: backlog
+  5-3-implement-decision-window-timer-bar: backlog
+  5-4-implement-variant-acceptance-and-transition: backlog
+  epic-5-retrospective: optional

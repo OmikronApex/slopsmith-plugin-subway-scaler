@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { enumerateInputs } from '../../../static/game/audio.js';
+import { enumerateInputs } from '../../../static/game/AudioDetector.js';
 
 describe('enumerateInputs', () => {
   beforeEach(() => {

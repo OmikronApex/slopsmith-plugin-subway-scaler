@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Subway Scaler — UX Direction Mockup</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    /* ===== TOKENS ===== */
+    :root {
+      --color-bg-void:       #0D0D1A;
+      --color-bg-stage:      #1A1A2E;
+      --color-bg-near:       #252538;
+      --color-accent:        #FFB800;
+      --color-text-primary:  #E8E8F0;
+      --color-text-disabled: #555570;
+      --color-edge:          #08080F;
+
+      --color-string-1: #FF3333;
+      --color-string-2: #FFDD00;
+      --color-string-3: #3366FF;
+      --color-string-4: #FF8800;
+      --color-string-5: #33AA33;
+      --color-string-6: #9933CC;
+
+      --font-mono: 'Space Mono', 'Courier New', monospace;
+      --transition-overlay: 220ms;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #111;
+      color: var(--color-text-primary);
+      font-family: var(--font-mono);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+      gap: 14px;
+    }
+
+    /* ===== NAV ===== */
+    .nav {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .nav button {
+      background: var(--color-bg-near);
+      color: var(--color-text-disabled);
+      border: 2px solid var(--color-bg-near);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      padding: 8px 16px;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      transition: border-color 120ms, color 120ms;
+    }
+    .nav button.active,
+    .nav button:hover {
+      color: var(--color-accent);
+      border-color: var(--color-accent);
+    }
+
+    /* ===== VIEWPORT ===== */
+    .viewport {
+      width: 100%;
+      max-width: 900px;
+      aspect-ratio: 16 / 9;
+      background: var(--color-bg-void);
+      position: relative;
+      overflow: hidden;
+      border: 3px solid var(--color-edge);
+      outline: 1px solid var(--color-bg-near);
+    }
+
+    .screen {
+      position: absolute;
+      inset: 0;
+      display: none;
+    }
+    .screen.active { display: flex; }
+
+    /* ===== SESSION SETUP ===== */
+    #screen-setup {
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 28px;
+      padding: 40px;
+      background: var(--color-bg-void);
+    }
+
+    .game-title {
+      font-size: clamp(18px, 4vw, 34px);
+      font-weight: 700;
+      color: var(--color-accent);
+      text-transform: uppercase;
+      letter-spacing: 5px;
+      text-shadow: 3px 0 0 rgba(255, 50, 50, 0.45), -3px 0 0 rgba(50, 100, 255, 0.45);
+    }
+
+    .setup-form {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px 32px;
+      width: 100%;
+      max-width: 540px;
+    }
+    .setup-form .field-group.full-width {
+      grid-column: 1 / -1;
+    }
+    .root-randomized {
+      font-size: 9px;
+      color: var(--color-text-disabled);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      padding: 10px 12px;
+      background: var(--color-bg-near);
+      border: 2px solid var(--color-bg-near);
+    }
+    .root-randomized span {
+      color: var(--color-accent);
+    }
+    .scale-preview {
+      font-size: 10px;
+      color: var(--color-accent);
+      letter-spacing: 1px;
+      text-align: center;
+      margin-top: -8px;
+    }
+    /* Variant screen */
+    #screen-variant {
+      background: var(--color-bg-void);
+    }
+    .variant-label {
+      position: absolute;
+      z-index: 20;
+      top: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 9px;
+      color: var(--color-accent);
+      text-transform: uppercase;
+      letter-spacing: 3px;
+      background: rgba(13,13,26,0.8);
+      padding: 4px 14px;
+      white-space: nowrap;
+    }
+    .variant-window-bar {
+      position: absolute;
+      z-index: 20;
+      top: 36px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 160px;
+      height: 3px;
+      background: var(--color-bg-near);
+    }
+    .variant-window-fill {
+      height: 100%;
+      width: 65%;
+      background: var(--color-accent);
+      animation: drain 3s linear forwards;
+    }
+    @keyframes drain { from { width: 65%; } to { width: 0%; } }
+    .quit-menu-btn {
+      background: transparent;
+      color: var(--color-text-disabled);
+      border: none;
+      font-family: var(--font-mono);
+      font-size: clamp(8px, 1.1vw, 10px);
+      font-weight: 700;
+      padding: 8px 20px;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      min-height: 44px;
+      text-decoration: underline;
+      transition: color 120ms;
+    }
+    .quit-menu-btn:hover { color: var(--color-text-primary); }
+    .score-context {
+      font-size: clamp(9px, 1.2vw, 11px);
+      color: var(--color-accent);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      opacity: 0.8;
+    }
+
+    .field-group {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+    .field-group label {
+      font-size: 9px;
+      font-weight: 700;
+      color: var(--color-text-disabled);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+    }
+    .field-group select {
+      background: var(--color-bg-near);
+      color: var(--color-text-primary);
+      border: 2px solid var(--color-bg-near);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 700;
+      padding: 10px 12px;
+      appearance: none;
+      cursor: pointer;
+    }
+    .field-group select:focus {
+      outline: none;
+      border-color: var(--color-accent);
+    }
+
+    .toggle-group {
+      display: flex;
+    }
+    .toggle-group button {
+      flex: 1;
+      background: var(--color-bg-near);
+      color: var(--color-text-disabled);
+      border: 2px solid var(--color-bg-near);
+      border-right-width: 0;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      padding: 10px 6px;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .toggle-group button:last-child { border-right-width: 2px; }
+    .toggle-group button.selected {
+      background: var(--color-accent);
+      color: var(--color-bg-void);
+      border-color: var(--color-accent);
+    }
+
+    .start-btn {
+      background: var(--color-accent);
+      color: var(--color-bg-void);
+      border: none;
+      font-family: var(--font-mono);
+      font-size: clamp(13px, 2vw, 17px);
+      font-weight: 700;
+      padding: 16px 72px;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 4px;
+      min-height: 52px;
+      transition: background 100ms;
+    }
+    .start-btn:hover { background: #FFC840; }
+
+    .last-session-note {
+      font-size: 9px;
+      color: var(--color-text-disabled);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    /* ===== GAME CANVAS ===== */
+    #screen-game {
+      flex-direction: column;
+      background: var(--color-bg-void);
+    }
+
+    .game-hud {
+      position: absolute;
+      top: 14px;
+      right: 18px;
+      text-align: right;
+      z-index: 10;
+    }
+    .score-label {
+      font-size: 9px;
+      color: var(--color-text-disabled);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+    }
+    .score-value {
+      font-size: clamp(18px, 2.8vw, 26px);
+      font-weight: 700;
+      color: var(--color-accent);
+      line-height: 1;
+    }
+
+    .speed-indicator {
+      position: absolute;
+      bottom: 14px;
+      left: 14px;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .speed-label {
+      font-size: 8px;
+      color: var(--color-text-disabled);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+    }
+    .speed-bar-track {
+      width: 72px;
+      height: 4px;
+      background: var(--color-bg-near);
+    }
+    .speed-bar-fill {
+      height: 100%;
+      width: 40%;
+      background: var(--color-accent);
+    }
+
+    .string-legend {
+      position: absolute;
+      bottom: 14px;
+      right: 14px;
+      display: flex;
+      gap: 5px;
+      z-index: 10;
+    }
+    .string-pip {
+      width: 10px;
+      height: 10px;
+      border: 1px solid rgba(255,255,255,0.15);
+    }
+
+    .canvas-area {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+    .city-svg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* ===== SHARED OVERLAY STYLES ===== */
+    .overlay-base {
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 28px;
+    }
+
+    .overlay-title {
+      font-size: clamp(26px, 5vw, 46px);
+      font-weight: 700;
+      color: var(--color-text-primary);
+      text-transform: uppercase;
+      letter-spacing: 7px;
+      animation: rgb-flicker 4s infinite;
+    }
+
+    /* ===== PAUSE ===== */
+    #screen-pause {
+      background: rgba(13, 13, 26, 0.93);
+      animation: glitch-in var(--transition-overlay) both;
+    }
+
+    .resume-btn {
+      background: var(--color-accent);
+      color: var(--color-bg-void);
+      border: none;
+      font-family: var(--font-mono);
+      font-size: clamp(13px, 2vw, 17px);
+      font-weight: 700;
+      padding: 18px 80px;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 4px;
+      min-height: 54px;
+      transition: background 100ms;
+    }
+    .resume-btn:hover { background: #FFC840; }
+
+    /* ===== GAME OVER ===== */
+    #screen-gameover {
+      background: rgba(13, 13, 26, 0.96);
+      gap: 20px;
+      animation: glitch-in var(--transition-overlay) both;
+    }
+
+    .final-score-block {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+    .final-score-label {
+      font-size: 10px;
+      color: var(--color-text-disabled);
+      text-transform: uppercase;
+      letter-spacing: 3px;
+    }
+    .final-score-value {
+      font-size: clamp(30px, 6vw, 52px);
+      font-weight: 700;
+      color: var(--color-accent);
+      line-height: 1;
+    }
+
+    .gameover-actions {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      margin-top: 6px;
+    }
+
+    .restart-btn {
+      background: var(--color-accent);
+      color: var(--color-bg-void);
+      border: none;
+      font-family: var(--font-mono);
+      font-size: clamp(13px, 2vw, 17px);
+      font-weight: 700;
+      padding: 18px 80px;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 4px;
+      min-height: 54px;
+      min-width: 240px;
+      transition: background 100ms;
+    }
+    .restart-btn:hover { background: #FFC840; }
+
+    .main-menu-btn {
+      background: transparent;
+      color: var(--color-text-disabled);
+      border: 2px solid var(--color-text-disabled);
+      font-family: var(--font-mono);
+      font-size: clamp(9px, 1.3vw, 12px);
+      font-weight: 700;
+      padding: 10px 32px;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      min-height: 44px;
+      transition: color 120ms, border-color 120ms;
+    }
+    .main-menu-btn:hover {
+      color: var(--color-text-primary);
+      border-color: var(--color-text-primary);
+    }
+
+    /* ===== ANIMATIONS ===== */
+    @keyframes rgb-flicker {
+      0%, 88%, 100% { text-shadow: none; }
+      90%  { text-shadow:  3px 0 0 rgba(255,40,40,0.55), -3px 0 0 rgba(40,100,255,0.55); }
+      92%  { text-shadow: -2px 0 0 rgba(255,40,40,0.35),  2px 0 0 rgba(40,100,255,0.35); }
+      94%  { text-shadow: none; }
+      96%  { text-shadow:  2px 0 0 rgba(255,40,40,0.25), -2px 0 0 rgba(40,100,255,0.25); }
+    }
+
+    @keyframes glitch-in {
+      0%   { opacity: 0; transform: scaleY(0.98); filter: blur(3px); }
+      20%  { opacity: 0.6; filter: blur(1px); }
+      25%  { clip-path: inset(30% 0 50% 0); opacity: 1; filter: none; }
+      30%  { clip-path: inset(0); }
+      35%  { clip-path: inset(60% 0 10% 0); }
+      40%  { clip-path: inset(0); transform: scaleY(1); }
+      100% { opacity: 1; transform: scaleY(1); filter: none; clip-path: none; }
+    }
+
+    /* ===== CAPTION ===== */
+    .caption {
+      font-size: 10px;
+      color: var(--color-text-disabled);
+      text-align: center;
+      max-width: 900px;
+      letter-spacing: 1px;
+      line-height: 1.8;
+    }
+  </style>
+</head>
+<body>
+
+<div class="nav">
+  <button class="active" onclick="show('setup', this)">Session Setup</button>
+  <button onclick="show('game', this)">Game Canvas</button>
+  <button onclick="show('variant', this)">Variant Transition</button>
+  <button onclick="show('pause', this)">Pause Overlay</button>
+  <button onclick="show('gameover', this)">Game Over</button>
+</div>
+
+<div class="viewport">
+
+  <!-- SESSION SETUP -->
+  <div id="screen-setup" class="screen active">
+    <div class="game-title">Subway Scaler</div>
+
+    <div class="setup-form">
+      <div class="field-group full-width">
+        <label>Scale</label>
+        <select>
+          <option>Major</option>
+          <option>Natural Minor</option>
+          <option selected>Minor Pentatonic</option>
+          <option>Blues</option>
+          <option>Dorian</option>
+          <option>Mixolydian</option>
+        </select>
+      </div>
+      <div class="field-group full-width scale-preview">Minor Pentatonic &mdash; root randomized fret 5&ndash;8</div>
+      <div class="field-group">
+        <label>Difficulty</label>
+        <div class="toggle-group">
+          <button>Easy</button>
+          <button class="selected">Medium</button>
+          <button>Hard</button>
+        </div>
+      </div>
+      <div class="field-group">
+        <label>Instrument</label>
+        <div class="toggle-group">
+          <button>Guitar 6</button>
+          <button class="selected">Bass 4</button>
+          <button>Bass 5</button>
+        </div>
+      </div>
+    </div>
+
+    <button class="start-btn">Start</button>
+    <div class="last-session-note">Last session: Minor Pentatonic &mdash; Medium &mdash; Bass 4</div>
+  </div>
+
+  <!-- GAME CANVAS -->
+  <div id="screen-game" class="screen">
+    <div class="game-hud">
+      <div class="score-label">Score</div>
+      <div class="score-value">04 820</div>
+    </div>
+
+    <div class="canvas-area">
+      <svg class="city-svg" viewBox="0 0 900 506" preserveAspectRatio="xMidYMid slice">
+        <!-- Sky -->
+        <rect width="900" height="506" fill="#0D0D1A"/>
+
+        <!-- Buildings left -->
+        <rect x="0"  y="40"  width="55" height="260" fill="#141426"/>
+        <rect x="15" y="20"  width="42" height="280" fill="#10101E"/>
+        <rect x="55" y="70"  width="45" height="230" fill="#1A1A30"/>
+        <rect x="85" y="100" width="30" height="200" fill="#131325"/>
+        <!-- Windows left -->
+        <rect x="6"  y="50"  width="7" height="5" fill="#FFB800" opacity="0.55"/>
+        <rect x="20" y="30"  width="7" height="5" fill="#FFB800" opacity="0.40"/>
+        <rect x="6"  y="72"  width="7" height="5" fill="#E8E8F0" opacity="0.25"/>
+        <rect x="20" y="60"  width="7" height="5" fill="#FFB800" opacity="0.50"/>
+        <rect x="6"  y="94"  width="7" height="5" fill="#FFB800" opacity="0.35"/>
+        <rect x="20" y="90"  width="7" height="5" fill="#E8E8F0" opacity="0.20"/>
+        <rect x="6"  y="116" width="7" height="5" fill="#FFB800" opacity="0.45"/>
+        <rect x="60" y="80"  width="7" height="5" fill="#E8E8F0" opacity="0.30"/>
+        <rect x="75" y="100" width="7" height="5" fill="#FFB800" opacity="0.40"/>
+        <rect x="60" y="108" width="7" height="5" fill="#FFB800" opacity="0.50"/>
+        <rect x="90" y="112" width="6" height="5" fill="#FFB800" opacity="0.45"/>
+        <rect x="75" y="130" width="7" height="5" fill="#E8E8F0" opacity="0.20"/>
+
+        <!-- Buildings right -->
+        <rect x="845" y="30"  width="55" height="280" fill="#141426"/>
+        <rect x="843" y="60"  width="42" height="260" fill="#10101E"/>
+        <rect x="800" y="65"  width="48" height="235" fill="#1A1A30"/>
+        <rect x="785" y="95"  width="32" height="205" fill="#131325"/>
+        <!-- Windows right -->
+        <rect x="854" y="45"  width="7" height="5" fill="#FFB800" opacity="0.55"/>
+        <rect x="870" y="70"  width="7" height="5" fill="#FFB800" opacity="0.40"/>
+        <rect x="854" y="68"  width="7" height="5" fill="#E8E8F0" opacity="0.25"/>
+        <rect x="870" y="94"  width="7" height="5" fill="#FFB800" opacity="0.50"/>
+        <rect x="854" y="90"  width="7" height="5" fill="#FFB800" opacity="0.35"/>
+        <rect x="808" y="76"  width="7" height="5" fill="#FFB800" opacity="0.50"/>
+        <rect x="822" y="96"  width="7" height="5" fill="#E8E8F0" opacity="0.30"/>
+        <rect x="808" y="108" width="7" height="5" fill="#FFB800" opacity="0.40"/>
+        <rect x="790" y="108" width="6" height="5" fill="#FFB800" opacity="0.45"/>
+        <rect x="822" y="120" width="7" height="5" fill="#E8E8F0" opacity="0.20"/>
+
+        <!-- Street lights left -->
+        <line x1="115" y1="190" x2="115" y2="360" stroke="#33334A" stroke-width="2"/>
+        <polygon points="105,190 125,190 120,182 110,182" fill="#33334A"/>
+        <circle cx="115" cy="180" r="5" fill="#FFB800" opacity="0.95"/>
+        <ellipse cx="115" cy="192" rx="18" ry="5" fill="#FFB800" opacity="0.10"/>
+        <line x1="235" y1="205" x2="235" y2="375" stroke="#33334A" stroke-width="2"/>
+        <polygon points="225,205 245,205 240,197 230,197" fill="#33334A"/>
+        <circle cx="235" cy="196" r="5" fill="#FFB800" opacity="0.85"/>
+        <ellipse cx="235" cy="207" rx="18" ry="5" fill="#FFB800" opacity="0.08"/>
+
+        <!-- Street lights right -->
+        <line x1="785" y1="190" x2="785" y2="360" stroke="#33334A" stroke-width="2"/>
+        <polygon points="775,190 795,190 790,182 780,182" fill="#33334A"/>
+        <circle cx="785" cy="180" r="5" fill="#FFB800" opacity="0.95"/>
+        <ellipse cx="785" cy="192" rx="18" ry="5" fill="#FFB800" opacity="0.10"/>
+        <line x1="665" y1="205" x2="665" y2="375" stroke="#33334A" stroke-width="2"/>
+        <polygon points="655,205 675,205 670,197 660,197" fill="#33334A"/>
+        <circle cx="665" cy="196" r="5" fill="#FFB800" opacity="0.85"/>
+
+        <!-- Horizon -->
+        <line x1="0" y1="282" x2="900" y2="282" stroke="#252538" stroke-width="1"/>
+
+        <!-- Ground plane (4 lanes, frets 5-8) -->
+        <polygon points="310,282 590,282 900,506 0,506" fill="#1A1A2E"/>
+
+        <!-- Lane dividers: 4 lanes -->
+        <line x1="310" y1="282" x2="0"   y2="506" stroke="#252538" stroke-width="1.5"/>
+        <line x1="380" y1="282" x2="225" y2="506" stroke="#252538" stroke-width="1"/>
+        <line x1="450" y1="282" x2="450" y2="506" stroke="#252538" stroke-width="1"/>
+        <line x1="520" y1="282" x2="675" y2="506" stroke="#252538" stroke-width="1"/>
+        <line x1="590" y1="282" x2="900" y2="506" stroke="#252538" stroke-width="1.5"/>
+
+        <!-- Fret labels at lane bottoms (neutral) -->
+        <text x="112" y="487" text-anchor="middle" fill="#666680" font-family="monospace" font-size="13" font-weight="bold">5</text>
+        <text x="338" y="487" text-anchor="middle" fill="#666680" font-family="monospace" font-size="13" font-weight="bold">6</text>
+        <text x="563" y="487" text-anchor="middle" fill="#666680" font-family="monospace" font-size="13" font-weight="bold">7</text>
+        <text x="788" y="487" text-anchor="middle" fill="#666680" font-family="monospace" font-size="13" font-weight="bold">8</text>
+
+        <!-- Safe zone lane 1 fret 5 (red) approaching -->
+        <polygon points="296,292 373,292 364,305 278,305" fill="#FF3333" opacity="0.35"/>
+        <polygon points="296,292 373,292 364,305 278,305" fill="none" stroke="#FF3333" stroke-width="1.5" opacity="0.9"/>
+
+        <!-- Safe zone lane 3 fret 7 (blue) just cleared -->
+        <polygon points="450,310 539,310 602,400 450,400" fill="#3366FF" opacity="0.28"/>
+        <polygon points="450,310 539,310 602,400 450,400" fill="none" stroke="#3366FF" stroke-width="2" opacity="0.8"/>
+
+        <!-- Character on lane 3 (fret 7, blue) -->
+        <rect x="503" y="368" width="24" height="18" fill="#E8E8F0"/>
+        <rect x="505" y="370" width="20" height="14" fill="#252538"/>
+        <!-- Sparkle -->
+        <circle cx="518" cy="361" r="2"   fill="#FFB800" opacity="0.9"/>
+        <circle cx="530" cy="355" r="1.5" fill="#FFB800" opacity="0.7"/>
+        <circle cx="508" cy="354" r="1.5" fill="#FFDD00" opacity="0.8"/>
+        <circle cx="534" cy="369" r="1"   fill="#FFB800" opacity="0.6"/>
+
+        <!-- Tutorial hint (first wave, fades after first hit) -->
+        <rect x="230" y="444" width="440" height="22" fill="#0D0D1A" fill-opacity="0.82"/>
+        <text x="450" y="459" text-anchor="middle" fill="#E8E8F0" font-family="monospace" font-size="10" font-weight="bold" opacity="0.9">Play G &#x2014; string 1, fret 5</text>
+      </svg>
+    </div>
+
+    <div class="speed-indicator">
+      <div class="speed-label">Speed</div>
+      <div class="speed-bar-track"><div class="speed-bar-fill"></div></div>
+    </div>
+    <div class="string-legend">
+      <div class="string-pip" style="background:var(--color-string-1)" title="String 1 (lowest)"></div>
+      <div class="string-pip" style="background:var(--color-string-2)" title="String 2"></div>
+      <div class="string-pip" style="background:var(--color-string-3)" title="String 3"></div>
+      <div class="string-pip" style="background:var(--color-string-4)" title="String 4"></div>
+    </div>
+  </div>
+
+  <!-- VARIANT TRANSITION -->
+  <div id="screen-variant" class="screen" style="flex-direction:column;background:var(--color-bg-void);">
+    <div class="variant-label">Variant offered &mdash; fret 3 &rarr; play to accept</div>
+    <div class="variant-window-bar"><div class="variant-window-fill" id="vbar"></div></div>
+    <div class="canvas-area">
+      <svg class="city-svg" viewBox="0 0 900 506" preserveAspectRatio="xMidYMid slice">
+        <!-- Sky -->
+        <rect width="900" height="506" fill="#0D0D1A"/>
+        <!-- Buildings (condensed, pushed to far edges to give track room) -->
+        <rect x="0"   y="30" width="55" height="270" fill="#141426"/>
+        <rect x="845" y="30" width="55" height="270" fill="#141426"/>
+        <!-- Windows -->
+        <rect x="8"   y="45" width="7" height="5" fill="#FFB800" opacity="0.5"/>
+        <rect x="22"  y="68" width="7" height="5" fill="#FFB800" opacity="0.4"/>
+        <rect x="8"   y="88" width="7" height="5" fill="#E8E8F0" opacity="0.2"/>
+        <rect x="854" y="45" width="7" height="5" fill="#FFB800" opacity="0.5"/>
+        <rect x="868" y="68" width="7" height="5" fill="#FFB800" opacity="0.4"/>
+        <!-- Street lights -->
+        <line x1="70"  y1="188" x2="70"  y2="360" stroke="#33334A" stroke-width="2"/>
+        <circle cx="70"  cy="180" r="5" fill="#FFB800" opacity="0.9"/>
+        <line x1="830" y1="188" x2="830" y2="360" stroke="#33334A" stroke-width="2"/>
+        <circle cx="830" cy="180" r="5" fill="#FFB800" opacity="0.9"/>
+        <!-- Horizon -->
+        <line x1="0" y1="282" x2="900" y2="282" stroke="#252538" stroke-width="1"/>
+
+        <!-- === VARIANT LANE (single, fret 3, left side, dashed amber border) === -->
+        <polygon points="210,282 275,282 150,506 0,506" fill="#1A1A2E"/>
+        <polygon points="210,282 275,282 150,506 0,506" fill="none" stroke="#FFB800" stroke-width="1.5" stroke-dasharray="6,4" opacity="0.75"/>
+        <!-- Variant lane edges -->
+        <line x1="210" y1="282" x2="0"   y2="506" stroke="#FFB800" stroke-width="1" stroke-dasharray="4,4" opacity="0.5"/>
+        <line x1="275" y1="282" x2="150" y2="506" stroke="#FFB800" stroke-width="1" stroke-dasharray="4,4" opacity="0.5"/>
+        <!-- Variant safe zone (new root note, string 1 = red, dashed outline) -->
+        <polygon points="178,316 256,316 218,385 113,385" fill="#FF3333" opacity="0.35"/>
+        <polygon points="178,316 256,316 218,385 113,385" fill="none" stroke="#FF3333" stroke-width="2" stroke-dasharray="4,3" opacity="0.9"/>
+        <text x="168" y="354" fill="#FF3333" font-family="monospace" font-size="8" font-weight="bold">NEW</text>
+        <text x="165" y="366" fill="#FF3333" font-family="monospace" font-size="8" font-weight="bold">ROOT</text>
+        <!-- Variant fret label at lane bottom (neutral) -->
+        <text x="75" y="487" text-anchor="middle" fill="#666680" font-family="monospace" font-size="13" font-weight="bold">3</text>
+
+        <!-- === GAP (one lane width = physical neck distance) === -->
+        <polygon points="275,282 340,282 300,506 150,506" fill="#0D0D1A"/>
+        <!-- Gap label -->
+        <text x="276" y="400" fill="#33334A" font-family="monospace" font-size="7">&#x2190; gap &#x2192;</text>
+
+        <!-- === CURRENT TRACK (4 lanes, frets 5-8) === -->
+        <polygon points="340,282 600,282 900,506 300,506" fill="#1A1A2E"/>
+        <!-- Lane dividers -->
+        <line x1="340" y1="282" x2="300" y2="506" stroke="#252538" stroke-width="1.5"/>
+        <line x1="405" y1="282" x2="450" y2="506" stroke="#252538" stroke-width="1"/>
+        <line x1="470" y1="282" x2="600" y2="506" stroke="#252538" stroke-width="1"/>
+        <line x1="535" y1="282" x2="750" y2="506" stroke="#252538" stroke-width="1"/>
+        <line x1="600" y1="282" x2="900" y2="506" stroke="#252538" stroke-width="1.5"/>
+        <!-- Current track fret labels at lane bottoms (neutral) -->
+        <text x="375" y="487" text-anchor="middle" fill="#666680" font-family="monospace" font-size="13" font-weight="bold">5</text>
+        <text x="525" y="487" text-anchor="middle" fill="#666680" font-family="monospace" font-size="13" font-weight="bold">6</text>
+        <text x="675" y="487" text-anchor="middle" fill="#666680" font-family="monospace" font-size="13" font-weight="bold">7</text>
+        <text x="825" y="487" text-anchor="middle" fill="#666680" font-family="monospace" font-size="13" font-weight="bold">8</text>
+        <!-- Character on lane 2 (fret 6) -->
+        <rect x="462" y="368" width="22" height="16" fill="#E8E8F0"/>
+        <rect x="464" y="370" width="18" height="12" fill="#252538"/>
+
+        <!-- Direction arrow in the gap -->
+        <text x="285" y="310" fill="#FFB800" font-family="monospace" font-size="14" font-weight="bold">&#x2190;</text>
+      </svg>
+    </div>
+  </div>
+
+  <!-- PAUSE -->
+  <div id="screen-pause" class="screen overlay-base">
+    <div class="overlay-title">Paused</div>
+    <button class="resume-btn">Resume</button>
+    <button class="quit-menu-btn" style="margin-top:4px;">Quit to Menu</button>
+  </div>
+
+  <!-- GAME OVER -->
+  <div id="screen-gameover" class="screen overlay-base">
+    <div class="overlay-title">Game Over</div>
+    <div class="final-score-block">
+      <div class="final-score-label">Score</div>
+      <div class="final-score-value">12 460</div>
+      <div class="score-context">Personal best &mdash; +340 from last run</div>
+    </div>
+    <div class="gameover-actions">
+      <button class="restart-btn">Restart</button>
+      <button class="main-menu-btn">Main Menu</button>
+    </div>
+  </div>
+
+</div>
+
+<div class="caption">
+  Subway Scaler &mdash; UX Direction Mockup &nbsp;|&nbsp;
+  Night City theme &nbsp;|&nbsp;
+  Space Mono bold &nbsp;|&nbsp;
+  #0D0D1A &bull; #FFB800 &bull; Rocksmith string colors &nbsp;|&nbsp;
+  Click tabs to switch screens
+</div>
+
+<script>
+  function show(id, btn) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.nav button').forEach(b => b.classList.remove('active'));
+    const screen = document.getElementById('screen-' + id);
+    screen.classList.add('active');
+    // Re-trigger glitch animation on overlays
+    if (id === 'variant') {
+      const vbar = document.getElementById('vbar');
+      vbar.style.animation = 'none'; vbar.offsetHeight; vbar.style.animation = '';
+    }
+    if (id === 'pause' || id === 'gameover') {
+      screen.style.animation = 'none';
+      screen.offsetHeight; // reflow
+      screen.style.animation = '';
+    }
+    btn.classList.add('active');
+  }
+
+  document.querySelectorAll('.toggle-group').forEach(group => {
+    group.querySelectorAll('button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        group.querySelectorAll('button').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+      });
+    });
+  });
+</script>
+</body>
+</html>
