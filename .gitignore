@@ -16,3 +16,8 @@ dist/
 build/
 temp/
 specs/
+/_bmad/
+/.rtk/
+/node_modules/
+/temp/
+/_bmad/

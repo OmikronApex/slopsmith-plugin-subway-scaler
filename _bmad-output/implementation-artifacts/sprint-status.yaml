@@ -45,8 +45,8 @@ development_status:
   # ─── Epic 1: Foundation & Session Setup ───────────────────────────────────
   epic-1: in-progress
   1-1-rename-and-scaffold-js-module-files: review
-  1-2-implement-gamestate-module-with-phases-constants: backlog
-  1-3-implement-design-token-system: backlog
+  1-2-implement-gamestate-module-with-phases-constants: review
+  1-3-implement-design-token-system: review
   1-4-implement-game-session-config-endpoint: backlog
   1-5-vendor-font-and-setup-css-foundation: backlog
   1-6-session-setup-ui-and-settings-persistence: backlog
