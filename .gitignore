@@ -20,4 +20,6 @@ specs/
 /.rtk/
 /node_modules/
 /temp/
-/_bmad/
+/.claude/
+/.junie/
+/.venv/
