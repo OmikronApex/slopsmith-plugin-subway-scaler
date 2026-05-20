@@ -8,6 +8,7 @@ import { quantize, midiToName } from './notes.js';
 import { GameClient } from './game-client.js';
 import { SafeZoneRenderer } from './ui/SafeZoneRenderer.js';
 import { laneX } from './TrackSystem.js';
+import { injectTokens } from './ui/tokens.js';
 
 const API = '/api/plugins/subway-scaler';
 const STATIC = '/plugins/subway-scaler/static/game';
@@ -47,6 +48,9 @@ function rootSelectOptions(selectedMidi, instrument) {
 }
 
 export async function bootstrap(root) {
+  // Inject design tokens (CSS custom properties) at initialization
+  injectTokens();
+
   if (!root) return;
   root.innerHTML = '';
   root.className = 'subway-scaler';
