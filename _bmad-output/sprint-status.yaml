@@ -55,6 +55,12 @@ development_status:
     last_updated: 2026-05-21
     notes: "Code review + patching: 4/4 MEDIUM patches applied (100%). HIGH: 1/2 (timing vuln pending). Production-ready error handling."
 
+  1-8-implement-ux-design-polish-and-mockup-styling:
+    title: "Implement UX Design Polish and Mockup Styling"
+    status: ready-for-dev
+    last_updated: 2026-05-21
+    notes: "Planned: Transform minimal setup screen into Night City-styled UI matching design mockup. 2-column grid, title effects, scale preview, responsive layout."
+
 ## Status Definitions
 
 # backlog: not yet ready for development
