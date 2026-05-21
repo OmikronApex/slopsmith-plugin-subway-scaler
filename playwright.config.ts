@@ -17,7 +17,7 @@ export default defineConfig({
   webServer: {
     command: 'docker compose -f tests/e2e/docker-compose.dev.yml up',
     url: 'http://localhost:8000',
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: true,
     timeout: 60000,
   },
   projects: [
