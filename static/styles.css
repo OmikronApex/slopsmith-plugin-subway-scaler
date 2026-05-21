@@ -1,11 +1,11 @@
 @import url('game/ui/setup.css');
 
 /* Root: normal block inside Slopsmith's .screen div.
-   padding-top clears the fixed navbar (h-16 = 4rem = 64px). */
+   padding-top clears the fixed navbar (h-16 = 4rem = 64px).
+   No background here — only the shell has the game background. */
 .subway-scaler {
   width: 100%;
   padding-top: 4rem;
-  background: #0D0D1A;
   display: flex;
   justify-content: center;
   color: #e5e7eb;
