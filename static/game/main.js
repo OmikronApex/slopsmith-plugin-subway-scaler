@@ -236,7 +236,10 @@ export async function bootstrap(root) {
   hud.appendChild(feedbackEl);
   hud.appendChild(pauseBtn);
   hud.appendChild(abandonBtn);
-  const gameWrap = el('div', { class: 'game-wrap', style: 'display:none' }, canvas, hud, variantHud, overlay);
+  // canvas-frame keeps overlay exactly on top of the canvas at all viewport widths.
+  // Without this wrapper, overlay's inset:0 fills game-wrap which may be wider than the max-width-capped canvas.
+  const canvasFrame = el('div', { class: 'canvas-frame' }, canvas, overlay);
+  const gameWrap = el('div', { class: 'game-wrap', style: 'display:none' }, canvasFrame, hud, variantHud);
   root.appendChild(gameWrap);
 
   // --- Audio settings panel ---

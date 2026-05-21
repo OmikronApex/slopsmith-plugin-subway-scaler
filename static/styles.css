@@ -9,8 +9,9 @@
 .subway-scaler .menu button, .subway-scaler .hud button, .subway-scaler .audio-panel button { background: #6366f1; color: white; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
 .subway-scaler .menu button:hover, .subway-scaler .hud button:hover, .subway-scaler .audio-panel button:hover { background: #4f46e5; }
 .subway-scaler .menu button:disabled, .subway-scaler .hud button:disabled { opacity: 0.5; cursor: not-allowed; }
-.subway-scaler .game-wrap { position: relative; }
-.subway-scaler .game-canvas { width: 100%; max-width: 800px; aspect-ratio: 16 / 9; display: block; background: #101a2a; border-radius: 8px; }
+.subway-scaler .game-wrap { display: flex; flex-direction: column; gap: 0.5rem; }
+.subway-scaler .canvas-frame { position: relative; width: 100%; max-width: 800px; aspect-ratio: 16 / 9; }
+.subway-scaler .game-canvas { width: 100%; height: 100%; display: block; background: #101a2a; border-radius: 8px; }
 .subway-scaler .hud { display: flex; gap: 1rem; align-items: center; margin-top: 0.5rem; }
 .subway-scaler .expected { font-size: 1.25rem; font-weight: 600; }
 .subway-scaler .feedback { font-size: 1.5rem; min-width: 1.5rem; }
