@@ -1,6 +1,6 @@
 # Story 0.2b: WAV Audio Injection
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -26,30 +26,30 @@ so that note detection can be asserted deterministically without relying on real
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — Generate WAV fixture files (AC: 1)
-  - [ ] Use a Node.js script or Python to generate the three WAV files programmatically (pure sine wave, 44100 Hz sample rate, mono, 16-bit PCM)
-  - [ ] Alternatively, use `sox` if available: `sox -n -r 44100 -c 1 A4_440hz.wav synth 2 sine 440`
-  - [ ] Commit the generated `.wav` files — they are binary fixtures, not source code
-  - [ ] Document the generation command in a comment at the top of `audioHelper.ts` so they can be regenerated if needed
+- [x] Task 1 — Generate WAV fixture files (AC: 1)
+  - [x] Use a Node.js script or Python to generate the three WAV files programmatically (pure sine wave, 44100 Hz sample rate, mono, 16-bit PCM)
+  - [x] Alternatively, use `sox` if available: `sox -n -r 44100 -c 1 A4_440hz.wav synth 2 sine 440`
+  - [x] Commit the generated `.wav` files — they are binary fixtures, not source code
+  - [x] Document the generation command in a comment at the top of `audioHelper.ts` so they can be regenerated if needed
 
-- [ ] Task 2 — Create `audioHelper.ts` (AC: 2, 3)
-  - [ ] Create `tests/e2e/helpers/audioHelper.ts`
-  - [ ] Implement `injectAudioFile(browser: Browser, wavPath: string): Promise<BrowserContext>`
-  - [ ] Use `path.resolve(process.cwd(), wavPath)` for absolute path resolution
-  - [ ] Return the new context (caller is responsible for closing it)
-  - [ ] Include a Chromium-only guard: throw a clear error if browser type is not chromium
+- [x] Task 2 — Create `audioHelper.ts` (AC: 2, 3)
+  - [x] Create `tests/e2e/helpers/audioHelper.ts`
+  - [x] Implement `injectAudioFile(browser: Browser, wavPath: string): Promise<BrowserContext>`
+  - [x] Use `path.resolve(process.cwd(), wavPath)` for absolute path resolution
+  - [x] Return the new context (caller is responsible for closing it)
+  - [x] Include a Chromium-only guard: throw a clear error if browser type is not chromium
 
-- [ ] Task 3 — Write audio-injection spec (AC: 4, 5, 6)
-  - [ ] Create `tests/e2e/specs/audio-injection.spec.ts`
-  - [ ] For each test: create context via `injectAudioFile`, create page, set `window.__TEST_MODE = true` via `addInitScript`, navigate to `/`
-  - [ ] Use `page.waitForFunction` to poll `window.__audioState.pipelineReady`
-  - [ ] Use `page.waitForFunction` to poll `window.__gameState.lastDetectedNote`
-  - [ ] Close the context in `afterEach` (or use `test.afterEach`)
-  - [ ] Add `test.skip` guard for non-Chromium
+- [x] Task 3 — Write audio-injection spec (AC: 4, 5, 6)
+  - [x] Create `tests/e2e/specs/audio-injection.spec.ts`
+  - [x] For each test: create context via `injectAudioFile`, create page, set `window.__TEST_MODE = true` via `addInitScript`, navigate to `/`
+  - [x] Use `page.waitForFunction` to poll `window.__audioState.pipelineReady`
+  - [x] Use `page.waitForFunction` to poll `window.__gameState.lastDetectedNote`
+  - [x] Close the context in `afterEach` (or use `test.afterEach`)
+  - [x] Add `test.skip` guard for non-Chromium
 
-- [ ] Task 4 — Update `.gitignore` (AC: 7 reversal)
-  - [ ] Ensure `tests/e2e/fixtures/audio/` is NOT gitignored (WAV files should be committed)
-  - [ ] Confirm only `screenshots/` and `results/` remain gitignored in `tests/e2e/`
+- [x] Task 4 — Update `.gitignore` (AC: 7 reversal)
+  - [x] Ensure `tests/e2e/fixtures/audio/` is NOT gitignored (WAV files should be committed)
+  - [x] Confirm only `screenshots/` and `results/` remain gitignored in `tests/e2e/`
 
 ## Dev Notes
 
@@ -156,7 +156,16 @@ claude-sonnet-4-6
 
 ### Debug Log References
 
+- `launchOptions.args` cannot be set per-context — each WAV test launches its own `chromium.launch()` instance. `injectAudioFile` returns `{ context, closeBrowser }` instead of just a context.
+
 ### Completion Notes List
+
+- WAV files generated via Python `wave` module (44100 Hz, mono, 16-bit PCM). Generation command documented in `audioHelper.ts` header comment.
+- `injectAudioFile` uses `chromium.launch()` (not `browser.newContext`) because `--use-file-for-fake-audio-capture` is a browser-level arg.
+- Absolute path via `path.resolve(process.cwd(), wavPath)` — relative paths silently produce no audio.
+- A4 test: waits for `pipelineReady`, then polls `lastDetectedNote === 'A4'` within 2000ms.
+- Silence test: waits for `pipelineReady`, waits 2000ms, asserts `lastDetectedNote === null`.
+- All 10 E2E tests pass (2 new audio-injection + 8 existing).
 
 ### File List
 
@@ -165,3 +174,7 @@ claude-sonnet-4-6
 - `tests/e2e/fixtures/audio/silence.wav` — NEW (generated)
 - `tests/e2e/helpers/audioHelper.ts` — NEW
 - `tests/e2e/specs/audio-injection.spec.ts` — NEW
+
+### Change Log
+
+- 2026-05-21: Implemented story 0-2b — WAV fixtures, audioHelper, audio-injection spec. All 10 E2E tests pass.
