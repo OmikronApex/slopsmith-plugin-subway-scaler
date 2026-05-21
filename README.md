@@ -34,7 +34,10 @@ Run the plugin inside a live Slopsmith container with hot-reload.
 **Prerequisites:** [Docker Desktop](https://docs.docker.com/get-docker/) installed and running.
 
 ```bash
-# 1. Start the container (builds Slopsmith image on first run — takes a few minutes)
+# 1. Build the Slopsmith image (one-time, ~5 minutes)
+docker buildx build https://github.com/byrongamatos/slopsmith.git -t slopsmith-dev
+
+# 2. Start the container
 npm run dev
 
 # 2. Verify the plugin loads

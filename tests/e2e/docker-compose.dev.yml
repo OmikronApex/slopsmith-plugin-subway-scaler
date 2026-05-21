@@ -1,12 +1,10 @@
 services:
   slopsmith:
-    build:
-      context: https://github.com/byrongamatos/slopsmith.git
-      dockerfile: Dockerfile
+    image: slopsmith-dev:latest
     ports:
       - "8000:8000"
     volumes:
-      - ./:/app/plugins/subway-scaler
+      - ../../:/app/plugins/subway-scaler
       - slopsmith-config:/config
     environment:
       - PYTHONPATH=/app/lib:/app
