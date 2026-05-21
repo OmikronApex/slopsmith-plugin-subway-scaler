@@ -1,6 +1,6 @@
 # Story 3.3: Implement AudioDetector with YIN Adapter
 
-Status: review
+Status: done
 
 **Epic:** 3 — Core Gameplay Loop
 **Story ID:** 3.3
@@ -192,3 +192,11 @@ claude-sonnet-4-6
 
 ### Change Log
 - 2026-05-21: Added AudioDetectorError, AudioDetector base class, YinDetector subclass; un-skipped all 7 tests
+
+---
+
+## Review Findings
+
+**RESOLVED:**
+
+- [x] [Review][Patch] YinDetector._runDetection() implementation [AudioDetector.js:37-67] — Implemented Promise-based detection that wraps startAudio() callback API. Returns { midi, confidence }. Includes init(deviceId), pause(), resume(), switchInput(), stop() helpers.

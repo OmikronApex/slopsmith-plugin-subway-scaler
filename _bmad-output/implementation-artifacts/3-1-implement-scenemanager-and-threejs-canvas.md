@@ -1,6 +1,6 @@
 # Story 3.1: Implement SceneManager and Three.js Canvas
 
-Status: review
+Status: done
 
 **Epic:** 3 — Core Gameplay Loop
 **Story ID:** 3.1
@@ -161,3 +161,21 @@ claude-sonnet-4-6
 
 ### Change Log
 - 2026-05-21: Implemented SceneManager static class with init()/render()/onResize()/_showClearEffect()/_updateEffects(); fixed test parse error; un-skipped all tests
+
+---
+
+## Review Findings
+
+**ALL RESOLVED:**
+
+- [x] [Review][Patch] SceneManager mutates gameState during render — **FIXED:** Removed `cart._effectPlayed` mutation; now checks `cart.cleared` state directly.
+
+- [x] [Review][Patch] Missing null checks on Three.js dispose calls — **FIXED:** Added null guards (`effect.geometry?.dispose?.()`, `effect.material?.dispose?.()`, `effect.mesh?.scale.setScalar()`).
+
+- [x] [Review][Patch] gameState.scene.carts unguarded loop — **FIXED:** Added length check before loop (`gameState?.scene?.carts?.length`).
+
+- [x] [Review][Patch] Container width/height zero case — **FIXED:** Added zero check in onResize() and fallback dimensions (800×600).
+
+- [x] [Review][Patch] effect.mesh removal without guard — **FIXED:** Added existence checks before remove() call.
+
+- [x] [Review][Resolve] SceneManager static state prevents multi-instance — **RESOLVED:** Implemented multi-instance support using WeakMap-based instance storage. Maintains backward-compatible static API for primary instance while supporting multiple independent renderers per container.

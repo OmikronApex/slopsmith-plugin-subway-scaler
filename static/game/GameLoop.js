@@ -26,7 +26,12 @@ export class GameLoop {
     this._gameState.runtime.tutorialActive = true;
     this._running = true;
     this._lastTime = 0;
-    CartSystem.init(this._gameState);
+    try {
+      CartSystem.init(this._gameState);
+    } catch (err) {
+      console.error('CartSystem initialization failed:', err);
+      this._gameState.runtime.phase = PHASES.PAUSED;
+    }
   }
 
   resume() {
@@ -53,20 +58,21 @@ export class GameLoop {
     if (phase === PHASES.PLAYING) {
       try {
         const result = await this._audioDetector.detect();
+        if (!result) return;
         this._gameState.runtime.currentNote = result;
 
         // Variant offer acceptance check
         const variantOffer = this._gameState.runtime.variantOffer;
-        if (variantOffer?.active && result.midi === variantOffer.rootMidi) {
+        if (variantOffer?.active && result?.midi === variantOffer.rootMidi) {
           if (this.onVariantAccepted) {
             this.onVariantAccepted({ rootMidi: result.midi });
           }
         }
 
         // noteDetected: check before CartSystem processes (stub-safe pre-check)
-        const noteDetected = this._gameState.scene.carts.some(
+        const noteDetected = this._gameState.scene?.carts?.some(
           c => !c.cleared && c.safeZoneActive && c.notemidi === result.midi,
-        );
+        ) || false;
 
         // CartSystem: use injected instance if it has update(), else fall back to static
         const cs = (typeof this._cartSystem?.update === 'function')
@@ -84,7 +90,10 @@ export class GameLoop {
         this._dm.tick(noteDetected, this._gameState);
       } catch (err) {
         if (err.constructor?.name === 'AudioDetectorError') {
+          console.warn('Audio detection error:', err.message);
           this._gameState.runtime.phase = PHASES.PAUSED;
+        } else {
+          console.error('Unexpected error in game loop:', err);
         }
       }
     }
@@ -102,7 +111,11 @@ export class GameLoop {
         await resp.json();
         this._gameState.session.rootMidi = rootMidi;
         this._gameState.runtime.speed = this._dm.baseSpeed ?? this._gameState.runtime.speed;
+      } else {
+        console.warn('Variant acceptance failed:', resp.status);
       }
-    } catch (_) {}
+    } catch (err) {
+      console.error('Error accepting variant:', err);
+    }
   }
 }

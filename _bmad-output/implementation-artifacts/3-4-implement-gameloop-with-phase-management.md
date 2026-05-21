@@ -1,6 +1,6 @@
 # Story 3.4: Implement GameLoop with Phase Management
 
-Status: review
+Status: done
 
 **Epic:** 3 — Core Gameplay Loop
 **Story ID:** 3.4
@@ -227,3 +227,21 @@ claude-sonnet-4-6
 
 ### Change Log
 - 2026-05-21: Implemented full GameLoop class with constructor DI, start/resume/stop, runOneTick, acceptVariant; un-skipped all 13 tests
+
+---
+
+## Review Findings
+
+**CRITICAL — Must fix before merge:**
+
+- [ ] [Review][Patch] GameLoop.runOneTick() silent error handling [GameLoop.js:85] — Empty catch block `catch (err) { if (err.constructor?.name === 'AudioDetectorError') { ... } }` silently pauses without logging. Network/audio failures become invisible state changes. Need logging or error feedback.
+
+- [ ] [Review][Patch] audioDetector.detect() returns null [GameLoop.js:50] — No null check before accessing `result.midi`. If detect() returns null/undefined, throws TypeError. Need `if (!result) return;` guard.
+
+- [ ] [Review][Patch] Variant offer logic lacks null guard [GameLoop.js:56] — `result.midi === variantOffer.rootMidi` assumes result is always object. Crashes if detect() returns unexpected shape. Need `result?.midi === variantOffer.rootMidi`.
+
+- [ ] [Review][Patch] CartSystem.update() dual-path fallback [GameLoop.js:77] — Type check `typeof this._cartSystem?.update === 'function'` creates two untested paths. Injected instance path could fail silently.
+
+- [ ] [Review][Patch] CartSystem.init() unchecked side effect [GameLoop.js:26] — Called in `start()` with no error handling. If it fails, game state is partially initialized. Need try/catch.
+
+- [ ] [Review][Patch] GameLoop.acceptVariant() empty catch [GameLoop.js:102] — `catch (_) {}` silently ignores network failures. No state rollback if fetch fails. Caller never knows variant was rejected.

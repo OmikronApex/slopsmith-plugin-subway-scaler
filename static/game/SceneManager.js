@@ -438,68 +438,82 @@ export function createScene(canvas) {
 // ===== SceneManager — Story 3.1: static class owning renderer, camera, scene =====
 
 export class SceneManager {
-  static _renderer = null;
-  static _scene = null;
-  static _camera = null;
-  static _container = null;
-  static _activeEffects = [];
+  static _instances = new WeakMap(); // Per-container instance storage
+  static _primaryInstance = null; // Default instance for backward compatibility
+
+  static #createInstance(container) {
+    return {
+      _container: container,
+      _renderer: null,
+      _scene: null,
+      _camera: null,
+      _activeEffects: [],
+    };
+  }
+
+  static onResize(newW, newH) {
+    const instance = SceneManager._primaryInstance;
+    if (!instance || !instance._renderer || newW <= 0 || newH <= 0) return;
+    instance._renderer.setSize(newW, newH);
+    instance._camera.aspect = newW / newH;
+    instance._camera.updateProjectionMatrix();
+  }
 
   static init(container) {
-    SceneManager._container = container;
+    const instance = SceneManager.#createInstance(container);
+    SceneManager._instances.set(container, instance);
+    if (!SceneManager._primaryInstance) {
+      SceneManager._primaryInstance = instance;
+    }
+
     const w = container.clientWidth || 800;
     const h = container.clientHeight || 600;
 
-    SceneManager._renderer = new THREE.WebGLRenderer({ antialias: true });
-    SceneManager._renderer.setSize(w, h);
-    SceneManager._renderer.setClearColor(COLORS.BG_VOID);
-    container.appendChild(SceneManager._renderer.domElement);
+    instance._renderer = new THREE.WebGLRenderer({ antialias: true });
+    instance._renderer.setSize(w, h);
+    instance._renderer.setClearColor(COLORS.BG_VOID);
+    container.appendChild(instance._renderer.domElement);
 
-    SceneManager._scene = new THREE.Scene();
-    SceneManager._camera = new THREE.PerspectiveCamera(55, w / h, 0.1, 200);
-    SceneManager._camera.position.set(0, 8, 12);
-    SceneManager._camera.lookAt(0, 0, -10);
-
-    SceneManager.onResize = function (newW, newH) {
-      if (!SceneManager._renderer) return;
-      SceneManager._renderer.setSize(newW, newH);
-      SceneManager._camera.aspect = newW / newH;
-      SceneManager._camera.updateProjectionMatrix();
-    };
+    instance._scene = new THREE.Scene();
+    instance._camera = new THREE.PerspectiveCamera(55, w / h, 0.1, 200);
+    instance._camera.position.set(0, 8, 12);
+    instance._camera.lookAt(0, 0, -10);
 
     if (typeof window !== 'undefined') {
       window.addEventListener('resize', () => {
-        const cw = container.clientWidth || newW;
-        const ch = container.clientHeight || newH;
+        const cw = container?.clientWidth || 800;
+        const ch = container?.clientHeight || 600;
         SceneManager.onResize(cw, ch);
       });
     }
   }
 
   // Read-only render — NEVER writes to gameState
-  static render(gameState) {
-    if (!SceneManager._renderer) return;
+  static render(gameState, container = null) {
+    const instance = container
+      ? SceneManager._instances.get(container)
+      : SceneManager._primaryInstance;
+
+    if (!instance || !instance._renderer) return;
 
     // Detect newly cleared carts and trigger effects (Story 3.7)
-    if (gameState?.scene?.carts) {
+    if (gameState?.scene?.carts?.length) {
       for (const cart of gameState.scene.carts) {
-        if (cart.cleared && !cart._effectPlayed) {
-          cart._effectPlayed = true;
-          if (SceneManager._scene) {
-            const track = gameState.scene?.tracks?.find(t => t.note?.midi === cart.notemidi);
-            const stringIdx = track?.note?.string ?? 1;
-            const pos = { x: 0, y: 0, z: cart.z ?? 0 };
-            SceneManager._showClearEffect(pos, stringIdx);
-          }
+        if (cart.cleared && instance._scene) {
+          const track = gameState.scene?.tracks?.find(t => t.note?.midi === cart.notemidi);
+          const stringIdx = track?.note?.string ?? 1;
+          const pos = { x: 0, y: 0, z: cart.z ?? 0 };
+          SceneManager.#showClearEffect(instance, pos, stringIdx);
         }
       }
     }
 
-    SceneManager._updateEffects(performance.now());
-    SceneManager._renderer.render(SceneManager._scene, SceneManager._camera);
+    SceneManager.#updateEffects(instance, performance.now());
+    instance._renderer.render(instance._scene, instance._camera);
   }
 
-  static _showClearEffect(position, stringIndex) {
-    if (!SceneManager._scene || !THREE.RingGeometry) return;
+  static #showClearEffect(instance, position, stringIndex) {
+    if (!instance._scene || !THREE.RingGeometry) return;
     const color = STRING_COLORS[stringIndex] || 0xFFFFFF;
     const geometry = new THREE.RingGeometry(0.1, 0.3, 16);
     const material = new THREE.MeshBasicMaterial({
@@ -510,26 +524,32 @@ export class SceneManager {
     });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.position.set(position.x ?? 0, position.y ?? 0, position.z ?? 0);
-    SceneManager._scene.add(mesh);
-    SceneManager._activeEffects.push({
+    instance._scene.add(mesh);
+    instance._activeEffects.push({
       mesh, material, geometry,
       startTime: performance.now(),
       duration: 300,
     });
   }
 
-  static _updateEffects(now) {
-    SceneManager._activeEffects = SceneManager._activeEffects.filter(effect => {
+  static #updateEffects(instance, now) {
+    instance._activeEffects = instance._activeEffects.filter(effect => {
       const elapsed = now - effect.startTime;
       const progress = elapsed / effect.duration;
       if (progress >= 1.0) {
-        effect.geometry.dispose?.();
-        effect.material.dispose?.();
-        SceneManager._scene?.remove(effect.mesh);
+        effect.geometry?.dispose?.();
+        effect.material?.dispose?.();
+        if (effect.mesh && instance._scene) {
+          instance._scene.remove(effect.mesh);
+        }
         return false;
       }
-      effect.material.opacity = 1.0 - progress;
-      effect.mesh.scale?.setScalar?.(1.0 + progress * 2);
+      if (effect.material) {
+        effect.material.opacity = 1.0 - progress;
+      }
+      if (effect.mesh?.scale) {
+        effect.mesh.scale.setScalar(1.0 + progress * 2);
+      }
       return true;
     });
   }
