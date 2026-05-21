@@ -57,9 +57,9 @@ development_status:
 
   1-8-implement-ux-design-polish-and-mockup-styling:
     title: "Implement UX Design Polish and Mockup Styling"
-    status: ready-for-dev
+    status: review
     last_updated: 2026-05-21
-    notes: "Planned: Transform minimal setup screen into Night City-styled UI matching design mockup. 2-column grid, title effects, scale preview, responsive layout."
+    notes: "✅ Complete: Game title, 2-column grid, scale preview, toggle styling, responsive layout. All 7 tasks done, 93 tests passing."
 
 ## Status Definitions
 

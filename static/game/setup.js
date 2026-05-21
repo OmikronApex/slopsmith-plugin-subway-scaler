@@ -70,7 +70,7 @@ function createToggleGroup(name, options, defaultValue, onSelect) {
 
     const btn = el('button',
       {
-        class: `toggle-button ${value === defaultValue ? 'active' : ''}`,
+        class: `toggle-button ${value === defaultValue ? 'selected' : ''}`,
         'data-value': value,
         type: 'button'
       },
@@ -78,11 +78,11 @@ function createToggleGroup(name, options, defaultValue, onSelect) {
     );
 
     btn.addEventListener('click', () => {
-      const wasActive = btn.classList.contains('active');
-      group.querySelectorAll('.toggle-button').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
+      const wasSelected = btn.classList.contains('selected');
+      group.querySelectorAll('.toggle-button').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
       // Only call onSelect if value actually changed
-      if (!wasActive) {
+      if (!wasSelected) {
         onSelect(value);
       }
     });
@@ -122,6 +122,9 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
 
   const stored = loadSettings();
 
+  // Create setup section with title
+  const setupSection = el('div', { class: 'setup-section' });
+
   const defaultScaleId = stored.scale_id || scales[0].id;
   const defaultDifficulty = stored.difficulty || 'medium';
   const defaultInstrumentId = stored.instrument_id || instruments[0].id;
@@ -130,11 +133,14 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
   let currentDifficulty = defaultDifficulty;
   let currentInstrumentId = defaultInstrumentId;
 
+  // Add title
+  setupSection.appendChild(el('div', { class: 'game-title' }, 'SUBWAY SCALER'));
+
   const container = el('div', { class: 'setup-container' });
   const form = el('div', { class: 'setup-form' });
 
-  // Scale selector
-  const scaleGroup = el('div', { class: 'form-group' });
+  // Scale selector (full width in grid)
+  const scaleGroup = el('div', { class: 'form-group full-width' });
   scaleGroup.appendChild(el('label', { 'for': 'scale-select' }, 'Scale'));
   const scaleSelect = el('select', { id: 'scale-select' },
     ...scales.map(s => el('option',
@@ -142,10 +148,17 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
       s.name
     ))
   );
+  const scalePreview = el('div', { class: 'scale-preview' });
+  const defaultScale = scales.find(s => s.id === defaultScaleId);
+  scalePreview.textContent = defaultScale ? defaultScale.name : '';
+
   scaleSelect.addEventListener('change', (e) => {
     currentScaleId = e.target.value;
+    const selected = scales.find(s => s.id === e.target.value);
+    scalePreview.textContent = selected ? selected.name : '';
   });
   scaleGroup.appendChild(scaleSelect);
+  scaleGroup.appendChild(scalePreview);
   form.appendChild(scaleGroup);
 
   // Difficulty toggle
@@ -328,7 +341,8 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
   });
 
   form.appendChild(startBtn);
-  container.appendChild(form);
+  setupSection.appendChild(form);
+  container.appendChild(setupSection);
 
   root.innerHTML = '';
   root.appendChild(container);
