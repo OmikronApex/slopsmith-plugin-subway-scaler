@@ -33,11 +33,11 @@ Run the plugin inside a live Slopsmith container with hot-reload.
 
 **Prerequisites:** [Docker Desktop](https://docs.docker.com/get-docker/) installed and running.
 
-> **Note:** Slopsmith does not yet publish a Docker Hub image. The command below builds it from source (~5 minutes, one-time). Pin to a specific commit SHA when stability matters — replace `main` with `477d22068cbc` (latest verified) or any later SHA from the [slopsmith repo](https://github.com/byrongamatos/slopsmith).
+> **Note:** Slopsmith does not yet publish a Docker Hub image. The command below builds it from source (~5 minutes, one-time). Pin to a specific commit SHA when stability matters — replace `main` with `477d22068cbc81fa5bf7485b04e24d60bdb5d735` (latest verified) or any later SHA from the [slopsmith repo](https://github.com/byrongamatos/slopsmith).
 
 ```bash
 # 1. Build the Slopsmith image (one-time, ~5 minutes)
-docker buildx build https://github.com/byrongamatos/slopsmith.git#477d22068cbc -t slopsmith-dev
+docker buildx build https://github.com/byrongamatos/slopsmith.git#477d22068cbc81fa5bf7485b04e24d60bdb5d735 -t slopsmith-dev
 
 # 2. Start the container
 npm run dev

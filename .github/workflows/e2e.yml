@@ -26,7 +26,7 @@ jobs:
         run: npx playwright install chromium --with-deps
 
       - name: Build Slopsmith image
-        run: docker buildx build https://github.com/byrongamatos/slopsmith.git#477d22068cbc -t slopsmith-dev
+        run: docker buildx build https://github.com/byrongamatos/slopsmith.git#477d22068cbc81fa5bf7485b04e24d60bdb5d735 -t slopsmith-dev
 
       - name: Start container
         run: docker compose -f tests/e2e/docker-compose.dev.yml up -d --wait
