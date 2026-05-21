@@ -149,6 +149,43 @@ development_status:
     status: done
     last_updated: 2026-05-21
 
+  # Epics
+  epic-4:
+    title: "Session UX & Accessibility"
+    status: in-progress
+    last_updated: 2026-05-21
+
+  # Stories - Epic 4
+  4-1-implement-overlay-container-with-rgb-shift-glitch-animation:
+    title: "Implement Overlay Container with RGB-Shift Glitch Animation"
+    status: ready-for-dev
+    last_updated: 2026-05-21
+    notes: "Story documented with full BMAD context. Shared overlay container foundation for pause, game-over, and audio disconnect overlays."
+
+  4-2-implement-pause-overlay:
+    title: "Implement Pause Overlay"
+    status: ready-for-dev
+    last_updated: 2026-05-21
+    notes: "Story documented with full BMAD context. Pause overlay with RESUME button, Quit to Menu link, and audio disconnect variant."
+
+  4-3-implement-game-over-overlay:
+    title: "Implement Game Over Overlay"
+    status: ready-for-dev
+    last_updated: 2026-05-21
+    notes: "Story documented with full BMAD context. Game-over overlay with final score display, context line (delta from previous session), RESTART (< 500ms), and MAIN MENU buttons."
+
+  4-4-implement-aria-roles-and-keyboard-navigation:
+    title: "Implement ARIA Roles and Keyboard Navigation"
+    status: ready-for-dev
+    last_updated: 2026-05-21
+    notes: "Story documented with full BMAD context. Keyboard navigation, ARIA roles, focus trap, focus restoration, and toggle group arrow key handling."
+
+  4-5-implement-touch-targets-and-final-accessibility-audit:
+    title: "Implement Touch Targets and Final Accessibility Audit"
+    status: ready-for-dev
+    last_updated: 2026-05-21
+    notes: "Story documented with full BMAD context. 44×44px touch targets, colour contrast verification, axe DevTools audit, Lighthouse accessibility score ≥ 90, responsive touch layout testing."
+
 ## Status Definitions
 
 # backlog: not yet ready for development
