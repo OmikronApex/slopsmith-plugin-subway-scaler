@@ -1,7 +1,6 @@
 // Red-phase ATDD scaffold — Story 1.6: Setup UI behavior and Story 1.7: fetch-failure handling
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-// TODO: update import once setup.js API is finalised — file does not exist yet
 import { saveSettings, loadSettings, fetchSessionConfig } from '../../../static/game/ui/setup.js';
 
 describe('setup module — localStorage', () => {

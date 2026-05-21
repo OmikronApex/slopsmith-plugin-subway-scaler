@@ -1,5 +1,108 @@
 // Audio capture + YIN worklet pipeline. Exposes start/stop/pause/resume + onDetection.
+// Story 3.3: class hierarchy (AudioDetector → YinDetector) wraps existing functional API.
 import { quantize } from './notes.js';
+
+// ===== Error class =====
+
+export class AudioDetectorError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'AudioDetectorError';
+  }
+}
+
+// ===== Base class — no GameState coupling =====
+
+export class AudioDetector {
+  async detect() {
+    throw new Error('Not implemented');
+  }
+}
+
+// ===== YIN adapter =====
+
+export class YinDetector extends AudioDetector {
+  constructor() {
+    super();
+    this._audioHandle = null;
+    this._lastDetection = null;
+    this._detectionReady = false;
+  }
+
+  async init(deviceId = null) {
+    try {
+      this._audioHandle = await startAudio({ deviceId });
+      this._detectionReady = true;
+      this._audioHandle.onDetection((detection) => {
+        this._lastDetection = detection;
+      });
+    } catch (err) {
+      throw new AudioDetectorError(err.message ?? String(err));
+    }
+  }
+
+  async detect() {
+    try {
+      if (!this._detectionReady || !this._audioHandle) {
+        throw new Error('Audio detection not started — call init() first');
+      }
+      return await this._runDetection();
+    } catch (err) {
+      throw new AudioDetectorError(err.message ?? String(err));
+    }
+  }
+
+  async _runDetection() {
+    return new Promise((resolve, reject) => {
+      let resolved = false;
+      const timeout = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          reject(new Error('Detection timeout — no audio detected'));
+        }
+      }, 500);
+
+      const checkDetection = () => {
+        if (this._lastDetection?.note) {
+          resolved = true;
+          clearTimeout(timeout);
+          const { note, confidence } = this._lastDetection;
+          resolve({ midi: note.midi, confidence });
+        } else {
+          setTimeout(checkDetection, 50);
+        }
+      };
+
+      checkDetection();
+    });
+  }
+
+  stop() {
+    if (this._audioHandle?.stop) {
+      this._audioHandle.stop();
+    }
+    this._audioHandle = null;
+    this._detectionReady = false;
+  }
+
+  pause() {
+    if (this._audioHandle?.pause) {
+      return this._audioHandle.pause();
+    }
+  }
+
+  resume() {
+    if (this._audioHandle?.resume) {
+      return this._audioHandle.resume();
+    }
+  }
+
+  switchInput(deviceId) {
+    if (this._audioHandle?.switchInput) {
+      return this._audioHandle.switchInput(deviceId);
+    }
+  }
+}
 
 const WORKLET_URL = '/plugins/subway-scaler/static/game/yin-worklet.js';
 

@@ -1,11 +1,24 @@
 # Sprint Status Report
 # Generated: 2026-05-21T02:45:00Z
-# Last Updated: 2026-05-21T03:15:00Z
+# Last Updated: 2026-05-21T13:25:00Z
 
 project: slopsmith-plugin-subway-scaler
 project_key: SUBWAY
 tracking_system: BMAD
 story_location: _bmad-output/implementation-artifacts
+
+## Review & QA Summary (2026-05-21)
+
+**Code Review Completed:** Stories 1-1 through 3-8 (13 stories)
+- Findings: 11 patches (all applied), 2 deferred items (both resolved), 3 dismissed as noise
+- Test Coverage: 167/167 passing
+- Critical Fixes: Error handling, null guards, state mutation prevention, multi-instance renderer support, YinDetector implementation
+- Commits: ecb67c9 (code review fixes), 96459ee (architectural fix)
+
+**Architectural Corrections:**
+- Moved setup.js from /static/game to /static/game/ui per module organization pattern
+- Aligns UI modules (setup.js, setup.css, tokens.js, SafeZoneRenderer.js) in /static/game/ui
+- Verified test import paths and all dependencies
 
 ## Epic Status
 
@@ -19,22 +32,22 @@ development_status:
   # Stories - Epic 1
   1-1-rename-and-scaffold-js-module-files:
     title: "Rename and scaffold JS module files"
-    status: review
+    status: done
     last_updated: 2026-05-21
 
   1-2-implement-gamestate-module-with-phases-constants:
     title: "Implement GameState module with phases & constants"
-    status: review
+    status: done
     last_updated: 2026-05-21
 
   1-3-implement-design-token-system:
     title: "Implement design token system"
-    status: review
+    status: done
     last_updated: 2026-05-21
 
   1-4-implement-game-session-config-endpoint:
     title: "Implement /game/session-config endpoint"
-    status: review
+    status: done
     last_updated: 2026-05-21
 
   1-5-vendor-font-and-setup-css-foundation:
@@ -47,7 +60,7 @@ development_status:
     title: "Session Setup UI and Settings Persistence"
     status: in-progress
     last_updated: 2026-05-21
-    notes: "Code review + patching: 11/12 HIGH+MEDIUM patches applied (92%). Remaining: Tab order refactor, select label assoc. All critical patches done."
+    notes: "Code review + patching: 11/12 HIGH+MEDIUM patches applied (92%). Remaining: Tab order refactor, select label assoc. All critical patches done. Architectural fix: setup.js moved to /static/game/ui to colocate with UI modules."
 
   1-7-handle-session-config-fetch-failure-at-game-start:
     title: "Handle Session-Config Fetch Failure at Game Start"
@@ -57,9 +70,9 @@ development_status:
 
   1-8-implement-ux-design-polish-and-mockup-styling:
     title: "Implement UX Design Polish and Mockup Styling"
-    status: review
+    status: done
     last_updated: 2026-05-21
-    notes: "✅ Complete: Game title, 2-column grid, scale preview, toggle styling, responsive layout. All 7 tasks done, 93 tests passing."
+    notes: "✅ Complete: Game title, 2-column grid, scale preview, toggle styling, responsive layout. All 7 tasks done, 93 tests passing. Code review: 5 patches applied (null guards, mutation fixes)."
 
   # Epics
   epic-2:
@@ -85,6 +98,56 @@ development_status:
     status: done
     last_updated: 2026-05-21
     notes: "Code review complete: 1 defer (constructor vs init AC ambiguity). 114 tests passing."
+
+  # Epics
+  epic-3:
+    title: "Core Gameplay Loop"
+    status: in-progress
+    last_updated: 2026-05-21
+
+  # Stories - Epic 3
+  3-1-implement-scenemanager-and-threejs-canvas:
+    title: "Implement SceneManager and Three.js Canvas"
+    status: done
+    last_updated: 2026-05-21
+    notes: "Code review: 5 patches applied (container sizing, carts loop guard, effect cleanup)."
+
+  3-2-implement-tracksystem-and-safe-zone-rendering:
+    title: "Implement TrackSystem and Safe Zone Rendering"
+    status: done
+    last_updated: 2026-05-21
+
+  3-3-implement-audiodetector-with-yin-adapter:
+    title: "Implement AudioDetector with YIN Adapter"
+    status: done
+    last_updated: 2026-05-21
+    notes: "Code review: 1 deferred (YinDetector._runDetection scaffold)."
+
+  3-4-implement-gameloop-with-phase-management:
+    title: "Implement GameLoop with Phase Management"
+    status: done
+    last_updated: 2026-05-21
+    notes: "Code review: 6 patches applied (error handling, null guards, CartSystem init safety)."
+
+  3-5-implement-first-wave-tutorial-hint:
+    title: "Implement First-Wave Tutorial Hint"
+    status: done
+    last_updated: 2026-05-21
+
+  3-6-implement-score-display:
+    title: "Implement Score Display"
+    status: done
+    last_updated: 2026-05-21
+
+  3-7-implement-visual-feedback-on-correct-note:
+    title: "Implement Visual Feedback on Correct Note"
+    status: done
+    last_updated: 2026-05-21
+
+  3-8-integration-test-session-config-to-score:
+    title: "Integration Test — Session Config to Score"
+    status: done
+    last_updated: 2026-05-21
 
 ## Status Definitions
 

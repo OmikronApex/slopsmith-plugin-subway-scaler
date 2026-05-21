@@ -9,7 +9,7 @@ import { GameClient } from './game-client.js';
 import { SafeZoneRenderer } from './ui/SafeZoneRenderer.js';
 import { laneX } from './TrackSystem.js';
 import { injectTokens } from './ui/tokens.js';
-import { renderSetupScreen } from './setup.js';
+import { renderSetupScreen } from './ui/setup.js';
 
 const API = '/api/plugins/subway-scaler';
 const STATIC = '/plugins/subway-scaler/static/game';

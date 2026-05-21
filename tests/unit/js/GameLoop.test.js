@@ -68,13 +68,13 @@ describe('GameLoop — phase management (Story 3.4)', () => {
     vi.restoreAllMocks();
   });
 
-  it.skip('GameLoop.start() transitions phase from PHASES.IDLE to PHASES.PLAYING', () => {
+  it('GameLoop.start() transitions phase from PHASES.IDLE to PHASES.PLAYING', () => {
     expect(gameState.runtime.phase).toBe(PHASES.IDLE);
     gameLoop.start();
     expect(gameState.runtime.phase).toBe(PHASES.PLAYING);
   });
 
-  it.skip('each tick calls AudioDetector.detect, then CartSystem.update, then DifficultyManager.tick, then SceneManager.render in order', async () => {
+  it('each tick calls AudioDetector.detect, then CartSystem.update, then DifficultyManager.tick, then SceneManager.render in order', async () => {
     const callOrder = [];
     stubs.audioDetector.detect.mockImplementation(async () => { callOrder.push('detect'); return { midi: 60, confidence: 0.9 }; });
     stubs.cartSystem.update.mockImplementation(() => { callOrder.push('cartUpdate'); });
@@ -87,7 +87,7 @@ describe('GameLoop — phase management (Story 3.4)', () => {
     expect(callOrder).toEqual(['detect', 'cartUpdate', 'dmTick', 'render']);
   });
 
-  it.skip('DifficultyManager.tick receives true when detected note matches a safe zone lane this tick', async () => {
+  it('DifficultyManager.tick receives true when detected note matches a safe zone lane this tick', async () => {
     // Set up a cart whose note matches what audio returns
     gameState.scene.carts = [{ z: 0, lane: gameState.scene.character.lane, notemidi: 60, safeZoneActive: true, cleared: false }];
     stubs.audioDetector.detect.mockResolvedValue({ midi: 60, confidence: 0.9 });
@@ -98,7 +98,7 @@ describe('GameLoop — phase management (Story 3.4)', () => {
     expect(stubs.difficultyManager.tick).toHaveBeenCalledWith(true, expect.anything());
   });
 
-  it.skip('DifficultyManager.tick receives false when no safe zone match this tick', async () => {
+  it('DifficultyManager.tick receives false when no safe zone match this tick', async () => {
     gameState.scene.carts = [{ z: 0, lane: gameState.scene.character.lane, notemidi: 72, safeZoneActive: true, cleared: false }];
     stubs.audioDetector.detect.mockResolvedValue({ midi: 60, confidence: 0.9 });
 
@@ -108,7 +108,7 @@ describe('GameLoop — phase management (Story 3.4)', () => {
     expect(stubs.difficultyManager.tick).toHaveBeenCalledWith(false, expect.anything());
   });
 
-  it.skip('AudioDetectorError caught by GameLoop transitions phase to PHASES.PAUSED', async () => {
+  it('AudioDetectorError caught by GameLoop transitions phase to PHASES.PAUSED', async () => {
     // TODO: AudioDetector.js not yet implemented — import AudioDetectorError inline
     class AudioDetectorError extends Error {}
     stubs.audioDetector.detect.mockRejectedValue(new AudioDetectorError('mic disconnected'));
@@ -119,13 +119,13 @@ describe('GameLoop — phase management (Story 3.4)', () => {
     expect(gameState.runtime.phase).toBe(PHASES.PAUSED);
   });
 
-  it.skip('GameLoop.resume() transitions PHASES.PAUSED to PHASES.PLAYING', () => {
+  it('GameLoop.resume() transitions PHASES.PAUSED to PHASES.PLAYING', () => {
     gameState.runtime.phase = PHASES.PAUSED;
     gameLoop.resume();
     expect(gameState.runtime.phase).toBe(PHASES.PLAYING);
   });
 
-  it.skip('GameState.runtime.phase === PHASES.GAME_OVER stops the update loop on next tick', async () => {
+  it('GameState.runtime.phase === PHASES.GAME_OVER stops the update loop on next tick', async () => {
     gameLoop.start();
     gameState.runtime.phase = PHASES.GAME_OVER;
     const rafCallsBefore = requestAnimationFrame.mock.calls.length;
@@ -135,7 +135,7 @@ describe('GameLoop — phase management (Story 3.4)', () => {
     expect(rafCallsAfter).toBe(rafCallsBefore);
   });
 
-  it.skip('GameLoop is sole writer to GameState.runtime.currentNote', async () => {
+  it('GameLoop is sole writer to GameState.runtime.currentNote', async () => {
     stubs.audioDetector.detect.mockResolvedValue({ midi: 69, confidence: 0.88 });
     gameLoop.start();
     await gameLoop.runOneTick(16);
@@ -143,7 +143,7 @@ describe('GameLoop — phase management (Story 3.4)', () => {
     expect(gameState.runtime.currentNote.midi).toBe(69);
   });
 
-  it.skip('GameLoop is sole writer to GameState.scene.character', async () => {
+  it('GameLoop is sole writer to GameState.scene.character', async () => {
     const charBefore = gameState.scene.character;
     gameLoop.start();
     await gameLoop.runOneTick(16);
@@ -178,20 +178,20 @@ describe('GameLoop — tutorial hint (Story 3.5)', () => {
     vi.restoreAllMocks();
   });
 
-  it.skip('first cart wave spawns at 50% of base difficulty speed', () => {
+  it('first cart wave spawns at 50% of base difficulty speed', () => {
     gameLoop.start();
     const firstWaveSpeed = gameLoop.firstWaveSpeed;
     expect(firstWaveSpeed).toBeCloseTo(gameLoop.baseSpeed * 0.5, 5);
   });
 
-  it.skip('tutorial text overlay appears on first wave (truthy indication set in GameState or returned value)', () => {
+  it('tutorial text overlay appears on first wave (truthy indication set in GameState or returned value)', () => {
     gameLoop.start();
     // GameLoop should signal tutorial state — either in gameState or via a property
     const tutorialActive = gameState.runtime.tutorialActive ?? gameLoop.tutorialActive;
     expect(tutorialActive).toBeTruthy();
   });
 
-  it.skip('after first correct note is detected, tutorial state is cleared/hidden', async () => {
+  it('after first correct note is detected, tutorial state is cleared/hidden', async () => {
     stubs.audioDetector.detect.mockResolvedValue({ midi: 60, confidence: 0.9 });
     gameState.scene.carts = [{ z: 0, lane: gameState.scene.character.lane, notemidi: 60, safeZoneActive: true, cleared: false }];
     gameLoop.start();
@@ -200,7 +200,7 @@ describe('GameLoop — tutorial hint (Story 3.5)', () => {
     expect(tutorialActive).toBeFalsy();
   });
 
-  it.skip('tutorial never reappears after first correct note in a session', async () => {
+  it('tutorial never reappears after first correct note in a session', async () => {
     stubs.audioDetector.detect.mockResolvedValue({ midi: 60, confidence: 0.9 });
     gameState.scene.carts = [{ z: 0, lane: gameState.scene.character.lane, notemidi: 60, safeZoneActive: true, cleared: false }];
     gameLoop.start();

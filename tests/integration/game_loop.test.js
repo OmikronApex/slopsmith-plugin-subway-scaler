@@ -102,7 +102,7 @@ describe('Integration — session config → GameState → score (Story 3.8)', (
     vi.restoreAllMocks();
   });
 
-  it.skip('initialising GameState.session from /game/session-config populates session fields correctly', async () => {
+  it('initialising GameState.session from /game/session-config populates session fields correctly', async () => {
     // Simulate what main.js does on session start
     const response = await fetch('/api/plugins/subway-scaler/game/session-config?scale_id=major&root_midi=60&instrument_id=guitar-standard');
     const config = await response.json();
@@ -117,15 +117,15 @@ describe('Integration — session config → GameState → score (Story 3.8)', (
     expect(gameState.session.instrument).toBe('guitar-standard');
   });
 
-  it.skip('after 3 simulated ticks with correct note detection, GameState.runtime.score equals 300 * difficultyMultiplier', async () => {
+  it('after 3 simulated ticks with correct note detection, GameState.runtime.score equals 300 * difficultyMultiplier', async () => {
     // Populate session from config
     gameState.session.rootMidi = 60;
     gameState.session.scale = 'major';
     gameState.runtime.phase = PHASES.PLAYING;
 
-    // Add a safe zone cart that the detected note (midi=60) matches
+    // Cart at z=50 (safe distance from character at z=0; no collision, safe zone active)
     gameState.scene.carts = [
-      { z: 0, lane: 3, notemidi: 60, safeZoneActive: true, cleared: false },
+      { z: 50, lane: 3, notemidi: 60, safeZoneActive: true, cleared: false },
     ];
 
     // Audio returns correct note (midi=60) every tick
@@ -134,16 +134,16 @@ describe('Integration — session config → GameState → score (Story 3.8)', (
     gameLoop.start();
     await gameLoop.runOneTick(16);
     // Replenish the cart for next tick
-    gameState.scene.carts = [{ z: 0, lane: 3, notemidi: 60, safeZoneActive: true, cleared: false }];
+    gameState.scene.carts = [{ z: 50, lane: 3, notemidi: 60, safeZoneActive: true, cleared: false }];
     await gameLoop.runOneTick(32);
-    gameState.scene.carts = [{ z: 0, lane: 3, notemidi: 60, safeZoneActive: true, cleared: false }];
+    gameState.scene.carts = [{ z: 50, lane: 3, notemidi: 60, safeZoneActive: true, cleared: false }];
     await gameLoop.runOneTick(48);
 
-    const difficultyMultiplier = difficultyManager.multiplier ?? 1;
-    expect(gameState.runtime.score).toBe(300 * difficultyMultiplier);
+    // medium difficulty: 3 * 100 * 1.5 = 450
+    expect(gameState.runtime.score).toBe(450);
   });
 
-  it.skip('cart positions in GameState.scene.carts are updated (advanced toward character) each tick', async () => {
+  it('cart positions in GameState.scene.carts are updated (advanced toward character) each tick', async () => {
     gameState.runtime.phase = PHASES.PLAYING;
     gameState.scene.carts = [{ z: 50, lane: 1, notemidi: 99, safeZoneActive: true, cleared: false }];
 
@@ -160,7 +160,7 @@ describe('Integration — session config → GameState → score (Story 3.8)', (
     }
   });
 
-  it.skip('GameState.runtime.phase remains PHASES.PLAYING across 3 ticks when no collision occurs', async () => {
+  it('GameState.runtime.phase remains PHASES.PLAYING across 3 ticks when no collision occurs', async () => {
     gameState.runtime.phase = PHASES.PLAYING;
     // Carts far away — no collision during 3 ticks
     gameState.scene.carts = [{ z: 100, lane: 9, notemidi: 99, safeZoneActive: false, cleared: false }];
@@ -173,7 +173,7 @@ describe('Integration — session config → GameState → score (Story 3.8)', (
     expect(gameState.runtime.phase).toBe(PHASES.PLAYING);
   });
 
-  it.skip('GameState.scene.character is written only by GameLoop (structural ownership test)', async () => {
+  it('GameState.scene.character is written only by GameLoop (structural ownership test)', async () => {
     gameState.runtime.phase = PHASES.PLAYING;
     const charRef = gameState.scene.character;
 
@@ -234,7 +234,7 @@ describe('Integration — variant acceptance → session-config re-fetch (Story 
     vi.restoreAllMocks();
   });
 
-  it.skip('CartSystem.update() detecting the variant root MIDI notifies main.js of variant acceptance', async () => {
+  it('CartSystem.update() detecting the variant root MIDI notifies main.js of variant acceptance', async () => {
     const onVariantAccepted = vi.fn();
     gameLoop.onVariantAccepted = onVariantAccepted;
 
@@ -255,7 +255,7 @@ describe('Integration — variant acceptance → session-config re-fetch (Story 
     );
   });
 
-  it.skip('after variant acceptance, main.js calls GET /game/session-config with the new root_midi', async () => {
+  it('after variant acceptance, main.js calls GET /game/session-config with the new root_midi', async () => {
     gameState.runtime.phase = PHASES.PLAYING;
     gameState.session.rootMidi = 60;
     gameState.session.scale = 'major';
@@ -277,7 +277,7 @@ describe('Integration — variant acceptance → session-config re-fetch (Story 
     expect(variantFetch).toBeTruthy();
   });
 
-  it.skip('after variant acceptance, GameState.session.rootMidi is updated to the new root', async () => {
+  it('after variant acceptance, GameState.session.rootMidi is updated to the new root', async () => {
     gameState.runtime.phase = PHASES.PLAYING;
     gameState.session.rootMidi = 60;
     gameState.session.scale = 'major';
@@ -293,7 +293,7 @@ describe('Integration — variant acceptance → session-config re-fetch (Story 
     expect(gameState.session.rootMidi).toBe(65);
   });
 
-  it.skip('after variant transition, GameState.runtime.speed resets to base difficulty speed', async () => {
+  it('after variant transition, GameState.runtime.speed resets to base difficulty speed', async () => {
     gameState.runtime.phase = PHASES.PLAYING;
     gameState.runtime.speed = 25; // elevated speed from playing
     gameState.session.rootMidi = 60;
@@ -309,7 +309,7 @@ describe('Integration — variant acceptance → session-config re-fetch (Story 
     expect(gameState.runtime.speed).toBeCloseTo(baseSpeed, 1);
   });
 
-  it.skip('after variant transition, gameplay continues on the new root (phase stays PLAYING)', async () => {
+  it('after variant transition, gameplay continues on the new root (phase stays PLAYING)', async () => {
     gameState.runtime.phase = PHASES.PLAYING;
     gameState.session.rootMidi = 60;
     gameState.runtime.variantOffer = { rootMidi: 65, active: true };
@@ -320,7 +320,7 @@ describe('Integration — variant acceptance → session-config re-fetch (Story 
     expect(gameState.runtime.phase).toBe(PHASES.PLAYING);
   });
 
-  it.skip('score from both root positions contributes to the total score (accumulated, not reset)', async () => {
+  it('score from both root positions contributes to the total score (accumulated, not reset)', async () => {
     gameState.runtime.phase = PHASES.PLAYING;
     gameState.runtime.score = 500; // pre-existing score from original root
     gameState.session.rootMidi = 60;
