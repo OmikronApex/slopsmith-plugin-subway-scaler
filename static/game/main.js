@@ -102,13 +102,19 @@ export async function bootstrap(root) {
       body: JSON.stringify(merged),
     }).catch(() => {});
 
-    // Hide setup, show game
-    const setupContainer = root.querySelector('.setup-container');
-    if (setupContainer) setupContainer.style.display = 'none';
-    const gameWrap = root.querySelector('.game-wrap');
-    if (gameWrap) gameWrap.style.display = 'block';
-    const menu = root.querySelector('.menu');
-    if (menu) menu.classList.remove('hidden');
+    // Hide setup, show game (with explicit structure to avoid query fragility)
+    const allChildren = Array.from(root.children);
+    allChildren.forEach(child => {
+      if (child.classList && child.classList.contains('setup-container')) {
+        child.style.display = 'none';
+      }
+      if (child.classList && child.classList.contains('game-wrap')) {
+        child.style.display = 'block';
+      }
+      if (child.classList && child.classList.contains('menu')) {
+        child.classList.remove('hidden');
+      }
+    });
   }
 
   // Render setup screen first

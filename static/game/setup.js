@@ -35,7 +35,21 @@ function loadSettings() {
 }
 
 function saveSettings(settings) {
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  } catch (e) {
+    if (e.name === 'QuotaExceededError') {
+      console.warn('localStorage quota exceeded, clearing old data');
+      try {
+        localStorage.removeItem(SETTINGS_KEY);
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+      } catch (e2) {
+        console.error('Failed to save settings:', e2);
+      }
+    } else {
+      console.error('Failed to save settings:', e);
+    }
+  }
 }
 
 function computeRandomRootMidi(instrument) {
@@ -43,6 +57,7 @@ function computeRandomRootMidi(instrument) {
   const lowestString = instrument.tuning[0];
   const fretMin = Math.max(21, lowestString + 5);
   const fretMax = Math.min(108, lowestString + 8);
+  if (fretMin > fretMax) return 60;
   return Math.floor(Math.random() * (fretMax - fretMin + 1)) + fretMin;
 }
 
@@ -63,9 +78,13 @@ function createToggleGroup(name, options, defaultValue, onSelect) {
     );
 
     btn.addEventListener('click', () => {
+      const wasActive = btn.classList.contains('active');
       group.querySelectorAll('.toggle-button').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      onSelect(value);
+      // Only call onSelect if value actually changed
+      if (!wasActive) {
+        onSelect(value);
+      }
     });
 
     // Keyboard navigation: Arrow keys
@@ -91,11 +110,21 @@ function createToggleGroup(name, options, defaultValue, onSelect) {
 }
 
 export async function renderSetupScreen(root, scales, instruments, onGameStart) {
+  // Validate input data
+  if (!scales || scales.length === 0) {
+    root.innerHTML = '<div style="color: red; padding: 1rem;">Error: No scales available</div>';
+    return;
+  }
+  if (!instruments || instruments.length === 0) {
+    root.innerHTML = '<div style="color: red; padding: 1rem;">Error: No instruments available</div>';
+    return;
+  }
+
   const stored = loadSettings();
 
-  const defaultScaleId = stored.scale_id || (scales.length > 0 ? scales[0].id : '');
+  const defaultScaleId = stored.scale_id || scales[0].id;
   const defaultDifficulty = stored.difficulty || 'medium';
-  const defaultInstrumentId = stored.instrument_id || (instruments.length > 0 ? instruments[0].id : '');
+  const defaultInstrumentId = stored.instrument_id || instruments[0].id;
 
   let currentScaleId = defaultScaleId;
   let currentDifficulty = defaultDifficulty;
@@ -121,24 +150,31 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
 
   // Difficulty toggle
   const diffGroup = el('div', { class: 'form-group' });
-  diffGroup.appendChild(el('label', {}, 'Difficulty'));
+  const diffLabel = el('label', { id: 'label-difficulty' }, 'Difficulty');
+  diffGroup.appendChild(diffLabel);
   const diffToggle = createToggleGroup(
     'Difficulty',
     ['easy', 'medium', 'hard'],
     defaultDifficulty,
     (val) => { currentDifficulty = val; }
   );
+  diffToggle.setAttribute('aria-labelledby', 'label-difficulty');
   diffGroup.appendChild(diffToggle);
   form.appendChild(diffGroup);
 
   // Instrument toggle
   const instGroup = el('div', { class: 'form-group' });
-  instGroup.appendChild(el('label', {}, 'Instrument'));
+  const instLabel = el('label', { id: 'label-instrument' }, 'Instrument');
+  instGroup.appendChild(instLabel);
   const instToggle = createToggleGroup(
     'Instrument',
     instruments.map(i => ({ id: i.id, name: i.name })),
     defaultInstrumentId,
     (val) => { currentInstrumentId = val; }
+  );
+  instToggle.setAttribute('aria-labelledby', 'label-instrument');
+  instGroup.appendChild(instToggle);
+  form.appendChild(instGroup);
   );
   instGroup.appendChild(instToggle);
   form.appendChild(instGroup);
@@ -163,11 +199,21 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
   );
 
   let isLoading = false;
-  startBtn.addEventListener('click', async () => {
-    if (isLoading) return;
+  let lastRequestTime = 0;
+  const REQUEST_TIMEOUT = 5000; // Prevent duplicate requests within 5s
 
+  startBtn.addEventListener('click', async () => {
+    // Prevent concurrent and duplicate requests
+    if (isLoading) return;
+    const now = Date.now();
+    if (now - lastRequestTime < REQUEST_TIMEOUT) return;
+
+    // Clear error message and prepare for new request
     errorMsg.classList.remove('visible');
+    errorMsg.textContent = 'Couldn\'t load session — check your connection and try again';
+
     isLoading = true;
+    lastRequestTime = now;
     startBtn.disabled = true;
 
     try {
@@ -183,19 +229,38 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
         instrument_id: currentInstrumentId
       });
 
-      // Call session-config endpoint
+      // Call session-config endpoint with timeout
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+
       const response = await fetchJson(
-        `${API}/game/session-config?scale_id=${encodeURIComponent(currentScaleId)}&root_midi=${rootMidi}&instrument_id=${encodeURIComponent(currentInstrumentId)}`
+        `${API}/game/session-config?scale_id=${encodeURIComponent(currentScaleId)}&root_midi=${rootMidi}&instrument_id=${encodeURIComponent(currentInstrumentId)}`,
+        { signal: controller.signal }
       );
 
-      // On success, call the callback
+      clearTimeout(timeout);
+
+      // On success, call the callback and reset state
       isLoading = false;
+      errorMsg.classList.remove('visible');
+      errorMsg.textContent = '';
+      startBtn.disabled = false;
       onGameStart(response);
     } catch (err) {
-      // Show error message and re-enable button
+      // Show error message with context
+      const errMsg = err.name === 'AbortError'
+        ? 'Request timed out — please try again'
+        : 'Couldn\'t load session — check your connection and try again';
+      errorMsg.textContent = errMsg;
       errorMsg.classList.add('visible');
+
+      // Reset button state and manage focus
       startBtn.disabled = false;
       isLoading = false;
+      // Move focus to error message for accessibility
+      setTimeout(() => {
+        errorMsg.focus();
+      }, 100);
     }
   });
 
@@ -225,38 +290,38 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
 
   const diffBtns = Array.from(diffToggle.querySelectorAll('.toggle-button'));
   const lastDiffBtn = diffBtns[diffBtns.length - 1];
-  if (lastDiffBtn && lastDiffBtn !== firstDiffBtn) {
-    lastDiffBtn.addEventListener('keydown', (e) => {
-      if (e.key === 'Tab' && !e.shiftKey) {
+
+  // Add Tab handlers to all difficulty buttons
+  diffBtns.forEach((btn, idx) => {
+    btn.addEventListener('keydown', (e) => {
+      if (e.key === 'Tab' && !e.shiftKey && idx === diffBtns.length - 1) {
         e.preventDefault();
         const firstInstBtn = instToggle.querySelector('.toggle-button');
         if (firstInstBtn) firstInstBtn.focus();
+      } else if (e.key === 'Tab' && e.shiftKey && idx === 0) {
+        e.preventDefault();
+        scaleSelect.focus();
       }
     });
-  }
+  });
 
   const instBtns = Array.from(instToggle.querySelectorAll('.toggle-button'));
   const firstInstBtn = instBtns[0];
   const lastInstBtn = instBtns[instBtns.length - 1];
 
-  if (firstInstBtn) {
-    firstInstBtn.addEventListener('keydown', (e) => {
-      if (e.key === 'Tab' && e.shiftKey) {
+  // Add Tab handlers to all instrument buttons
+  instBtns.forEach((btn, idx) => {
+    btn.addEventListener('keydown', (e) => {
+      if (e.key === 'Tab' && !e.shiftKey && idx === instBtns.length - 1) {
+        e.preventDefault();
+        startBtn.focus();
+      } else if (e.key === 'Tab' && e.shiftKey && idx === 0) {
         e.preventDefault();
         const focusBtn = lastDiffBtn || firstDiffBtn;
         if (focusBtn) focusBtn.focus();
       }
     });
-  }
-
-  if (lastInstBtn) {
-    lastInstBtn.addEventListener('keydown', (e) => {
-      if (e.key === 'Tab' && !e.shiftKey) {
-        e.preventDefault();
-        startBtn.focus();
-      }
-    });
-  }
+  });
 
   startBtn.addEventListener('keydown', (e) => {
     if (e.key === 'Tab' && e.shiftKey) {
