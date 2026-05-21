@@ -1,9 +1,92 @@
 from fastapi import APIRouter, HTTPException
 from services.schemas import Track, GameState, SpeedMultiplier, Note
 from services.game_engine import GameEngine
+from services.scales import SCALES, midi_to_name
+from services.instruments import INSTRUMENTS
+from services.tabulator import Tabulator
+from services.errors import error_response
 
 router = APIRouter(prefix="/api/plugins/subway-scaler/game", tags=["game"])
 engine = GameEngine()
+tabulator = Tabulator()
+
+
+@router.get("/session-config")
+async def get_session_config(
+    scale_id: str,
+    root_midi: int,
+    instrument_id: str,
+):
+    """Returns session config: scale notes with fret/string positions.
+
+    AC-1: Returns scale notes with fret/string positions for given scale/root/instrument.
+    AC-2: Fret values computed by Tabulator (verified against tests).
+    AC-3: track_count = distinct frets, clamped 3-12.
+    AC-4: Unknown scale → 404, invalid root_midi → 422.
+    """
+    # Validate root_midi in valid range [21, 108]
+    if not (21 <= root_midi <= 108):
+        return error_response(
+            code="INVALID_ROOT",
+            message=f"root_midi must be in range [21, 108], got {root_midi}",
+            status=422,
+        )
+
+    # Get scale from registry
+    scale = SCALES.get(scale_id)
+    if not scale:
+        return error_response(
+            code="SCALE_NOT_FOUND",
+            message=f"Unknown scale_id: {scale_id}",
+            status=404,
+        )
+
+    # Get instrument from registry
+    instrument = INSTRUMENTS.get(instrument_id)
+    if not instrument:
+        return error_response(
+            code="INSTRUMENT_NOT_FOUND",
+            message=f"Unknown instrument_id: {instrument_id}",
+            status=404,
+        )
+
+    # Convert root_midi to root_note (e.g., 60 → "C4")
+    root_note = midi_to_name(root_midi)
+
+    # Get fret/string pattern from Tabulator
+    try:
+        pattern = tabulator.encode_scale(scale, root_note, instrument.tuning)
+    except Exception as e:
+        return error_response(
+            code="TABULATION_ERROR",
+            message=str(e),
+            status=400,
+        )
+
+    # Build notes array by expanding scale intervals
+    notes = []
+    for interval, fret_pair in zip(scale.intervals, pattern.pattern):
+        midi = root_midi + interval
+        note_name = midi_to_name(midi)
+        notes.append({
+            "midi": midi,
+            "name": note_name,
+            "string": fret_pair.string,
+            "fret": fret_pair.fret,
+        })
+
+    # Calculate track_count: distinct frets, clamped 3-12
+    distinct_frets = set(note["fret"] for note in notes)
+    track_count = max(3, min(12, len(distinct_frets)))
+
+    return {
+        "scale_id": scale_id,
+        "root_midi": root_midi,
+        "instrument_id": instrument_id,
+        "notes": notes,
+        "track_count": track_count,
+    }
+
 
 @router.get("/notes/{note_id}")
 async def get_note_timing(note_id: str):

@@ -1,0 +1,213 @@
+/* ===== FONT FACES ===== */
+
+@font-face {
+  font-family: 'Space Mono';
+  src: url('/plugins/subway-scaler/static/game/fonts/SpaceMono-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-display: block;
+}
+
+@font-face {
+  font-family: 'Space Mono';
+  src: url('/plugins/subway-scaler/static/game/fonts/SpaceMono-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-display: block;
+}
+
+/* ===== BASE FORM STYLES ===== */
+
+.setup-form {
+  font-family: 'Space Mono', monospace;
+  color: var(--color-text-primary);
+  background: var(--color-bg-stage);
+  padding: 2rem;
+  border: 1px solid var(--color-edge);
+  border-radius: 0.25rem;
+}
+
+.form-group {
+  margin-bottom: 1.5rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.form-group label {
+  font-weight: 400;
+  margin-bottom: 0.5rem;
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-primary);
+}
+
+.form-group select,
+.toggle-group {
+  background: var(--color-bg-near);
+  border: 1px solid var(--color-edge);
+  color: var(--color-text-primary);
+  padding: 0.75rem;
+  font-family: 'Space Mono', monospace;
+  font-size: 1rem;
+  border-radius: 0.25rem;
+  cursor: pointer;
+}
+
+.form-group select:hover,
+.form-group select:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px rgba(255, 184, 0, 0.1);
+}
+
+.toggle-group {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.25rem;
+  background: var(--color-bg-near);
+}
+
+.toggle-button {
+  flex: 1;
+  padding: 0.75rem;
+  background: var(--color-bg-void);
+  border: 1px solid var(--color-edge);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  font-family: 'Space Mono', monospace;
+  font-size: 0.875rem;
+  font-weight: 400;
+  border-radius: 0.25rem;
+  transition: all 0.2s;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.toggle-button:hover {
+  border-color: var(--color-accent);
+}
+
+.toggle-button.active {
+  background: var(--color-accent);
+  color: var(--color-bg-void);
+  font-weight: 700;
+  border-color: var(--color-accent);
+}
+
+.toggle-button:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* START BUTTON */
+
+.start-button {
+  background: var(--color-accent);
+  color: var(--color-bg-void);
+  border: none;
+  padding: 0.875rem 1.5rem;
+  font-family: 'Space Mono', monospace;
+  font-size: 1rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  border-radius: 0.25rem;
+  width: 100%;
+  margin-top: 1.5rem;
+  transition: all 0.2s;
+}
+
+.start-button:hover:not(:disabled) {
+  background: var(--color-bg-void);
+  color: var(--color-accent);
+  border: 1px solid var(--color-accent);
+}
+
+.start-button:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.start-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ERROR MESSAGE */
+
+.error-message {
+  color: var(--color-accent);
+  background: rgba(255, 184, 0, 0.1);
+  border: 1px solid var(--color-accent);
+  padding: 0.75rem;
+  margin-top: 1rem;
+  border-radius: 0.25rem;
+  font-size: 0.875rem;
+  display: none;
+}
+
+.error-message.visible {
+  display: block;
+}
+
+/* ===== RESPONSIVE LAYOUT ===== */
+
+/* DESKTOP: >= 600px */
+@media (min-width: 600px) {
+  .setup-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    background: var(--color-bg-void);
+    padding: 1rem;
+  }
+
+  .setup-form {
+    max-width: 480px;
+    width: 100%;
+  }
+
+  .form-group {
+    margin-bottom: 1.25rem;
+  }
+
+  .toggle-group {
+    flex-direction: row;
+  }
+}
+
+/* MOBILE: <= 599px */
+@media (max-width: 599px) {
+  .setup-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    background: var(--color-bg-void);
+    padding: 1rem;
+  }
+
+  .setup-form {
+    width: 100%;
+    padding: 1.5rem 1rem;
+  }
+
+  .form-group {
+    margin-bottom: 1rem;
+  }
+
+  .toggle-group {
+    flex-direction: column;
+  }
+
+  .toggle-button {
+    width: 100%;
+  }
+
+  .form-group select,
+  .start-button {
+    font-size: 1rem;
+    padding: 0.875rem;
+  }
+}

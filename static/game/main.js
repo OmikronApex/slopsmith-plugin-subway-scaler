@@ -9,6 +9,7 @@ import { GameClient } from './game-client.js';
 import { SafeZoneRenderer } from './ui/SafeZoneRenderer.js';
 import { laneX } from './TrackSystem.js';
 import { injectTokens } from './ui/tokens.js';
+import { renderSetupScreen } from './setup.js';
 
 const API = '/api/plugins/subway-scaler';
 const STATIC = '/plugins/subway-scaler/static/game';
@@ -69,8 +70,44 @@ export async function bootstrap(root) {
     return;
   }
 
-  // --- Menu state ---
-  const state = {
+  // Setup screen callback: initialize game once session-config succeeds
+  async function onSetupComplete(sessionConfig) {
+    // Update state with values from setup
+    state.rootMidi = sessionConfig.root_midi;
+    state.scaleId = sessionConfig.scale_id;
+    state.difficulty = sessionConfig.difficulty;
+    state.instrumentId = sessionConfig.instrument_id;
+
+    // Persist settings
+    const merged = {
+      lastScaleId: state.scaleId,
+      lastRootMidi: state.rootMidi,
+      lastDifficulty: state.difficulty,
+      strictOctave: state.strictOctave,
+      instrumentId: state.instrumentId,
+      strictTuning: state.strictTuning,
+      audio: state.audio,
+    };
+    fetchJson(`${API}/settings`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(merged),
+    }).catch(() => {});
+
+    // Hide setup, show game
+    const setupContainer = root.querySelector('.setup-container');
+    if (setupContainer) setupContainer.style.display = 'none';
+    const gameWrap = root.querySelector('.game-wrap');
+    if (gameWrap) gameWrap.style.display = 'block';
+    const menu = root.querySelector('.menu');
+    if (menu) menu.classList.remove('hidden');
+  }
+
+  // Render setup screen first
+  renderSetupScreen(root, scales, instruments, onSetupComplete);
+
+  // --- Game state (populated after setup screen) ---
+  let state = {
     scaleId: settings.lastScaleId,
     rootMidi: settings.lastRootMidi,
     difficulty: settings.lastDifficulty,
@@ -132,6 +169,7 @@ export async function bootstrap(root) {
   menu.appendChild(el('label', {}, 'Instrument ', instrumentSelect));
   menu.appendChild(startBtn);
   menu.appendChild(audioBtn);
+  menu.style.display = 'none';
   root.appendChild(menu);
 
   // --- Game container ---
@@ -147,7 +185,7 @@ export async function bootstrap(root) {
   hud.appendChild(feedbackEl);
   hud.appendChild(pauseBtn);
   hud.appendChild(abandonBtn);
-  const gameWrap = el('div', { class: 'game-wrap' }, canvas, hud, variantHud, overlay);
+  const gameWrap = el('div', { class: 'game-wrap', style: 'display:none' }, canvas, hud, variantHud, overlay);
   root.appendChild(gameWrap);
 
   // --- Audio settings panel ---
