@@ -1,5 +1,44 @@
 // Audio capture + YIN worklet pipeline. Exposes start/stop/pause/resume + onDetection.
+// Story 3.3: class hierarchy (AudioDetector → YinDetector) wraps existing functional API.
 import { quantize } from './notes.js';
+
+// ===== Error class =====
+
+export class AudioDetectorError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'AudioDetectorError';
+  }
+}
+
+// ===== Base class — no GameState coupling =====
+
+export class AudioDetector {
+  async detect() {
+    throw new Error('Not implemented');
+  }
+}
+
+// ===== YIN adapter =====
+
+export class YinDetector extends AudioDetector {
+  constructor() {
+    super();
+    this._audioHandle = null;
+  }
+
+  async detect() {
+    try {
+      return await this._runDetection();
+    } catch (err) {
+      throw new AudioDetectorError(err.message ?? String(err));
+    }
+  }
+
+  async _runDetection() {
+    throw new AudioDetectorError('Audio detection not started — call startAudio() first');
+  }
+}
 
 const WORKLET_URL = '/plugins/subway-scaler/static/game/yin-worklet.js';
 

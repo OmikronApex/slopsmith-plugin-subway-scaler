@@ -86,6 +86,53 @@ development_status:
     last_updated: 2026-05-21
     notes: "Code review complete: 1 defer (constructor vs init AC ambiguity). 114 tests passing."
 
+  # Epics
+  epic-3:
+    title: "Core Gameplay Loop"
+    status: in-progress
+    last_updated: 2026-05-21
+
+  # Stories - Epic 3
+  3-1-implement-scenemanager-and-threejs-canvas:
+    title: "Implement SceneManager and Three.js Canvas"
+    status: review
+    last_updated: 2026-05-21
+
+  3-2-implement-tracksystem-and-safe-zone-rendering:
+    title: "Implement TrackSystem and Safe Zone Rendering"
+    status: review
+    last_updated: 2026-05-21
+
+  3-3-implement-audiodetector-with-yin-adapter:
+    title: "Implement AudioDetector with YIN Adapter"
+    status: review
+    last_updated: 2026-05-21
+
+  3-4-implement-gameloop-with-phase-management:
+    title: "Implement GameLoop with Phase Management"
+    status: review
+    last_updated: 2026-05-21
+
+  3-5-implement-first-wave-tutorial-hint:
+    title: "Implement First-Wave Tutorial Hint"
+    status: review
+    last_updated: 2026-05-21
+
+  3-6-implement-score-display:
+    title: "Implement Score Display"
+    status: review
+    last_updated: 2026-05-21
+
+  3-7-implement-visual-feedback-on-correct-note:
+    title: "Implement Visual Feedback on Correct Note"
+    status: review
+    last_updated: 2026-05-21
+
+  3-8-integration-test-session-config-to-score:
+    title: "Integration Test — Session Config to Score"
+    status: review
+    last_updated: 2026-05-21
+
 ## Status Definitions
 
 # backlog: not yet ready for development

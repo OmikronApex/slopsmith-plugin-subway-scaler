@@ -52,13 +52,13 @@ describe('ScoreDisplay — Story 3.6', () => {
     vi.restoreAllMocks();
   });
 
-  it.skip('score display element has aria-live="polite" attribute', () => {
+  it('score display element has aria-live="polite" attribute', () => {
     const display = new ScoreDisplay();
     const element = display.element ?? display.domElement ?? mockDocument.createElement.mock.results[0]?.value;
     expect(element.getAttribute('aria-live')).toBe('polite');
   });
 
-  it.skip('score display shows GameState.runtime.score value', () => {
+  it('score display shows GameState.runtime.score value', () => {
     const display = new ScoreDisplay();
     const gameState = { runtime: { score: 350, phase: PHASES.PLAYING } };
     display.update(gameState);
@@ -66,7 +66,7 @@ describe('ScoreDisplay — Story 3.6', () => {
     expect(element.textContent).toContain('350');
   });
 
-  it.skip('score display is absolutely positioned (CSS class or inline style)', () => {
+  it('score display is absolutely positioned (CSS class or inline style)', () => {
     const display = new ScoreDisplay();
     const element = display.element ?? display.domElement ?? mockElement;
     const hasAbsoluteClass = element.classList._set.has('score-display') ||
@@ -76,7 +76,7 @@ describe('ScoreDisplay — Story 3.6', () => {
     expect(element.classList._set.size > 0 || element.style.position === 'absolute').toBe(true);
   });
 
-  it.skip('score increments trigger a pulse animation CSS class being added', () => {
+  it('score increments trigger a pulse animation CSS class being added', () => {
     const display = new ScoreDisplay();
     const gameState = { runtime: { score: 100, phase: PHASES.PLAYING } };
     display.update(gameState);
@@ -86,7 +86,7 @@ describe('ScoreDisplay — Story 3.6', () => {
     expect(element.classList.add).toHaveBeenCalledWith(expect.stringMatching(/pulse/));
   });
 
-  it.skip('score display remains visible when phase is PHASES.GAME_OVER', () => {
+  it('score display remains visible when phase is PHASES.GAME_OVER', () => {
     const display = new ScoreDisplay();
     const gameState = { runtime: { score: 500, phase: PHASES.GAME_OVER } };
     display.update(gameState);
@@ -96,7 +96,7 @@ describe('ScoreDisplay — Story 3.6', () => {
     expect(element.style.display).not.toBe('none');
   });
 
-  it.skip('score display remains visible when phase is PHASES.PAUSED', () => {
+  it('score display remains visible when phase is PHASES.PAUSED', () => {
     const display = new ScoreDisplay();
     const gameState = { runtime: { score: 200, phase: PHASES.PAUSED } };
     display.update(gameState);

@@ -60,31 +60,31 @@ function makeMockSessionConfig(trackCount = 6) {
 }
 
 describe('VARIANT_DIRECTION constants', () => {
-  it.skip('VARIANT_DIRECTION.LOWER_FRET equals "left"', () => {
+  it('VARIANT_DIRECTION.LOWER_FRET equals "left"', () => {
     expect(VARIANT_DIRECTION.LOWER_FRET).toBe('left');
   });
 
-  it.skip('VARIANT_DIRECTION.HIGHER_FRET equals "right"', () => {
+  it('VARIANT_DIRECTION.HIGHER_FRET equals "right"', () => {
     expect(VARIANT_DIRECTION.HIGHER_FRET).toBe('right');
   });
 });
 
 describe('TrackSystem.init() — Story 3.2', () => {
-  it.skip('TrackSystem.init(sessionConfig) populates GameState.scene.tracks with one lane per note', () => {
+  it('TrackSystem.init(sessionConfig) populates GameState.scene.tracks with one lane per note', () => {
     const gameState = makeMockGameState();
     const sessionConfig = makeMockSessionConfig(6);
     TrackSystem.init(sessionConfig, gameState);
     expect(gameState.scene.tracks).toHaveLength(sessionConfig.track_count);
   });
 
-  it.skip('lane count equals sessionConfig.track_count', () => {
+  it('lane count equals sessionConfig.track_count', () => {
     const gameState = makeMockGameState();
     const sessionConfig = makeMockSessionConfig(4);
     TrackSystem.init(sessionConfig, gameState);
     expect(gameState.scene.tracks).toHaveLength(4);
   });
 
-  it.skip('each lane color matches --color-bg-stage (#1A1A2E)', () => {
+  it('each lane color matches --color-bg-stage (#1A1A2E)', () => {
     const gameState = makeMockGameState();
     const sessionConfig = makeMockSessionConfig(3);
     TrackSystem.init(sessionConfig, gameState);
@@ -93,7 +93,7 @@ describe('TrackSystem.init() — Story 3.2', () => {
     }
   });
 
-  it.skip('safe zone color matches STRING_COLORS[note.string]', () => {
+  it('safe zone color matches STRING_COLORS[note.string]', () => {
     const gameState = makeMockGameState();
     const sessionConfig = makeMockSessionConfig(3);
     TrackSystem.init(sessionConfig, gameState);
@@ -104,7 +104,7 @@ describe('TrackSystem.init() — Story 3.2', () => {
     }
   });
 
-  it.skip('TrackSystem is the only module writing to GameState.scene.tracks', () => {
+  it('TrackSystem is the only module writing to GameState.scene.tracks', () => {
     // Architectural contract test: verify TrackSystem does write to scene.tracks
     const gameState = makeMockGameState();
     const sessionConfig = makeMockSessionConfig(3);
@@ -124,13 +124,13 @@ describe('TrackSystem variant tracks — Story 5.2', () => {
     TrackSystem.init(sessionConfig, gameState);
   });
 
-  it.skip('TrackSystem.showVariant({ rootMidi, fret }) adds a variant track to GameState.scene.tracks', () => {
+  it('TrackSystem.showVariant({ rootMidi, fret }) adds a variant track to GameState.scene.tracks', () => {
     const trackCountBefore = gameState.scene.tracks.length;
     TrackSystem.showVariant({ rootMidi: 65, fret: 5 }, gameState);
     expect(gameState.scene.tracks.length).toBeGreaterThan(trackCountBefore);
   });
 
-  it.skip('variant slides in from LEFT when variantConfig.fret < currentRootFret', () => {
+  it('variant slides in from LEFT when variantConfig.fret < currentRootFret', () => {
     // Current root is fret 0 (rootMidi 60); variant at lower fret → slides from left
     TrackSystem.showVariant({ rootMidi: 55, fret: -5 }, gameState);
     const variantTrack = gameState.scene.tracks.find(t => t.isVariant);
@@ -138,7 +138,7 @@ describe('TrackSystem variant tracks — Story 5.2', () => {
     expect(variantTrack.slideDirection).toBe(VARIANT_DIRECTION.LOWER_FRET);
   });
 
-  it.skip('variant slides in from RIGHT when variantConfig.fret > currentRootFret', () => {
+  it('variant slides in from RIGHT when variantConfig.fret > currentRootFret', () => {
     // Variant at higher fret → slides from right
     TrackSystem.showVariant({ rootMidi: 65, fret: 5 }, gameState);
     const variantTrack = gameState.scene.tracks.find(t => t.isVariant);
@@ -146,7 +146,7 @@ describe('TrackSystem variant tracks — Story 5.2', () => {
     expect(variantTrack.slideDirection).toBe(VARIANT_DIRECTION.HIGHER_FRET);
   });
 
-  it.skip('TrackSystem.hideVariant() removes variant without changing current track geometry', () => {
+  it('TrackSystem.hideVariant() removes variant without changing current track geometry', () => {
     TrackSystem.showVariant({ rootMidi: 65, fret: 5 }, gameState);
     const regularTracksSnapshot = gameState.scene.tracks
       .filter(t => !t.isVariant)
@@ -160,7 +160,7 @@ describe('TrackSystem variant tracks — Story 5.2', () => {
     expect(remainingSnapshot).toEqual(regularTracksSnapshot);
   });
 
-  it.skip('variant lane fret label uses color-accent color (#FFB800)', () => {
+  it('variant lane fret label uses color-accent color (#FFB800)', () => {
     TrackSystem.showVariant({ rootMidi: 65, fret: 5 }, gameState);
     const variantTrack = gameState.scene.tracks.find(t => t.isVariant);
     expect(variantTrack).toBeDefined();

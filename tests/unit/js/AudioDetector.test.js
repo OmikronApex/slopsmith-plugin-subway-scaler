@@ -9,7 +9,7 @@ import { AudioDetector, YinDetector, AudioDetectorError } from '../../../static/
 
 describe('AudioDetector', () => {
   describe('class hierarchy', () => {
-    it.skip('YinDetector extends AudioDetector', () => {
+    it('YinDetector extends AudioDetector', () => {
       expect(YinDetector.prototype).toBeInstanceOf(AudioDetector);
     });
   });
@@ -39,7 +39,7 @@ describe('YinDetector', () => {
   });
 
   describe('detect()', () => {
-    it.skip('YinDetector.detect() returns { midi, confidence } on success', async () => {
+    it('YinDetector.detect() returns { midi, confidence } on success', async () => {
       // Stub the internal yin processing to return a valid pitch
       vi.spyOn(detector, 'detect').mockResolvedValue({ midi: 60, confidence: 0.95 });
       const result = await detector.detect();
@@ -49,12 +49,12 @@ describe('YinDetector', () => {
       expect(typeof result.confidence).toBe('number');
     });
 
-    it.skip('YinDetector.detect() throws AudioDetectorError on failure (does not swallow)', async () => {
+    it('YinDetector.detect() throws AudioDetectorError on failure (does not swallow)', async () => {
       vi.spyOn(detector, 'detect').mockRejectedValue(new AudioDetectorError('No audio input'));
       await expect(detector.detect()).rejects.toThrow(AudioDetectorError);
     });
 
-    it.skip('error thrown by detect() is an instance of AudioDetectorError', async () => {
+    it('error thrown by detect() is an instance of AudioDetectorError', async () => {
       vi.spyOn(detector, 'detect').mockImplementation(async () => {
         throw new AudioDetectorError('Pitch detection failed');
       });
@@ -69,7 +69,7 @@ describe('YinDetector', () => {
   });
 
   describe('GameState isolation', () => {
-    it.skip('YinDetector does not reference GameState directly — no GameState import', async () => {
+    it('YinDetector does not reference GameState directly — no GameState import', async () => {
       // This test verifies the architectural boundary statically by checking the module text.
       // Since we cannot easily inspect module imports at runtime in vitest node env,
       // we assert by convention: the detect() result shape is self-contained (midi + confidence)
@@ -84,13 +84,13 @@ describe('YinDetector', () => {
 });
 
 describe('AudioDetectorError', () => {
-  it.skip('AudioDetectorError is a subclass of Error', () => {
+  it('AudioDetectorError is a subclass of Error', () => {
     const err = new AudioDetectorError('test');
     expect(err).toBeInstanceOf(Error);
     expect(err.message).toBe('test');
   });
 
-  it.skip('AudioDetectorError has a name property of "AudioDetectorError"', () => {
+  it('AudioDetectorError has a name property of "AudioDetectorError"', () => {
     const err = new AudioDetectorError('test');
     expect(err.name).toBe('AudioDetectorError');
   });

@@ -1,15 +1,14 @@
 // Red-phase ATDD scaffold — Story 3.1: SceneManager and Three.js canvas
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-// TODO: SceneManager.js does not exist yet — import will fail until implementation
-// TODO: Three.js WebGLRenderer is mocked below; SceneManager must be importable in node env
 import { SceneManager } from '../../../static/game/SceneManager.js';
 
-// Mock the 'three' module entirely to avoid WebGL/DOM requirements in node env
-vi.mock('three', () => {
+// Mock the vendor three module to avoid WebGL/DOM requirements in node env
+vi.mock('../../../static/game/vendor/three.module.js', () => {
   const mockRenderer = {
     setSize: vi.fn(),
     render: vi.fn(),
+    setClearColor: vi.fn(),
     domElement: { tagName: 'CANVAS' },
     setPixelRatio: vi.fn(),
     dispose: vi.fn(),
@@ -46,26 +45,23 @@ describe('SceneManager', () => {
   });
 
   describe('init()', () => {
-    it.skip('SceneManager.init(container) does not throw (smoke test with mock container)', () => {
+    it('SceneManager.init(container) does not throw (smoke test with mock container)', () => {
       const container = makeMockContainer();
       expect(() => SceneManager.init(container)).not.toThrow();
     });
   });
 
   describe('render()', () => {
-    it.skip('SceneManager.render() calls the renderer render method', () => {
+    it('SceneManager.render() calls the renderer render method', async () => {
       const container = makeMockContainer();
       SceneManager.init(container);
-      // Access the underlying renderer spy via SceneManager internals or via the mock
-      const { WebGLRenderer } = await import('three');
+      const { WebGLRenderer } = await import('../../../static/game/vendor/three.module.js');
       const rendererInstance = WebGLRenderer.mock.results[0].value;
       SceneManager.render();
       expect(rendererInstance.render).toHaveBeenCalled();
     });
 
-    it.skip('SceneManager.js does not write to any GameState sub-object after render', () => {
-      // This test documents an architectural constraint.
-      // SceneManager should be read-only with respect to GameState.
+    it('SceneManager.js does not write to any GameState sub-object after render', () => {
       const gameState = {
         session: { scale: null, rootMidi: 60, difficulty: 'medium', instrument: 'guitar-standard' },
         runtime: { score: 0, speed: 10, phase: 'playing', currentNote: null },
@@ -81,17 +77,15 @@ describe('SceneManager', () => {
   });
 
   describe('resize handling', () => {
-    it.skip('resize handler updates renderer on window resize', async () => {
+    it('resize handler updates renderer on window resize', async () => {
       const container = makeMockContainer();
       SceneManager.init(container);
-      const { WebGLRenderer } = await import('three');
+      const { WebGLRenderer } = await import('../../../static/game/vendor/three.module.js');
       const rendererInstance = WebGLRenderer.mock.results[0].value;
       rendererInstance.setSize.mockClear();
-      // Simulate window resize
       if (typeof SceneManager.onResize === 'function') {
         SceneManager.onResize(1024, 768);
       } else {
-        // Trigger via window resize event if SceneManager auto-registers
         window.dispatchEvent(new Event('resize'));
       }
       expect(rendererInstance.setSize).toHaveBeenCalled();

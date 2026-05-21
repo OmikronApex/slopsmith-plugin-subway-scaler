@@ -4,6 +4,8 @@
 // Rows (depth) = strings. Row 0 (lowest pitch) sits at the front (largest Z).
 // See specs/003-guitar-subway-scaler/research.md §4–§5.
 
+import { STRING_COLORS } from './ui/tokens.js';
+
 export const LANE_X_SCALE = 1.6;
 export const ROW_DZ = 3.0;
 export const WINDOW = 9;
@@ -53,4 +55,50 @@ export function windowedLanes(activeFret, _stringCount, maxFret) {
   const out = [];
   for (let f = lo; f <= hi; f++) out.push({ fret: f, x: laneX(f, activeFret) });
   return out;
+}
+
+// ===== TrackSystem — Story 3.2 =====
+
+export const VARIANT_DIRECTION = {
+  LOWER_FRET: 'left',
+  HIGHER_FRET: 'right',
+};
+
+let _currentRootFret = 0;
+
+export class TrackSystem {
+  static init(sessionConfig, gameState) {
+    const notes = sessionConfig.notes ?? [];
+    _currentRootFret = notes[0]?.fret ?? 0;
+    gameState.scene.tracks = [];
+    for (let i = 0; i < sessionConfig.track_count; i++) {
+      const note = notes[i];
+      gameState.scene.tracks.push({
+        lane: i,
+        note,
+        color: '#1A1A2E',
+        safeZoneColor: STRING_COLORS[note?.string] ?? 0xFFFFFF,
+        fretLabelColor: '#666680',
+      });
+    }
+  }
+
+  static showVariant(variantConfig, gameState) {
+    const dir = (variantConfig.fret ?? 0) < _currentRootFret
+      ? VARIANT_DIRECTION.LOWER_FRET
+      : VARIANT_DIRECTION.HIGHER_FRET;
+    gameState.scene.tracks.push({
+      isVariant: true,
+      slideDirection: dir,
+      fretLabelColor: '#FFB800',
+      note: variantConfig,
+      lane: gameState.scene.tracks.length,
+      color: '#1A1A2E',
+      safeZoneColor: 0xFFB800,
+    });
+  }
+
+  static hideVariant(gameState) {
+    gameState.scene.tracks = gameState.scene.tracks.filter(t => !t.isVariant);
+  }
 }
