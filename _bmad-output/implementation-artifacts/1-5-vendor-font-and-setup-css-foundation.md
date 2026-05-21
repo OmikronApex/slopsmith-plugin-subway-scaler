@@ -150,6 +150,21 @@ This story creates **only CSS + fonts**. **Story 1.6 (Setup UI)** creates the HT
 
 ---
 
+## Review Findings
+
+### Critical Issues (Applied)
+- [x] [Review][Patch] Hardcoded RGBA Colors Violate CSS Constraint — Changed rgba(255, 184, 0, 0.1) to use design tokens (setup.css:145)
+- [x] [Review][Patch] Font Loading Race: 3-Second Blocking — Changed font-display: block → swap for faster perceived load (setup.css:7, 14)
+
+### High Issues (Applied)
+- [x] [Review][Patch] Missing `:focus-visible` on Form Controls — Added :focus-visible pseudo-class to select (setup.css:56-62)
+
+### Remaining Issues (Action Items)
+- [ ] [Review][Patch] CSS Custom Properties Undefined Fallbacks — Add fallback colors for better resilience [MEDIUM]
+- [ ] [Review][Patch] No Preload Hints for Fonts — Add HTML link rel=preload to prioritize font loading [LOW]
+
+---
+
 ## Change Log
 
 - 2026-05-21: Story created. Font vendoring and setup CSS foundation scaffolded.

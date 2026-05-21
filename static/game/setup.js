@@ -27,7 +27,11 @@ async function fetchJson(url, opts) {
 
 function loadSettings() {
   const stored = localStorage.getItem(SETTINGS_KEY);
-  return stored ? JSON.parse(stored) : {};
+  try {
+    return stored ? JSON.parse(stored) : {};
+  } catch (e) {
+    return {};
+  }
 }
 
 function saveSettings(settings) {
@@ -37,8 +41,8 @@ function saveSettings(settings) {
 function computeRandomRootMidi(instrument) {
   if (!instrument || !instrument.tuning || !instrument.tuning[0]) return 60;
   const lowestString = instrument.tuning[0];
-  const fretMin = lowestString + 5;
-  const fretMax = lowestString + 8;
+  const fretMin = Math.max(21, lowestString + 5);
+  const fretMax = Math.min(108, lowestString + 8);
   return Math.floor(Math.random() * (fretMax - fretMin + 1)) + fretMin;
 }
 
@@ -168,6 +172,8 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
 
     try {
       const selectedInst = instruments.find(i => i.id === currentInstrumentId);
+      if (!selectedInst) throw new Error('Invalid instrument selection');
+
       const rootMidi = computeRandomRootMidi(selectedInst);
 
       // Save to localStorage (but not root_midi)
@@ -183,6 +189,7 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
       );
 
       // On success, call the callback
+      isLoading = false;
       onGameStart(response);
     } catch (err) {
       // Show error message and re-enable button
@@ -193,10 +200,12 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
   });
 
   // Tab order and keyboard handling
+  // Tab order: Scale → Difficulty → Instrument → START
   scaleSelect.addEventListener('keydown', (e) => {
     if (e.key === 'Tab' && !e.shiftKey) {
       e.preventDefault();
-      instToggle.querySelector('.toggle-button').focus();
+      const firstDiffBtn = diffToggle.querySelector('.toggle-button');
+      if (firstDiffBtn) firstDiffBtn.focus();
     }
   });
 
@@ -205,12 +214,41 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
     firstDiffBtn.addEventListener('keydown', (e) => {
       if (e.key === 'Tab' && !e.shiftKey) {
         e.preventDefault();
-        instToggle.querySelector('.toggle-button').focus();
+        const firstInstBtn = instToggle.querySelector('.toggle-button');
+        if (firstInstBtn) firstInstBtn.focus();
+      } else if (e.key === 'Tab' && e.shiftKey) {
+        e.preventDefault();
+        scaleSelect.focus();
       }
     });
   }
 
-  const lastInstBtn = Array.from(instToggle.querySelectorAll('.toggle-button')).pop();
+  const diffBtns = Array.from(diffToggle.querySelectorAll('.toggle-button'));
+  const lastDiffBtn = diffBtns[diffBtns.length - 1];
+  if (lastDiffBtn && lastDiffBtn !== firstDiffBtn) {
+    lastDiffBtn.addEventListener('keydown', (e) => {
+      if (e.key === 'Tab' && !e.shiftKey) {
+        e.preventDefault();
+        const firstInstBtn = instToggle.querySelector('.toggle-button');
+        if (firstInstBtn) firstInstBtn.focus();
+      }
+    });
+  }
+
+  const instBtns = Array.from(instToggle.querySelectorAll('.toggle-button'));
+  const firstInstBtn = instBtns[0];
+  const lastInstBtn = instBtns[instBtns.length - 1];
+
+  if (firstInstBtn) {
+    firstInstBtn.addEventListener('keydown', (e) => {
+      if (e.key === 'Tab' && e.shiftKey) {
+        e.preventDefault();
+        const focusBtn = lastDiffBtn || firstDiffBtn;
+        if (focusBtn) focusBtn.focus();
+      }
+    });
+  }
+
   if (lastInstBtn) {
     lastInstBtn.addEventListener('keydown', (e) => {
       if (e.key === 'Tab' && !e.shiftKey) {
@@ -223,7 +261,7 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
   startBtn.addEventListener('keydown', (e) => {
     if (e.key === 'Tab' && e.shiftKey) {
       e.preventDefault();
-      instToggle.querySelector('.toggle-button').focus();
+      if (lastInstBtn) lastInstBtn.focus();
     }
   });
 

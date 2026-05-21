@@ -75,8 +75,16 @@ export async function bootstrap(root) {
     // Update state with values from setup
     state.rootMidi = sessionConfig.root_midi;
     state.scaleId = sessionConfig.scale_id;
-    state.difficulty = sessionConfig.difficulty;
     state.instrumentId = sessionConfig.instrument_id;
+
+    // Difficulty is client-only, read from localStorage
+    try {
+      const stored = localStorage.getItem('subway-scaler-settings');
+      const settings = stored ? JSON.parse(stored) : {};
+      state.difficulty = settings.difficulty || 'medium';
+    } catch (e) {
+      state.difficulty = 'medium';
+    }
 
     // Persist settings
     const merged = {
