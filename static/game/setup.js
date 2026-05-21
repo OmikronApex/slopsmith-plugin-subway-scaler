@@ -175,9 +175,6 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
   instToggle.setAttribute('aria-labelledby', 'label-instrument');
   instGroup.appendChild(instToggle);
   form.appendChild(instGroup);
-  );
-  instGroup.appendChild(instToggle);
-  form.appendChild(instGroup);
 
   // Root label
   const rootLabel = el('div', { class: 'form-group' });
