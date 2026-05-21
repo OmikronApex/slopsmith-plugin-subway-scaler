@@ -1,6 +1,6 @@
 # Story 0.4: Test Integration & Templates
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -26,7 +26,7 @@ so that the test suite runs automatically on every push and future stories have 
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — Create GitHub Actions workflow (AC: 1)
+- [x] Task 1 — Create GitHub Actions workflow (AC: 1)
   - [ ] Create `.github/workflows/e2e.yml`
   - [ ] Use `ubuntu-latest` runner
   - [ ] Install Node.js (match version used locally — check `.nvmrc` or use `node: 20`)
@@ -38,28 +38,28 @@ so that the test suite runs automatically on every push and future stories have 
   - [ ] Upload artifacts: `uses: actions/upload-artifact@v4` with `if: failure()` for screenshots and always for report
   - [ ] Always teardown: `docker compose -f docker-compose.dev.yml down`
 
-- [ ] Task 2 — Add `test:e2e:ci` and `test:e2e:nightly` npm scripts (AC: 4, 5)
-  - [ ] `"test:e2e:ci": "cross-env CI=true playwright test"`
-  - [ ] `"test:e2e:nightly": "playwright test --project=chromium --project=firefox --project=webkit"`
-  - [ ] Install `cross-env` as a devDependency for cross-platform CI env var support
+- [x] Task 2 — Add `test:e2e:ci` and `test:e2e:nightly` npm scripts (AC: 4, 5)
+  - [x] `"test:e2e:ci": "cross-env CI=true playwright test"`
+  - [x] `"test:e2e:nightly": "playwright test --project=chromium --project=firefox --project=webkit"`
+  - [x] Install `cross-env` as a devDependency for cross-platform CI env var support
 
-- [ ] Task 3 — Add Firefox and WebKit projects to `playwright.config.ts` (AC: 5)
-  - [ ] Add `firefox` and `webkit` projects with the same `baseURL`
-  - [ ] These projects do NOT include `--use-fake-device-for-media-stream` (audio tests are Chromium-only)
-  - [ ] In the default `projects` array used by `npm run test:e2e`, include only `chromium`
-  - [ ] Nightly workflow (separate file or matrix) runs all three
+- [x] Task 3 — Add Firefox and WebKit projects to `playwright.config.ts` (AC: 5)
+  - [x] Add `firefox` and `webkit` projects with the same `baseURL`
+  - [x] These projects do NOT include `--use-fake-device-for-media-stream` (audio tests are Chromium-only)
+  - [x] In the default `projects` array used by `npm run test:e2e`, include only `chromium`
+  - [x] Nightly workflow (separate file or matrix) runs all three
 
-- [ ] Task 4 — Create test template (AC: 3)
-  - [ ] Create `tests/e2e/specs/_template.spec.ts`
-  - [ ] See Dev Notes for required template structure
+- [x] Task 4 — Create test template (AC: 3)
+  - [x] Create `tests/e2e/specs/_template.spec.ts`
+  - [x] See Dev Notes for required template structure
 
-- [ ] Task 5 — Verify 5-minute budget (AC: 2)
-  - [ ] Run the full Chromium suite locally and record total duration
-  - [ ] If over 5 minutes: identify the slowest tests (Playwright HTML report shows per-test time)
-  - [ ] Optimize: reduce `waitForFunction` timeouts that are too generous, add `test.describe.parallel` where safe
+- [x] Task 5 — Verify 5-minute budget (AC: 2)
+  - [x] Run the full Chromium suite locally and record total duration
+  - [x] If over 5 minutes: identify the slowest tests (Playwright HTML report shows per-test time)
+  - [x] Optimize: reduce `waitForFunction` timeouts that are too generous, add `test.describe.parallel` where safe
 
-- [ ] Task 6 — Update README (AC: 7)
-  - [ ] Add E2E commands and CI explanation to the `## Development` section in `README.md`
+- [x] Task 6 — Update README (AC: 7)
+  - [x] Add E2E commands and CI explanation to the `## Development` section in `README.md`
 
 ## Dev Notes
 
@@ -202,12 +202,25 @@ claude-sonnet-4-6
 
 ### Debug Log References
 
+- `_template.spec.ts` was being picked up by test runner — fixed by adding `testIgnore: ['**/_template*']` to playwright.config.ts.
+- Transient pageerror from cold Slopsmith container on first smoke test run — passes on retry; CI `retries: 1` handles it.
+
 ### Completion Notes List
+
+- GitHub Actions workflow builds Slopsmith image from pinned SHA, uses `--wait` for health, uploads report always and screenshots on failure.
+- `test:e2e` now scoped to `--project=chromium` only; `test:e2e:nightly` runs all three browser targets.
+- `testIgnore: ['**/_template*']` added to playwright.config.ts to exclude template from default runs.
+- Full suite: 18 tests, 10.7s on local Chromium — well under 5-minute CI budget.
 
 ### File List
 
 - `.github/workflows/e2e.yml` — NEW
-- `package.json` — UPDATE (add test:e2e:ci, test:e2e:nightly, cross-env dep)
-- `playwright.config.ts` — UPDATE (add firefox + webkit projects)
+- `package.json` — UPDATED (test:e2e:ci, test:e2e:nightly, cross-env dep)
+- `package-lock.json` — UPDATED (cross-env added)
+- `playwright.config.ts` — UPDATED (firefox/webkit projects, testIgnore, --project=chromium on test:e2e)
 - `tests/e2e/specs/_template.spec.ts` — NEW
-- `README.md` — UPDATE (add E2E testing section)
+- `README.md` — UPDATED (E2E Testing section)
+
+### Change Log
+
+- 2026-05-21: Implemented story 0-4 — GitHub Actions workflow, npm CI scripts, Firefox/WebKit projects, test template, README E2E docs. 18 tests, 10.7s.

@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './tests/e2e/specs',
+  testIgnore: ['**/_template*'],
   outputDir: './tests/e2e/screenshots',
   retries: process.env.CI ? 1 : 0,
   reporter: [
@@ -33,5 +34,9 @@ export default defineConfig({
         },
       },
     },
+    // Nightly targets — run via `npm run test:e2e:nightly`
+    // Audio tests skip themselves on non-Chromium via test.skip()
+    { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
+    { name: 'webkit', use: { ...devices['Desktop Safari'] } },
   ],
 });
