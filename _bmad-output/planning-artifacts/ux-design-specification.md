@@ -58,7 +58,7 @@ Last-used scale, root, difficulty, and instrument persist as defaults.
 
 1. **Split attention** — gameplay-critical visuals must be readable at a peripheral glance. No important information requires focused reading mid-session.
 2. **Detection feedback legibility** — correct note hit signal must be immediate and unambiguous at 60fps inside a moving, retro-styled scene.
-3. **Responsive viewport** — plugin lives in a resizable Slopsmith window undergoing a future redesign. Three.js canvas and all overlays must scale gracefully — no hardcoded dimensions.
+3. **Fixed-ratio responsive viewport** — plugin lives in a resizable Slopsmith window. A 16:9 game shell scales to fit available height, centred horizontally. Canvas and all overlays are anchored to the shell — no hardcoded dimensions, no stretching at extreme viewport shapes.
 4. **Aesthetic vs. readability tension** — PS1 demake style applies to background, secondary geometry, and decoration. Gameplay elements (safe zones, carts, score, text) are always legibility-first.
 5. **Overlay design** — pause and game-over states must interrupt cleanly with single-action affordances (Resume, Restart).
 
@@ -92,7 +92,7 @@ The core interaction of Subway Scaler is: **play a note → the game responds.**
 - **Platform:** Web browser, self-hosted. Desktop and tablet browsers supported. Mobile phones out of scope.
 - **Offline capability:** No external internet dependencies after install. All third-party assets vendored locally (Three.js at `static/game/vendor/`). Local network calls to Slopsmith and other plugins are acceptable.
 - **Input:** Mouse and touch for all UI. Gameplay input is audio-only — no pointer interaction during active play.
-- **Viewport behavior:** Always fills 100% of the offered viewport. No minimum size constraints, no dead space, no scrolling in the game view. Canvas and overlays expand and contract with the window. All touch targets minimum ~44×44px. No hover-only states.
+- **Viewport behavior:** The plugin root fills 100% of the host container. Inside that root, a single **game shell** div maintains a fixed **16:9 aspect ratio** and scales to fit the available height, centred horizontally — never stretched. Dead space outside the shell is filled with `color-bg-void`. The game shell must sit fully **below Slopsmith's toolbar**; it reads `--slopsmith-toolbar-height` (CSS custom property exposed by the host) and applies it as `padding-top` on the root, falling back to `0px` if the property is absent. No scrolling in the game view. All touch targets minimum ~44×44px. No hover-only states.
 
 ### Effortless Interactions
 
@@ -245,7 +245,7 @@ The gameplay loop template. Key UX successes:
 - **Information overload during play** — one active HUD area (score + speed), everything else is track geometry.
 - **Punishing restart flows** — no loading screens or menu navigation after game over. One action, immediate return.
 - **Hover-state-only affordances** — tablet players won't discover them. Every element works on tap without hover.
-- **Fixed viewport assumptions** — canvas must reflow at any size.
+- **Stretch-to-fill at arbitrary aspect ratios** — game shell locks to 16:9 and letterboxes; it never distorts.
 
 ### Design Inspiration Strategy
 
@@ -854,24 +854,46 @@ Three levels, one rule: only one primary button per screen at any time.
 
 ### Responsive Strategy
 
-**Platform scope:** Desktop and tablet only (per PRD platform constraints). No mobile phone layout required. The plugin renders inside a host container — the viewport fills 100% of the offered space at all times.
+**Platform scope:** Desktop and tablet only (per PRD platform constraints). No mobile phone layout required.
 
-**Desktop (1024px+):** Primary target. Canvas fills available width × height. Setup screen centred single-column, max-width ~480px — generous whitespace on wide displays. Overlays centred within the full viewport.
+### Layout Model — Fixed Aspect Ratio Shell
 
-**Tablet (768px–1023px):** Touch-optimised. Touch targets minimum 44×44px throughout. Setup form adapts to narrower container with same single-column layout. Toggle groups stack vertically on portrait tablet if width < 420px.
+The root container (`#subway-scaler-root`) is `position: relative; width: 100%; background: color-bg-void`. Inside it, a `.game-shell` div is the single source of truth for all layout:
 
-**No mobile breakpoint:** Plugin is not designed for phone-width viewports. If the host container is narrower than 420px, gameplay canvas still renders at full container size; no layout changes applied.
+```
+.game-shell {
+  aspect-ratio: 16 / 9;
+  max-height: calc(100vh - var(--slopsmith-toolbar-height, 0px));
+  width: auto;               /* driven by height */
+  max-width: 100%;           /* never wider than the container */
+  margin: 0 auto;            /* centre horizontally */
+  position: relative;        /* overlay anchor */
+  background: color-bg-void;
+}
+```
+
+All screens (Setup, Game, Overlays) live inside `.game-shell`. The Three.js canvas fills `.game-shell` at 100% × 100%. Overlays use `position: absolute; inset: 0` anchored to `.game-shell`.
+
+**Rationale:** Stretching to arbitrary viewport shapes makes the scrolling fretboard feel wrong — correct horizontal-to-vertical proportions are part of the game feel. A letterboxed 16:9 shell is always the right shape; horizontal dead space (if any) is filled with the void background.
+
+**Toolbar clearance:** The host Slopsmith shell exposes `--slopsmith-toolbar-height` as a CSS custom property on `:root`. The plugin reads this value to prevent the game shell from overlapping the toolbar. If the property is absent (future Slopsmith versions or standalone dev), the fallback `0px` applies — no layout break.
+
+**Desktop (1024px+):** Primary target. Game shell fills viewport height minus toolbar height. Excess horizontal space shows `color-bg-void`. Setup screen is centred within the shell, single-column, `max-width: 480px`.
+
+**Tablet (768px–1023px):** Same shell model. Touch targets minimum 44×44px. Toggle groups stack vertically when shell width < 420px.
+
+**No mobile breakpoint:** Not designed for phone-width viewports. Shell renders at minimum viable size; no special layout changes.
 
 ### Breakpoint Strategy
 
-Two breakpoints, both applied only to HTML overlay layout (not Three.js):
+Two breakpoints, applied only to HTML content *inside* `.game-shell` (not to Three.js):
 
-| Breakpoint | Width | Change |
+| Breakpoint | Shell width | Change |
 |---|---|---|
 | `--bp-compact` | `< 600px` | Toggle groups stack vertically; setup form padding reduces |
 | `--bp-standard` | `≥ 600px` | Default layout — all components at designed size |
 
-Breakpoints are defined locally in `setup.css` and `overlays.css` only — not as tokens. Three.js canvas always fills 100% of container; no breakpoint logic in the scene. A `resize` event handler recalculates renderer size and camera aspect ratio.
+Breakpoints use container queries (`@container game-shell (max-width: 600px)`) targeting `.game-shell` — not viewport media queries. Three.js canvas always fills 100% of `.game-shell`; a `ResizeObserver` recalculates renderer size and camera aspect ratio when shell dimensions change.
 
 ### Accessibility Strategy
 
