@@ -1,11 +1,14 @@
+@import url('game/ui/setup.css');
+
 .subway-scaler { display: flex; flex-direction: column; gap: 1rem; color: #e5e7eb; }
 .subway-scaler .menu { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; }
 .subway-scaler .menu.hidden { display: none; }
 .subway-scaler .menu label { display: inline-flex; gap: 0.4rem; align-items: center; font-size: 0.9rem; }
 .subway-scaler select, .subway-scaler input[type="number"] { background: #111827; color: #e5e7eb; border: 1px solid #374151; border-radius: 6px; padding: 4px 8px; }
-.subway-scaler button { background: #6366f1; color: white; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
-.subway-scaler button:hover { background: #4f46e5; }
-.subway-scaler button:disabled { opacity: 0.5; cursor: not-allowed; }
+/* Scope old indigo button styles to game menu only — setup screen has its own .start-button styles via setup.css */
+.subway-scaler .menu button, .subway-scaler .hud button, .subway-scaler .audio-panel button { background: #6366f1; color: white; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+.subway-scaler .menu button:hover, .subway-scaler .hud button:hover, .subway-scaler .audio-panel button:hover { background: #4f46e5; }
+.subway-scaler .menu button:disabled, .subway-scaler .hud button:disabled { opacity: 0.5; cursor: not-allowed; }
 .subway-scaler .game-wrap { position: relative; }
 .subway-scaler .game-canvas { width: 100%; max-width: 800px; aspect-ratio: 16 / 9; display: block; background: #101a2a; border-radius: 8px; }
 .subway-scaler .hud { display: flex; gap: 1rem; align-items: center; margin-top: 0.5rem; }

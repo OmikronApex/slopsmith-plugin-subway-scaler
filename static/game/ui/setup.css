@@ -24,6 +24,7 @@
 }
 
 .game-title {
+  font-family: 'Space Mono', monospace;
   font-size: clamp(18px, 4vw, 34px);
   font-weight: 700;
   color: var(--color-accent, #ffb800);
