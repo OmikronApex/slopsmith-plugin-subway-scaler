@@ -61,6 +61,31 @@ development_status:
     last_updated: 2026-05-21
     notes: "✅ Complete: Game title, 2-column grid, scale preview, toggle styling, responsive layout. All 7 tasks done, 93 tests passing."
 
+  # Epics
+  epic-2:
+    title: "Game Engine Migration"
+    status: in-progress
+    last_updated: 2026-05-21
+
+  # Stories - Epic 2
+  2-1-analyse-and-document-game-engine-py:
+    title: "Analyse and document game_engine.py"
+    status: done
+    last_updated: 2026-05-21
+    notes: "Analysis doc created at docs/game-engine-analysis.md. 114 tests passing."
+
+  2-2-implement-cartsystem-module:
+    title: "Implement CartSystem module"
+    status: done
+    last_updated: 2026-05-21
+    notes: "Code review complete: 1 decision resolved (medium multiplier=1.5), 2 patches applied (init timestamp, collision order). 114 tests passing."
+
+  2-3-implement-difficultymanager-module:
+    title: "Implement DifficultyManager module"
+    status: done
+    last_updated: 2026-05-21
+    notes: "Code review complete: 1 defer (constructor vs init AC ambiguity). 114 tests passing."
+
 ## Status Definitions
 
 # backlog: not yet ready for development
