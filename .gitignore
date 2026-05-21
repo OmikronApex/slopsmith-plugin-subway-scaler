@@ -15,7 +15,7 @@ Thumbs.db
 dist/
 build/
 temp/
-specs/
+/specs/
 /_bmad/
 /.rtk/
 /node_modules/
@@ -23,3 +23,5 @@ specs/
 /.claude/
 /.junie/
 /.venv/
+tests/e2e/screenshots/
+tests/e2e/results/

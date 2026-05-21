@@ -1,6 +1,6 @@
 # Story 0.2: Playwright Test Harness
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -37,30 +37,30 @@ so that all subsequent E2E stories have a working foundation to build on.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — Install Playwright (AC: 1)
-  - [ ] Add `"@playwright/test": "^1.44.0"` (or latest stable) to `package.json` devDependencies
-  - [ ] Run `npm install`
-  - [ ] Run `npx playwright install chromium` — install Chromium browser binary only (Firefox/Safari deferred to CI nightly)
+- [x] Task 1 — Install Playwright (AC: 1)
+  - [x] Add `"@playwright/test": "^1.44.0"` (or latest stable) to `package.json` devDependencies
+  - [x] Run `npm install`
+  - [x] Run `npx playwright install chromium` — install Chromium browser binary only (Firefox/Safari deferred to CI nightly)
 
-- [ ] Task 2 — Create `playwright.config.ts` (AC: 2)
-  - [ ] Configure `baseURL`, `retries`, `reporter`, `screenshot`, `video` as specified in ACs
-  - [ ] Define single Chromium project for local/CI primary runs
-  - [ ] Set `testDir: './tests/e2e/specs'`
-  - [ ] Set `outputDir: './tests/e2e/screenshots'`
+- [x] Task 2 — Create `playwright.config.ts` (AC: 2)
+  - [x] Configure `baseURL`, `retries`, `reporter`, `screenshot`, `video` as specified in ACs
+  - [x] Define single Chromium project for local/CI primary runs
+  - [x] Set `testDir: './tests/e2e/specs'`
+  - [x] Set `outputDir: './tests/e2e/screenshots'`
 
-- [ ] Task 3 — Create directory structure (AC: 3)
-  - [ ] Create `tests/e2e/fixtures/`, `helpers/`, `specs/`, `screenshots/`, `results/`
-  - [ ] Add `.gitkeep` to empty dirs so they are committed
+- [x] Task 3 — Create directory structure (AC: 3)
+  - [x] Create `tests/e2e/fixtures/`, `helpers/`, `specs/`, `screenshots/`, `results/`
+  - [x] Add `.gitkeep` to empty dirs so they are committed
 
-- [ ] Task 4 — Write smoke test (AC: 4)
-  - [ ] Create `tests/e2e/specs/smoke.spec.ts`
-  - [ ] Attach `pageerror` listener before `page.goto()`
-  - [ ] Assert title is non-empty
-  - [ ] Assert zero uncaught errors were collected
+- [x] Task 4 — Write smoke test (AC: 4)
+  - [x] Create `tests/e2e/specs/smoke.spec.ts`
+  - [x] Attach `pageerror` listener before `page.goto()`
+  - [x] Assert title is non-empty
+  - [x] Assert zero uncaught errors were collected
 
-- [ ] Task 5 — Add npm scripts and gitignore entries (AC: 5, 6, 7)
-  - [ ] Add `test:e2e` and `test:e2e:headed` to `package.json`
-  - [ ] Add `tests/e2e/screenshots/` and `tests/e2e/results/` to `.gitignore`
+- [x] Task 5 — Add npm scripts and gitignore entries (AC: 5, 6, 7)
+  - [x] Add `test:e2e` and `test:e2e:headed` to `package.json`
+  - [x] Add `tests/e2e/screenshots/` and `tests/e2e/results/` to `.gitignore`
 
 ## Dev Notes
 
@@ -128,13 +128,22 @@ claude-sonnet-4-6
 
 ### Completion Notes List
 
+- `playwright.config.ts` uses `"type": "module"` project — Playwright handles its own TS compilation, no separate tsconfig needed.
+- Chromium `launchOptions.args: []` left as explicit empty array so story 0-2a can push fake mic flags without restructuring the config.
+- Smoke test verified discoverable via `npx playwright test --list` (1 test in 1 file).
+- `tests/e2e/screenshots/` and `tests/e2e/results/` gitignored; `.gitkeep` files committed for the empty dirs.
+
 ### File List
 
-- `package.json` — UPDATE (add playwright dep + test:e2e scripts)
+- `package.json` — UPDATE (added @playwright/test dep + test:e2e scripts)
 - `playwright.config.ts` — NEW
 - `tests/e2e/fixtures/.gitkeep` — NEW
 - `tests/e2e/helpers/.gitkeep` — NEW
 - `tests/e2e/specs/smoke.spec.ts` — NEW
 - `tests/e2e/screenshots/.gitkeep` — NEW
 - `tests/e2e/results/.gitkeep` — NEW
-- `.gitignore` — UPDATE
+- `.gitignore` — UPDATE (added screenshots/ and results/ entries)
+
+### Change Log
+
+- 2026-05-21: Implemented story 0-2 — Playwright harness, smoke test, directory structure, npm scripts, gitignore entries.
