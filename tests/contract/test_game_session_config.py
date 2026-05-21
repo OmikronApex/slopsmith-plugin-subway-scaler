@@ -3,7 +3,6 @@
 import pytest
 
 
-@pytest.mark.skip(reason="red phase — Story 1.4 not yet implemented")
 def test_session_config_happy_path_200_and_required_shape(client):
     """T014: Happy path returns 200 with all required top-level snake_case fields."""
     response = client.get(
@@ -28,7 +27,6 @@ def test_session_config_happy_path_200_and_required_shape(client):
     assert "trackCount" not in data
 
 
-@pytest.mark.skip(reason="red phase — Story 1.4 not yet implemented")
 def test_session_config_root_midi_is_integer(client):
     """T015: root_midi in the response body is an integer."""
     response = client.get(
@@ -45,7 +43,6 @@ def test_session_config_root_midi_is_integer(client):
     assert data["root_midi"] == 65
 
 
-@pytest.mark.skip(reason="red phase — Story 1.4 not yet implemented")
 def test_session_config_notes_list_snake_case_shape(client):
     """T016: notes is a list; each item has midi, name, string, fret keys (snake_case)."""
     response = client.get(
@@ -73,7 +70,6 @@ def test_session_config_notes_list_snake_case_shape(client):
         assert "fretNum" not in note
 
 
-@pytest.mark.skip(reason="red phase — Story 1.4 not yet implemented")
 def test_session_config_track_count_in_valid_range(client):
     """T017: track_count is an integer clamped between 3 and 12 inclusive."""
     response = client.get(
@@ -91,7 +87,6 @@ def test_session_config_track_count_in_valid_range(client):
     assert 3 <= track_count <= 12
 
 
-@pytest.mark.skip(reason="red phase — Story 1.4 not yet implemented")
 def test_session_config_unknown_scale_returns_404_scale_not_found(client):
     """T018: Unknown scale_id → 404 with error.code == SCALE_NOT_FOUND."""
     response = client.get(
@@ -109,7 +104,6 @@ def test_session_config_unknown_scale_returns_404_scale_not_found(client):
     assert "message" in data["error"]
 
 
-@pytest.mark.skip(reason="red phase — Story 1.4 not yet implemented")
 def test_session_config_root_midi_below_21_returns_422_invalid_root(client):
     """T019: root_midi below MIDI range (< 21) → 422 with error.code == INVALID_ROOT."""
     response = client.get(
@@ -127,7 +121,6 @@ def test_session_config_root_midi_below_21_returns_422_invalid_root(client):
     assert "message" in data["error"]
 
 
-@pytest.mark.skip(reason="red phase — Story 1.4 not yet implemented")
 def test_session_config_root_midi_above_108_returns_422_invalid_root(client):
     """T020: root_midi above MIDI range (> 108) → 422 with error.code == INVALID_ROOT."""
     response = client.get(
