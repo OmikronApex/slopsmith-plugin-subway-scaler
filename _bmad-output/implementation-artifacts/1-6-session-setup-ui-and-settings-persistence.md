@@ -1,6 +1,6 @@
 # Story 1.6: Session Setup UI and Settings Persistence
 
-**Status:** review
+**Status:** in-progress
 **Epic:** 1 — Foundation & Session Setup
 **Story ID:** 1.6
 **Story Key:** 1-6-session-setup-ui-and-settings-persistence
@@ -191,6 +191,44 @@ This story wires the **setup screen only**. **Story 3.4 (GameLoop)** will handle
 - `static/game/setup.js` — Setup screen UI module (created): renderSetupScreen(), form logic, localStorage integration
 - `static/game/main.js` — Modified: imports renderSetupScreen, calls it at initialization, hides game UI until setup complete
 - `static/game/ui/setup.css` — Already created in story 1-5: provides form styling and responsive design
+
+---
+
+## Review Findings
+
+### Critical Issues (Applied)
+- [x] [Review][Patch] Tab Order Navigation Skips Difficulty Group — Fixed tab order: Scale → Difficulty → Instrument → START (setup.js:199-254)
+- [x] [Review][Patch] Missing `difficulty` Field in API Response — Fixed by reading from localStorage instead of API response (main.js:78-88)
+- [x] [Review][Patch] Hardcoded RGBA Colors Violate CSS Custom Property Constraint — Fixed hardcoded rgba to use var(--color-accent) (setup.css:145)
+- [x] [Review][Patch] Missing `:focus-visible` Pseudo-class on Select — Added :focus-visible styling (setup.css:56-62)
+
+### High Issues (Applied)
+- [x] [Review][Patch] Null Check Missing on currentInstrument() Return — Added check in START handler (setup.js:174)
+- [x] [Review][Patch] Missing isLoading Reset After Success — Added isLoading = false before onGameStart (setup.js:190)
+- [x] [Review][Patch] localStorage JSON.parse() Unhandled Exception — Added try/catch in loadSettings (setup.js:28-35)
+- [x] [Review][Patch] Root MIDI Range Validation Missing — Added Math.max/min clamping to [21, 108] (setup.js:40-41)
+- [x] [Review][Patch] Font Loading Race: 3-Second Blocking Period — Changed font-display: block → swap (setup.css:7, 14)
+
+### Remaining Issues (Action Items)
+- [x] [Review][Patch] Shift+Tab Reverse Navigation Broken — Focus should go to last button of Instrument group [HIGH] (setup.js:318-322)
+- [x] [Review][Patch] Setup Container Query May Fail — querySelector selector fragility [HIGH] (main.js:106-117)
+- [ ] [Review][Patch] Timing Vulnerability: Setup Hidden Before Fetch Completes — Add timeout safeguards [HIGH] (main.js:97-104)
+- [x] [Review][Patch] No Validation of Scales/Instruments Arrays — Check for empty arrays before rendering [HIGH] (setup.js:114-121)
+- [x] [Review][Patch] Error Message Never Re-hidden After Success — Error DOM persists after successful retry [MEDIUM] (setup.js:244)
+- [x] [Review][Patch] Concurrent Requests Not Protected — Add request deduplication/debounce [MEDIUM] (setup.js:206-209)
+- [x] [Review][Patch] No Accessibility Focus Management After Error — Focus should move to error message or first field [MEDIUM] (setup.js:261-263)
+- [ ] [Review][Patch] Tab Order Hardcoding Fragile — Consider refactoring to data-driven navigation [MEDIUM] (setup.js:199-254)
+- [x] [Review][Patch] Toggle Button Click Handler Fires on Already-Active — Check if value changed before callback [MEDIUM] (setup.js:84-87)
+- [x] [Review][Patch] localStorage Quota Exceeded Not Handled — Add try/catch in saveSettings [MEDIUM] (setup.js:41-52)
+- [x] [Review][Patch] CSS Custom Properties Undefined Fallbacks Not Safe — Add fallback colors [MEDIUM] (setup.css:19-99)
+- [ ] [Review][Patch] No Visual Feedback During Countdown — Add spinner or progress indicator [MEDIUM] (main.js:317-398)
+- [ ] [Review][Patch] Select Element Missing Label Association — Difficulty/Instrument labels need `for` attribute [MEDIUM] (setup.js:120, 132)
+- [x] [Review][Patch] computeRandomRootMidi Range Edge Cases — Verify with unusual tunings [MEDIUM] (setup.js:57-61)
+- [ ] [Review][Patch] Keyboard Arrow Keys No Wrap-Around — ArrowLeft/Right should cycle within group [LOW] (setup.js:72-80)
+- [ ] [Review][Patch] Root MIDI Seed Validation Gap — Backend doesn't validate fret range [LOW] (game_router.py)
+- [ ] [Review][Patch] SETTINGS_KEY Hardcoded Without Namespace — Add plugin prefix for namespacing [LOW] (setup.js:4)
+- [ ] [Review][Patch] fetchJson() Swallows JSON Parse Errors — Lose error context on parse failure [LOW] (setup.js:21-26)
+- [ ] [Review][Patch] No Preload Hints for Fonts — Add link rel=preload in HTML [LOW] (requires HTML template)
 
 ---
 

@@ -1,6 +1,6 @@
 # Story 1.7: Handle Session-Config Fetch Failure at Game Start
 
-**Status:** review
+**Status:** in-progress
 **Epic:** 1 — Foundation & Session Setup
 **Story ID:** 1.7
 **Story Key:** 1-7-handle-session-config-fetch-failure-at-game-start
@@ -196,6 +196,19 @@ try {
 
 - `static/game/setup.js` — Modified (story 1-6): error handling integrated in START button handler (try/catch, error message show/hide)
 - `static/game/ui/setup.css` — Used (story 1-5): `.error-message` styling with visibility toggle
+
+---
+
+## Review Findings
+
+### High Issues (Applied)
+- [x] [Review][Patch] Missing isLoading Reset After Success — Fixed so button state resets properly after successful session start (setup.js:190)
+
+### Remaining Issues (Action Items)
+- [x] [Review][Patch] Error Message Never Re-hidden After Success — DOM error message persists if retry succeeds [MEDIUM] (setup.js:244-246)
+- [x] [Review][Patch] No Accessibility Focus Management After Error — Focus and announcement timing needs review [MEDIUM] (setup.js:261-263)
+- [ ] [Review][Patch] Timing Vulnerability: Setup Hidden Before Fetch Completes — Add timeout/promise safeguards [HIGH] (main.js:97-104)
+- [x] [Review][Patch] Concurrent Requests Not Protected — Multiple clicks before first completes → race condition [MEDIUM] (setup.js:206-209)
 
 ---
 

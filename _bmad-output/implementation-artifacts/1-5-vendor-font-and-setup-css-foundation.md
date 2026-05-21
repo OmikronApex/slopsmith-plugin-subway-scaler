@@ -1,6 +1,6 @@
 # Story 1.5: Vendor Font and Setup CSS Foundation
 
-**Status:** review
+**Status:** in-progress
 **Epic:** 1 — Foundation & Session Setup
 **Story ID:** 1.5
 **Story Key:** 1-5-vendor-font-and-setup-css-foundation
@@ -147,6 +147,21 @@ This story creates **only CSS + fonts**. **Story 1.6 (Setup UI)** creates the HT
 - `static/game/fonts/SpaceMono-Regular.ttf` — Space Mono regular weight font file (created/vendored)
 - `static/game/fonts/SpaceMono-Bold.ttf` — Space Mono bold weight font file (created/vendored)
 - `static/game/ui/setup.css` — Setup screen base styles, @font-face declarations, responsive layout (created)
+
+---
+
+## Review Findings
+
+### Critical Issues (Applied)
+- [x] [Review][Patch] Hardcoded RGBA Colors Violate CSS Constraint — Changed rgba(255, 184, 0, 0.1) to use design tokens (setup.css:145)
+- [x] [Review][Patch] Font Loading Race: 3-Second Blocking — Changed font-display: block → swap for faster perceived load (setup.css:7, 14)
+
+### High Issues (Applied)
+- [x] [Review][Patch] Missing `:focus-visible` on Form Controls — Added :focus-visible pseudo-class to select (setup.css:56-62)
+
+### Remaining Issues (Action Items)
+- [x] [Review][Patch] CSS Custom Properties Undefined Fallbacks — Add fallback colors for better resilience [MEDIUM] (setup.css:19-157)
+- [ ] [Review][Patch] No Preload Hints for Fonts — Add HTML link rel=preload to prioritize font loading [LOW]
 
 ---
 
