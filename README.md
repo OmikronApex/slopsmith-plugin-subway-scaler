@@ -1,4 +1,4 @@
-alrigh# Subway Scaler
+# Subway Scaler
 Guitar/Bass scale trainer. Subway Surfers style.
 
 ## Stack

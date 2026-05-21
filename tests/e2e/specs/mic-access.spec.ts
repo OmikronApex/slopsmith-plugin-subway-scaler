@@ -1,9 +1,9 @@
 // Chromium-only: fake mic device flags are --use-fake-device-for-media-stream
 // and --use-fake-ui-for-media-stream (set in playwright.config.ts).
 // Firefox/Safari mic testing is deferred to a future story.
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
-async function navigateToPlugin(page: any) {
+async function navigateToPlugin(page: Page) {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
   // Plugin nav item is injected dynamically by Slopsmith under the Plugins dropdown
