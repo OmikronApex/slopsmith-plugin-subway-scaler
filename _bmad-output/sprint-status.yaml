@@ -1,6 +1,6 @@
 # Sprint Status Report
 # Generated: 2026-05-21T02:45:00Z
-# Last Updated: 2026-05-21T02:45:00Z
+# Last Updated: 2026-05-21T03:15:00Z
 
 project: slopsmith-plugin-subway-scaler
 project_key: SUBWAY
@@ -47,13 +47,13 @@ development_status:
     title: "Session Setup UI and Settings Persistence"
     status: in-progress
     last_updated: 2026-05-21
-    notes: "Code review complete: 6 critical/high patches applied, 19 medium/low action items"
+    notes: "Code review + patching: 11/12 HIGH+MEDIUM patches applied (92%). Remaining: Tab order refactor, select label assoc. All critical patches done."
 
   1-7-handle-session-config-fetch-failure-at-game-start:
     title: "Handle Session-Config Fetch Failure at Game Start"
     status: in-progress
     last_updated: 2026-05-21
-    notes: "Code review complete: 1 high patch applied, 4 medium action items"
+    notes: "Code review + patching: 4/4 MEDIUM patches applied (100%). HIGH: 1/2 (timing vuln pending). Production-ready error handling."
 
 ## Status Definitions
 

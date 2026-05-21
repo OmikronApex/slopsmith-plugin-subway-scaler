@@ -160,7 +160,7 @@ This story creates **only CSS + fonts**. **Story 1.6 (Setup UI)** creates the HT
 - [x] [Review][Patch] Missing `:focus-visible` on Form Controls — Added :focus-visible pseudo-class to select (setup.css:56-62)
 
 ### Remaining Issues (Action Items)
-- [ ] [Review][Patch] CSS Custom Properties Undefined Fallbacks — Add fallback colors for better resilience [MEDIUM]
+- [x] [Review][Patch] CSS Custom Properties Undefined Fallbacks — Add fallback colors for better resilience [MEDIUM] (setup.css:19-157)
 - [ ] [Review][Patch] No Preload Hints for Fonts — Add HTML link rel=preload to prioritize font loading [LOW]
 
 ---
