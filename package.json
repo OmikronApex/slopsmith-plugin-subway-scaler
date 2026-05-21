@@ -13,6 +13,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.44.0",
+    "@types/node": "^25.9.1",
     "cross-env": "^7.0.3",
     "vitest": "^1.6.0"
   },
