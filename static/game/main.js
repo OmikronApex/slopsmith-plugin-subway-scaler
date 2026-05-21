@@ -2,7 +2,7 @@
 // Wires the menu UI, run lifecycle, audio pipeline, run state machine, and 3D scene.
 
 import { createScene } from './SceneManager.js';
-import { startAudio, enumerateInputs } from './AudioDetector.js';
+import { startAudio } from './AudioDetector.js';
 import { Run, difficultyToTimePerNoteMs } from './GameState.js';
 import { quantize, midiToName } from './notes.js';
 import { GameClient } from './game-client.js';
@@ -37,16 +37,6 @@ async function fetchJson(url, opts) {
   return data;
 }
 
-function rootSelectOptions(selectedMidi, instrument) {
-  // Start from the first fret of the lowest string of the instrument
-  const min = (instrument && instrument.tuning) ? (instrument.tuning[0] + 1) : 36;
-  const max = 95;
-  const opts = [];
-  for (let m = min; m <= max; m++) {
-    opts.push(el('option', { value: String(m), ...(m === selectedMidi ? { selected: 'selected' } : {}) }, midiToName(m)));
-  }
-  return opts;
-}
 
 export async function bootstrap(root) {
   // Inject design tokens (CSS custom properties) at initialization
@@ -139,7 +129,7 @@ export async function bootstrap(root) {
       body: JSON.stringify(merged),
     }).catch(() => {});
 
-    // Hide setup, show game (with explicit structure to avoid query fragility)
+    // Hide setup, show game, then auto-start the run
     const allChildren = Array.from(root.children);
     allChildren.forEach(child => {
       if (child.classList && child.classList.contains('setup-container')) {
@@ -148,10 +138,8 @@ export async function bootstrap(root) {
       if (child.classList && child.classList.contains('game-wrap')) {
         child.style.display = 'block';
       }
-      if (child.classList && child.classList.contains('menu')) {
-        child.classList.remove('hidden');
-      }
     });
+    start();
   }
 
   // Render setup screen first
@@ -165,63 +153,13 @@ export async function bootstrap(root) {
     strictOctave: settings.strictOctave,
     instrumentId: settings.instrumentId || 'guitar-standard',
     strictTuning: !!settings.strictTuning,
+    invincible: false,
     audio: { ...settings.audio },
   };
 
   function currentInstrument() {
     return instruments.find(i => i.id === state.instrumentId) || instruments[0];
   }
-
-  const menu = el('div', { class: 'menu' });
-  const scaleSelect = el('select', {},
-    ...scales.map(s => el('option', { value: s.id, ...(s.id === state.scaleId ? { selected: 'selected' } : {}) }, s.name)));
-  scaleSelect.addEventListener('change', () => { state.scaleId = scaleSelect.value; });
-
-  const rootSelect = el('select', {}, ...rootSelectOptions(state.rootMidi, currentInstrument()));
-  rootSelect.addEventListener('change', () => { state.rootMidi = parseInt(rootSelect.value, 10); });
-
-  const diffSelect = el('select', {},
-    ...['easy', 'medium', 'hard'].map(d =>
-      el('option', { value: d, ...(d === state.difficulty ? { selected: 'selected' } : {}) }, d)));
-  diffSelect.addEventListener('change', () => { state.difficulty = diffSelect.value; });
-
-  const strictChk = el('input', { type: 'checkbox', ...(state.strictOctave ? { checked: 'checked' } : {}) });
-  strictChk.addEventListener('change', () => { state.strictOctave = strictChk.checked; });
-
-  // Debug: invincible mode disables collision-driven failure (testing only).
-  state.invincible = false;
-  const invincibleChk = el('input', { type: 'checkbox' });
-  invincibleChk.addEventListener('change', () => { state.invincible = invincibleChk.checked; });
-
-  const instrumentSelect = el('select', {},
-    ...instruments.map(i => el('option', { value: i.id, ...(i.id === state.instrumentId ? { selected: 'selected' } : {}) }, i.name)));
-  instrumentSelect.addEventListener('change', () => { 
-    state.instrumentId = instrumentSelect.value;
-    const inst = currentInstrument();
-    rootSelect.innerHTML = '';
-    const newOpts = rootSelectOptions(state.rootMidi, inst);
-    for (const o of newOpts) rootSelect.appendChild(o);
-    
-    const min = inst.tuning[0] + 1;
-    if (state.rootMidi < min) {
-      state.rootMidi = min;
-      rootSelect.value = String(min);
-    }
-  });
-
-  const startBtn = el('button', { class: 'start-btn' }, 'Start Run');
-  const audioBtn = el('button', { class: 'audio-btn' }, 'Audio Settings');
-
-  menu.appendChild(el('label', {}, 'Scale ', scaleSelect));
-  menu.appendChild(el('label', {}, 'Root ', rootSelect));
-  menu.appendChild(el('label', {}, 'Difficulty ', diffSelect));
-  menu.appendChild(el('label', {}, 'Strict octave ', strictChk));
-  menu.appendChild(el('label', { title: 'Debug: ignore cart collisions' }, 'Invincible ', invincibleChk));
-  menu.appendChild(el('label', {}, 'Instrument ', instrumentSelect));
-  menu.appendChild(startBtn);
-  menu.appendChild(audioBtn);
-  menu.classList.add('hidden');
-  root.appendChild(menu);
 
   // --- Game container ---
   const canvas = el('canvas', { class: 'game-canvas', width: '800', height: '450' });
@@ -241,23 +179,6 @@ export async function bootstrap(root) {
   const canvasFrame = el('div', { class: 'canvas-frame' }, canvas, overlay);
   const gameWrap = el('div', { class: 'game-wrap', style: 'display:none' }, canvasFrame, hud, variantHud);
   root.appendChild(gameWrap);
-
-  // --- Audio settings panel ---
-  const audioPanel = el('div', { class: 'audio-panel hidden' });
-  const deviceSel = el('select', {});
-  const tunerEl = el('div', { class: 'tuner' }, '—');
-  const tolInput = el('input', { type: 'range', min: '1', max: '100', value: String(state.audio.toleranceCents) });
-  const confInput = el('input', { type: 'range', min: '0', max: '100', value: String(Math.round(state.audio.confidenceThreshold * 100)) });
-  const stabInput = el('input', { type: 'number', min: '1', max: '10', value: String(state.audio.stabilityFrames) });
-  audioPanel.appendChild(el('h3', {}, 'Audio Settings'));
-  audioPanel.appendChild(el('label', {}, 'Input Device ', deviceSel));
-  audioPanel.appendChild(el('div', { class: 'tuner-wrap' }, 'Live: ', tunerEl));
-  audioPanel.appendChild(el('label', {}, 'Tolerance (cents) ', tolInput));
-  audioPanel.appendChild(el('label', {}, 'Confidence threshold (×100) ', confInput));
-  audioPanel.appendChild(el('label', {}, 'Stability frames ', stabInput));
-  const closeAudio = el('button', {}, 'Close');
-  audioPanel.appendChild(closeAudio);
-  root.appendChild(audioPanel);
 
   const scene = createScene(canvas);
   const gameClient = new GameClient(API);
@@ -349,8 +270,7 @@ export async function bootstrap(root) {
   }
 
   async function start() {
-    if (startBtn.disabled && run && run.state === 'running') return;
-    startBtn.disabled = true;
+    if (run && run.state === 'running') return;
     feedbackEl.textContent = '';
     
     try {
@@ -529,9 +449,6 @@ export async function bootstrap(root) {
         } else if (result === 'rejected') {
           feedbackEl.textContent = '·';
         }
-        if (det && det.note) {
-          tunerEl.textContent = `${det.note.name} ${det.centsOffset >= 0 ? '+' : ''}${Math.round(det.centsOffset)}¢`;
-        }
       });
 
       setExpected();
@@ -623,7 +540,6 @@ export async function bootstrap(root) {
     if (audio) { audio.stop(); audio = null; }
     pauseBtn.classList.add('hidden');
     abandonBtn.classList.add('hidden');
-    startBtn.disabled = false;
     if (window.__gameState) {
       window.__gameState.session.phase = 'idle';
       window.__gameState.loop.running = false;
@@ -666,7 +582,6 @@ export async function bootstrap(root) {
     };
   }
 
-  startBtn.addEventListener('click', () => start());
   pauseBtn.addEventListener('click', () => {
     if (!run) return;
     if (run.state === 'running') {
@@ -700,92 +615,4 @@ export async function bootstrap(root) {
     }
   });
 
-  // --- Audio settings wiring ---
-  audioBtn.addEventListener('click', async () => {
-    audioPanel.classList.remove('hidden');
-    try {
-      const devs = await enumerateInputs();
-      deviceSel.innerHTML = '';
-      deviceSel.appendChild(el('option', { value: '' }, 'Default'));
-      for (const d of devs) {
-        const opt = el('option', { value: d.deviceId }, d.label || 'Unnamed input');
-        if (d.deviceId === state.audio.deviceId) opt.selected = true;
-        deviceSel.appendChild(opt);
-      }
-    } catch (err) {
-      deviceSel.innerHTML = '';
-      deviceSel.appendChild(el('option', {}, `Cannot list devices: ${err.message}`));
-    }
-
-    // Live tuner
-    let tunerAudio = audio;
-    if (!tunerAudio) {
-      try {
-        tunerAudio = await startAudio({ deviceId: state.audio.deviceId });
-        tunerAudio.onDetection(det => {
-          if (det && det.note) {
-            tunerEl.textContent = `${det.note.name} ${det.centsOffset >= 0 ? '+' : ''}${Math.round(det.centsOffset)}¢`;
-          } else {
-            tunerEl.textContent = '—';
-          }
-        });
-        audioPanel._tuner = tunerAudio;
-      } catch (err) {
-        tunerEl.textContent = `mic unavailable: ${err.message}`;
-      }
-    }
-  });
-
-  let putTimer = null;
-  function persistAudio() {
-    clearTimeout(putTimer);
-    putTimer = setTimeout(() => {
-      const merged = {
-        lastScaleId: state.scaleId,
-        lastRootMidi: state.rootMidi,
-        lastDifficulty: state.difficulty,
-        strictOctave: state.strictOctave,
-        instrumentId: state.instrumentId,
-        strictTuning: state.strictTuning,
-        audio: state.audio,
-      };
-      fetchJson(`${API}/settings`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(merged),
-      }).catch(() => {});
-    }, 250);
-  }
-
-  deviceSel.addEventListener('change', async () => {
-    state.audio.deviceId = deviceSel.value || null;
-    state.audio.deviceLabel = deviceSel.options[deviceSel.selectedIndex].textContent;
-    const tunerAudio = audioPanel._tuner;
-    if (tunerAudio && tunerAudio.switchInput) {
-      try { await tunerAudio.switchInput(state.audio.deviceId); } catch (_) {}
-    }
-    persistAudio();
-  });
-  tolInput.addEventListener('input', () => {
-    state.audio.toleranceCents = parseInt(tolInput.value, 10);
-    if (run) run.toleranceCents = state.audio.toleranceCents;
-    persistAudio();
-  });
-  confInput.addEventListener('input', () => {
-    state.audio.confidenceThreshold = parseInt(confInput.value, 10) / 100;
-    if (run) run.confidenceThreshold = state.audio.confidenceThreshold;
-    persistAudio();
-  });
-  stabInput.addEventListener('change', () => {
-    state.audio.stabilityFrames = Math.max(1, Math.min(10, parseInt(stabInput.value, 10) || 3));
-    if (run) run.stabilityFrames = state.audio.stabilityFrames;
-    persistAudio();
-  });
-  closeAudio.addEventListener('click', () => {
-    audioPanel.classList.add('hidden');
-    if (audioPanel._tuner && audioPanel._tuner !== audio) {
-      audioPanel._tuner.stop();
-      audioPanel._tuner = null;
-    }
-  });
 }

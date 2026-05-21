@@ -54,12 +54,8 @@ test('score increments when A4 WAV is injected and game starts with A major', as
     await page.getByText('Subway Scaler', { exact: true }).first().click();
     await page.getByRole('button', { name: 'START' }).waitFor({ timeout: 10000 });
 
-    // Setup screen START → session-config intercepted → game menu shown
+    // Setup screen START → session-config intercepted → auto-starts run
     await page.getByRole('button', { name: 'START' }).click();
-
-    // Start game — audio detection begins, A4 WAV feeds the mic
-    await page.getByRole('button', { name: 'Start Run' }).waitFor({ timeout: 5000 });
-    await page.getByRole('button', { name: 'Start Run' }).click();
 
     // Wait for phase to reach 'playing'
     await page.waitForFunction(

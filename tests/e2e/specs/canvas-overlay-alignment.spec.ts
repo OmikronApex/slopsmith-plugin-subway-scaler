@@ -19,9 +19,8 @@ async function startGameAndTriggerOverlay(page: Page) {
   await page.getByRole('button', { name: 'Plugins' }).click();
   await page.getByText('Subway Scaler', { exact: true }).first().click();
   await page.getByRole('button', { name: 'START' }).waitFor({ timeout: 10000 });
+  // Setup screen START → onSetupComplete → auto-starts the run
   await page.getByRole('button', { name: 'START' }).click();
-  await page.getByRole('button', { name: 'Start Run' }).waitFor({ timeout: 5000 });
-  await page.getByRole('button', { name: 'Start Run' }).click();
   await page.waitForFunction(
     () => (window as any).__gameState?.session?.phase === 'playing',
     { timeout: 10000 }
