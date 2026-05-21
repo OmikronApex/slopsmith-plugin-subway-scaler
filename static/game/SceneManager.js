@@ -419,6 +419,12 @@ export function createScene(canvas) {
     proposeVariantTracks,
     dismissVariantTracks,
     acceptVariantTracks,
+    resize(w, h) {
+      if (w <= 0 || h <= 0) return;
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    },
     // Shims for old API
     setQueue() {},
     appendQueue() {},

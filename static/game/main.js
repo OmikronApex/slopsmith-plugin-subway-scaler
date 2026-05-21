@@ -83,6 +83,9 @@ export async function bootstrap(root) {
   root.innerHTML = '';
   root.className = 'subway-scaler';
 
+  const shell = el('div', { class: 'game-shell' });
+  root.appendChild(shell);
+
   let scales = [];
   let instruments = [];
   let settings = null;
@@ -130,7 +133,7 @@ export async function bootstrap(root) {
     }).catch(() => {});
 
     // Hide setup, show game, then auto-start the run
-    const allChildren = Array.from(root.children);
+    const allChildren = Array.from(shell.children);
     allChildren.forEach(child => {
       if (child.classList && child.classList.contains('setup-container')) {
         child.style.display = 'none';
@@ -142,8 +145,8 @@ export async function bootstrap(root) {
     start();
   }
 
-  // Render setup screen first
-  renderSetupScreen(root, scales, instruments, onSetupComplete);
+  // Render setup screen into the shell (renderSetupScreen clears shell and appends setup-container)
+  renderSetupScreen(shell, scales, instruments, onSetupComplete);
 
   // --- Game state (populated after setup screen) ---
   let state = {
@@ -174,13 +177,20 @@ export async function bootstrap(root) {
   hud.appendChild(feedbackEl);
   hud.appendChild(pauseBtn);
   hud.appendChild(abandonBtn);
-  // canvas-frame keeps overlay exactly on top of the canvas at all viewport widths.
-  // Without this wrapper, overlay's inset:0 fills game-wrap which may be wider than the max-width-capped canvas.
-  const canvasFrame = el('div', { class: 'canvas-frame' }, canvas, overlay);
-  const gameWrap = el('div', { class: 'game-wrap', style: 'display:none' }, canvasFrame, hud, variantHud);
-  root.appendChild(gameWrap);
+  // game-wrap fills the shell absolutely; canvas, overlay, hud all position within it.
+  const gameWrap = el('div', { class: 'game-wrap', style: 'display:none' }, canvas, overlay, hud, variantHud);
+  shell.appendChild(gameWrap);
 
   const scene = createScene(canvas);
+
+  // Keep Three.js renderer resolution in sync with the shell's actual pixel size
+  new ResizeObserver(entries => {
+    for (const entry of entries) {
+      const { width, height } = entry.contentRect;
+      scene.resize(width, height);
+    }
+  }).observe(shell);
+
   const gameClient = new GameClient(API);
   const safeZoneRenderer = new SafeZoneRenderer(scene.threeScene || scene.scene);
 

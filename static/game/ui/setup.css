@@ -200,6 +200,20 @@
   display: block;
 }
 
+/* ===== SETUP CONTAINER BASE ===== */
+
+/* Fills the game-shell absolutely — game-shell is the positioned parent */
+.setup-container {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg-void, #0D0D1A);
+  padding: 1rem;
+  overflow-y: auto;
+}
+
 /* ===== RESPONSIVE LAYOUT ===== */
 
 /* DESKTOP: >= 600px */
@@ -208,7 +222,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    min-height: 100vh;
+    height: 100%;
     background: var(--color-bg-void);
     padding: 1rem;
   }
@@ -240,7 +254,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    min-height: 100vh;
+    height: 100%;
     background: var(--color-bg-void);
     padding: 1rem;
   }
