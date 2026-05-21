@@ -1,5 +1,6 @@
 .subway-scaler { display: flex; flex-direction: column; gap: 1rem; color: #e5e7eb; }
 .subway-scaler .menu { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; }
+.subway-scaler .menu.hidden { display: none; }
 .subway-scaler .menu label { display: inline-flex; gap: 0.4rem; align-items: center; font-size: 0.9rem; }
 .subway-scaler select, .subway-scaler input[type="number"] { background: #111827; color: #e5e7eb; border: 1px solid #374151; border-radius: 6px; padding: 4px 8px; }
 .subway-scaler button { background: #6366f1; color: white; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; }

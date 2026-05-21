@@ -1,6 +1,6 @@
 # Sprint Status Report
 # Generated: 2026-05-21T02:45:00Z
-# Last Updated: 2026-05-21T13:25:00Z
+# Last Updated: 2026-05-21T17:00:00Z
 
 project: slopsmith-plugin-subway-scaler
 project_key: SUBWAY
@@ -23,6 +23,49 @@ story_location: _bmad-output/implementation-artifacts
 ## Epic Status
 
 development_status:
+  # Epics
+  epic-0:
+    title: "E2E Testing Infrastructure"
+    status: in-progress
+    last_updated: 2026-05-21
+    notes: "All stories complete, PR #15 open for review."
+
+  # Stories - Epic 0
+  0-1-docker-development-setup:
+    title: "Docker Development Setup"
+    status: review
+    last_updated: 2026-05-21
+
+  0-2-playwright-test-harness:
+    title: "Playwright Test Harness"
+    status: review
+    last_updated: 2026-05-21
+
+  0-2a-fake-microphone-device:
+    title: "Fake Microphone Device"
+    status: review
+    last_updated: 2026-05-21
+
+  0-2b-wav-audio-injection:
+    title: "WAV Audio Injection"
+    status: review
+    last_updated: 2026-05-21
+
+  0-3-standard-baseline-test-suite:
+    title: "Standard Baseline Test Suite"
+    status: review
+    last_updated: 2026-05-21
+
+  0-4-test-integration-and-templates:
+    title: "Test Integration & Templates"
+    status: review
+    last_updated: 2026-05-21
+
+  0-5-canvas-observable-interface:
+    title: "Canvas Observable Interface"
+    status: review
+    last_updated: 2026-05-21
+
   # Epics
   epic-1:
     title: "Foundation & Session Setup"
@@ -52,21 +95,21 @@ development_status:
 
   1-5-vendor-font-and-setup-css-foundation:
     title: "Vendor Font and Setup CSS Foundation"
-    status: in-progress
+    status: done
     last_updated: 2026-05-21
-    notes: "Code review complete: 3 critical patches applied, 2 medium/low action items"
+    notes: "Code review complete: 3 critical patches applied, 2 medium/low action items."
 
   1-6-session-setup-ui-and-settings-persistence:
     title: "Session Setup UI and Settings Persistence"
-    status: in-progress
+    status: done
     last_updated: 2026-05-21
-    notes: "Code review + patching: 11/12 HIGH+MEDIUM patches applied (92%). Remaining: Tab order refactor, select label assoc. All critical patches done. Architectural fix: setup.js moved to /static/game/ui to colocate with UI modules."
+    notes: "Code review + patching complete. Architectural fix: setup.js moved to /static/game/ui."
 
   1-7-handle-session-config-fetch-failure-at-game-start:
     title: "Handle Session-Config Fetch Failure at Game Start"
-    status: in-progress
+    status: done
     last_updated: 2026-05-21
-    notes: "Code review + patching: 4/4 MEDIUM patches applied (100%). HIGH: 1/2 (timing vuln pending). Production-ready error handling."
+    notes: "Code review + patching complete. Production-ready error handling."
 
   1-8-implement-ux-design-polish-and-mockup-styling:
     title: "Implement UX Design Polish and Mockup Styling"

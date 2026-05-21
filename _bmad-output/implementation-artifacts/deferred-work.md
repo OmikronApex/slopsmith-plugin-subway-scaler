@@ -1,5 +1,22 @@
 # Deferred Work
 
+## Deferred from: code review of 0-1-docker-development-setup (2026-05-21)
+
+- Broad volume mount exposes full repo root (including `.git`) to container — required for hot-reload; document scope in README when revisiting security posture.
+- Healthcheck on `/` passes on redirect — `curl -f` treats 3xx as success; confirmed passing in live test but may mask future redirect changes.
+
+## Deferred from: code review of 0-2-playwright-test-harness (2026-05-21)
+
+- `.gitignore` `specs/` → `/specs/` scope change may track previously-ignored nested `specs/` dirs — intentional trade-off to unblock `tests/e2e/specs/`.
+- Volume mount `../../` relative path resolution: confirmed working with Docker Compose v2 locally; revisit when CI is wired in story 0-4.
+
+## Deferred from: code review (epic/0 branch — stories 0-1 through 0-2a) (2026-05-21)
+
+- `streamType` detection uses `trackLabel.toLowerCase().includes('fake')` — undocumented Chromium string; future Chromium rename would silently break `mic-access.spec.ts` streamType assertion.
+- `webServer.command` is `docker compose up` (foreground); Playwright kills the process on teardown but container cleanup depends on signal handling — may leave port 8000 occupied between runs. Consider `docker compose up --wait` + teardown wrapper for CI.
+- `window.__audioState` fields not reset on `stop()` / `cleanup()` — stale `micActive: true` after audio teardown. Add `micActive: false, pipelineReady: false` to stop() if observable state is used in future assertions.
+- `smoke.spec.ts` only captures `pageerror` events — silent console.error, swallowed fetch rejections, and worklet 404s all pass. Expand smoke coverage in story 0-3 baseline suite.
+
 ## Deferred from: code review of 2-2-implement-cartsystem-module (2026-05-21)
 
 - `gameState.runtime.currentNote` coupling: CartSystem reads a field that requires an external writer; undocumented dependency. Future integration story (GameLoop.js) should document this contract explicitly.

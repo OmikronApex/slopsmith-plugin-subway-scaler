@@ -1,0 +1,21 @@
+services:
+  slopsmith:
+    image: slopsmith-dev:latest
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../../:/app/plugins/subway-scaler
+      - slopsmith-config:/config
+    environment:
+      - PYTHONPATH=/app/lib:/app
+      - CONFIG_DIR=/config
+      - DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
+    healthcheck:
+      test: ["CMD", "curl", "-Lsf", "--max-time", "5", "http://localhost:8000"]
+      interval: 5s
+      timeout: 6s
+      retries: 12
+      start_period: 20s
+
+volumes:
+  slopsmith-config:

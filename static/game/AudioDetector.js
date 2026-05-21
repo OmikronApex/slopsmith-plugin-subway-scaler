@@ -129,6 +129,14 @@ async function buildSource(audioCtx, deviceId) {
 }
 
 export async function startAudio({ deviceId = null } = {}) {
+  window.__audioState = {
+    micActive: false,
+    pipelineReady: false,
+    lastDetectedNote: null,
+    detectionConfidence: 0,
+    streamType: null,
+  };
+
   const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   await audioCtx.audioWorklet.addModule(WORKLET_URL);
   const node = new AudioWorkletNode(audioCtx, 'yin-processor', {
@@ -136,6 +144,11 @@ export async function startAudio({ deviceId = null } = {}) {
   });
 
   let { stream, source } = await buildSource(audioCtx, deviceId);
+
+  const trackLabel = stream.getAudioTracks()[0]?.label ?? '';
+  window.__audioState.streamType = trackLabel.toLowerCase().includes('fake') ? 'fake' : 'real';
+  window.__audioState.micActive = true;
+  window.__audioState.pipelineReady = true;
   source.connect(node);
   // Worklet is a sink for analysis; do not connect to destination (avoid feedback).
 
@@ -147,6 +160,13 @@ export async function startAudio({ deviceId = null } = {}) {
     if (frequencyHz != null) {
       const q = quantize(frequencyHz);
       if (q) { note = q; centsOffset = q.centsOffset; }
+    }
+    if (window.__audioState) {
+      window.__audioState.lastDetectedNote = note?.name ?? null;
+      window.__audioState.detectionConfidence = confidence ?? 0;
+    }
+    if (window.__gameState) {
+      window.__gameState.lastDetectedNote = note?.name ?? null;
     }
     listener({ frequencyHz, confidence, note, centsOffset, timestampMs });
   };
