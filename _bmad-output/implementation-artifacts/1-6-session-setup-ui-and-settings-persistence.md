@@ -236,3 +236,4 @@ This story wires the **setup screen only**. **Story 3.4 (GameLoop)** will handle
 
 - 2026-05-21: Story created. Setup UI and settings persistence scaffolded per UX-DR4, UX-DR5, NFR-006.
 - 2026-05-21: Implemented setup.js with form logic, localStorage persistence, session-config integration. Integrated with main.js bootstrap flow.
+- 2026-05-21: Architectural fix — moved setup.js from /static/game to /static/game/ui to colocate with UI modules (setup.css, tokens.js, SafeZoneRenderer.js). Updated imports in main.js and setup.test.js.

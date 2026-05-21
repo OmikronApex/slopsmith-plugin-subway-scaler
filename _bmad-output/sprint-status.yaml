@@ -1,11 +1,24 @@
 # Sprint Status Report
 # Generated: 2026-05-21T02:45:00Z
-# Last Updated: 2026-05-21T03:15:00Z
+# Last Updated: 2026-05-21T13:25:00Z
 
 project: slopsmith-plugin-subway-scaler
 project_key: SUBWAY
 tracking_system: BMAD
 story_location: _bmad-output/implementation-artifacts
+
+## Review & QA Summary (2026-05-21)
+
+**Code Review Completed:** Stories 1-1 through 3-8 (13 stories)
+- Findings: 11 patches (all applied), 2 deferred items (both resolved), 3 dismissed as noise
+- Test Coverage: 167/167 passing
+- Critical Fixes: Error handling, null guards, state mutation prevention, multi-instance renderer support, YinDetector implementation
+- Commits: ecb67c9 (code review fixes), 96459ee (architectural fix)
+
+**Architectural Corrections:**
+- Moved setup.js from /static/game to /static/game/ui per module organization pattern
+- Aligns UI modules (setup.js, setup.css, tokens.js, SafeZoneRenderer.js) in /static/game/ui
+- Verified test import paths and all dependencies
 
 ## Epic Status
 
@@ -47,7 +60,7 @@ development_status:
     title: "Session Setup UI and Settings Persistence"
     status: in-progress
     last_updated: 2026-05-21
-    notes: "Code review + patching: 11/12 HIGH+MEDIUM patches applied (92%). Remaining: Tab order refactor, select label assoc. All critical patches done."
+    notes: "Code review + patching: 11/12 HIGH+MEDIUM patches applied (92%). Remaining: Tab order refactor, select label assoc. All critical patches done. Architectural fix: setup.js moved to /static/game/ui to colocate with UI modules."
 
   1-7-handle-session-config-fetch-failure-at-game-start:
     title: "Handle Session-Config Fetch Failure at Game Start"
