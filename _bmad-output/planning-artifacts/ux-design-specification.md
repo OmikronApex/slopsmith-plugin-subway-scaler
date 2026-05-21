@@ -92,7 +92,7 @@ The core interaction of Subway Scaler is: **play a note → the game responds.**
 - **Platform:** Web browser, self-hosted. Desktop and tablet browsers supported. Mobile phones out of scope.
 - **Offline capability:** No external internet dependencies after install. All third-party assets vendored locally (Three.js at `static/game/vendor/`). Local network calls to Slopsmith and other plugins are acceptable.
 - **Input:** Mouse and touch for all UI. Gameplay input is audio-only — no pointer interaction during active play.
-- **Viewport behavior:** The plugin root fills 100% of the host container. Inside that root, a single **game shell** div maintains a fixed **16:9 aspect ratio** and scales to fit the available height, centred horizontally — never stretched. Dead space outside the shell is filled with `color-bg-void`. The game shell must sit fully **below Slopsmith's toolbar**; it reads `--slopsmith-toolbar-height` (CSS custom property exposed by the host) and applies it as `padding-top` on the root, falling back to `0px` if the property is absent. No scrolling in the game view. All touch targets minimum ~44×44px. No hover-only states.
+- **Viewport behavior:** The plugin is rendered as a normal `display: block` element inside Slopsmith's page flow. The root applies `padding-top: 4rem` to clear Slopsmith's fixed navbar (`h-16` = 64 px). Inside the root, a single **game shell** div maintains a fixed **16:9 aspect ratio**, is height-driven (`height: calc(100vh - 4rem)`), and is centred horizontally — never stretched. Dead space beside the shell at wide viewports is filled with `color-bg-void`. No scrolling in the game view. All touch targets minimum ~44×44px. No hover-only states.
 
 ### Effortless Interactions
 
@@ -876,7 +876,7 @@ All screens (Setup, Game, Overlays) live inside `.game-shell`. The Three.js canv
 
 **Rationale:** Stretching to arbitrary viewport shapes makes the scrolling fretboard feel wrong — correct horizontal-to-vertical proportions are part of the game feel. A letterboxed 16:9 shell is always the right shape; horizontal dead space (if any) is filled with the void background.
 
-**Toolbar clearance:** The host Slopsmith shell exposes `--slopsmith-toolbar-height` as a CSS custom property on `:root`. The plugin reads this value to prevent the game shell from overlapping the toolbar. If the property is absent (future Slopsmith versions or standalone dev), the fallback `0px` applies — no layout break.
+**Navbar clearance:** Slopsmith renders its navbar as `position: fixed; height: 4rem (64 px)`. Plugins are normal `display: block` elements in the document flow — not iframed or placed in a special content container. The plugin root uses `padding-top: 4rem` to push the game shell below the navbar. If Slopsmith's navbar height ever changes, update this single value.
 
 **Desktop (1024px+):** Primary target. Game shell fills viewport height minus toolbar height. Excess horizontal space shows `color-bg-void`. Setup screen is centred within the shell, single-column, `max-width: 480px`.
 

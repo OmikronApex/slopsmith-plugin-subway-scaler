@@ -1,24 +1,22 @@
 @import url('game/ui/setup.css');
 
-/* Root: fills host container, accounts for Slopsmith toolbar */
+/* Root: normal block inside Slopsmith's .screen div.
+   padding-top clears the fixed navbar (h-16 = 4rem = 64px). */
 .subway-scaler {
-  position: relative;
   width: 100%;
-  height: calc(100vh - var(--slopsmith-toolbar-height, 0px));
+  padding-top: 4rem;
   background: #0D0D1A;
-  overflow: hidden;
   display: flex;
-  align-items: center;
   justify-content: center;
   color: #e5e7eb;
 }
 
-/* Fixed-ratio shell: always 16:9, height-driven, centred horizontally */
+/* Fixed-ratio shell: 16:9, height fills remaining viewport, width auto.
+   max-width: 100% prevents overflow on narrow screens. */
 .subway-scaler .game-shell {
   position: relative;
   aspect-ratio: 16 / 9;
-  max-height: 100%;
-  width: auto;
+  height: calc(100vh - 4rem);
   max-width: 100%;
   overflow: hidden;
   background: #0D0D1A;
