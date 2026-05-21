@@ -165,6 +165,9 @@ export async function startAudio({ deviceId = null } = {}) {
       window.__audioState.lastDetectedNote = note?.name ?? null;
       window.__audioState.detectionConfidence = confidence ?? 0;
     }
+    if (window.__gameState) {
+      window.__gameState.lastDetectedNote = note?.name ?? null;
+    }
     listener({ frequencyHz, confidence, note, centsOffset, timestampMs });
   };
 

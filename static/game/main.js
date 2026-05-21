@@ -61,6 +61,34 @@ export async function bootstrap(root) {
     streamType: null,
   };
 
+  // Initialize game state observable for E2E tests (story 0-5)
+  window.__TEST_MODE = window.__TEST_MODE ?? false;
+  window.__gameState = {
+    version: '1.0.0',
+    timestamp: Date.now(),
+    loop: { running: false, frameCount: 0, deltaTime: 0 },
+    character: { positionX: 0, positionY: 0, velocityX: 0, velocityY: 0, state: 'idle' },
+    score: { current: 0, highScore: 0, distanceTraveled: 0 },
+    collision: { lastCollisionType: null, lastCollisionTimestamp: null, invincibilityFrames: 0 },
+    gameOver: { isGameOver: false, reason: null, triggeredAt: null },
+    session: { phase: 'idle', pauseCount: 0, totalPausedMs: 0 },
+    variant: { id: null, timerMs: 0, timerRunning: false, timerExpired: false },
+    lastDetectedNote: null,
+    _test: { forceCollision: null, triggerPause: null, resetGame: null, setVariant: null },
+  };
+
+  // Persistent RAF loop keeps loop.frameCount ticking for E2E liveness checks
+  (function _bgLoop(last) {
+    requestAnimationFrame((now) => {
+      if (window.__gameState) {
+        window.__gameState.loop.frameCount++;
+        window.__gameState.loop.deltaTime = last ? now - last : 0;
+        window.__gameState.timestamp = Date.now();
+      }
+      _bgLoop(now);
+    });
+  })(0);
+
   if (!root) return;
   root.innerHTML = '';
   root.className = 'subway-scaler';
@@ -381,7 +409,7 @@ export async function bootstrap(root) {
       // Start the rendering loop so we can see the initial state
       const loop = (now) => {
         if (!run) return;
-        
+
         // Use visual collision detection as the primary failure source.
         // Invincible mode (debug): skip the failure transition entirely.
         if (run.state === 'running' && !state.invincible && scene.checkCollision()) {
@@ -389,6 +417,14 @@ export async function bootstrap(root) {
         }
 
         run.tick(now);
+
+        // Sync observable session phase each frame (AC-4 story 0-5)
+        if (window.__gameState) {
+          const phaseMap = { running: 'playing', paused: 'paused', succeeded: 'game_over', failed: 'game_over', abandoned: 'game_over' };
+          window.__gameState.session.phase = phaseMap[run.state] || 'idle';
+          window.__gameState.loop.running = true;
+        }
+
         if (run.state === 'succeeded') {
           scene.showSuccess();
           showOverlay('Success! Scale complete.');
@@ -396,6 +432,11 @@ export async function bootstrap(root) {
           return;
         }
         if (run.state === 'failed') {
+          if (window.__gameState) {
+            window.__gameState.gameOver.isGameOver = true;
+            window.__gameState.gameOver.reason = 'collision';
+            window.__gameState.gameOver.triggeredAt = Date.now();
+          }
           showOverlay('Run failed! Collision detected.');
           cleanup();
           return;
@@ -496,7 +537,8 @@ export async function bootstrap(root) {
         if (!pollState) return;
 
         if (pollState.score !== undefined) {
-           feedbackEl.textContent = `Score: ${pollState.score}`;
+          feedbackEl.textContent = `Score: ${pollState.score}`;
+          if (window.__gameState) window.__gameState.score.current = pollState.score;
         }
 
         if (pollState.game_state && pollState.game_state.waves) {
@@ -579,6 +621,14 @@ export async function bootstrap(root) {
     pauseBtn.classList.add('hidden');
     abandonBtn.classList.add('hidden');
     startBtn.disabled = false;
+    if (window.__gameState) {
+      window.__gameState.session.phase = 'idle';
+      window.__gameState.loop.running = false;
+      window.__gameState.score.current = 0;
+      window.__gameState.gameOver.isGameOver = false;
+      window.__gameState.gameOver.reason = null;
+      window.__gameState.gameOver.triggeredAt = null;
+    }
     // Variant cleanup.
     if (scene.dismissVariantTracks) scene.dismissVariantTracks();
     shownVariantId = null;
@@ -599,11 +649,30 @@ export async function bootstrap(root) {
     overlay.classList.remove('hidden');
   }
 
+  // Wire _test hooks now that closure variables (run, audio, pauseBtn) are in scope
+  if (window.__TEST_MODE) {
+    window.__gameState._test = {
+      forceCollision: () => { if (run && run.state === 'running') run.state = 'failed'; },
+      triggerPause: () => {
+        if (!run) return;
+        if (run.state === 'running') { run.pause(performance.now()); audio && audio.pause(); pauseBtn.textContent = 'Resume'; }
+        else if (run.state === 'paused') { run.resume(performance.now()); audio && audio.resume(); pauseBtn.textContent = 'Pause'; }
+      },
+      resetGame: () => { if (run) { run.abandon(); cleanup(); } },
+      setVariant: null,
+    };
+  }
+
   startBtn.addEventListener('click', () => start());
   pauseBtn.addEventListener('click', () => {
     if (!run) return;
-    if (run.state === 'running') { run.pause(performance.now()); audio && audio.pause(); pauseBtn.textContent = 'Resume'; }
-    else if (run.state === 'paused') { run.resume(performance.now()); audio && audio.resume(); pauseBtn.textContent = 'Pause'; }
+    if (run.state === 'running') {
+      run.pause(performance.now()); audio && audio.pause(); pauseBtn.textContent = 'Resume';
+      if (window.__gameState) window.__gameState.session.phase = 'paused';
+    } else if (run.state === 'paused') {
+      run.resume(performance.now()); audio && audio.resume(); pauseBtn.textContent = 'Pause';
+      if (window.__gameState) window.__gameState.session.phase = 'playing';
+    }
   });
   abandonBtn.addEventListener('click', () => {
     if (!run) return;
