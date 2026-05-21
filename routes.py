@@ -8,10 +8,6 @@ STATIC_DIR = PLUGIN_DIR / "static"
 
 
 def setup(app: FastAPI, context: dict):
-    @app.get("/api/plugins/subway-scaler/status")
-    def get_status():
-        return {"status": "ok", "message": "Subway Scaler is ready"}
-
     # Static asset mount for game JS modules + vendored Three.js
     if STATIC_DIR.exists():
         app.mount(
