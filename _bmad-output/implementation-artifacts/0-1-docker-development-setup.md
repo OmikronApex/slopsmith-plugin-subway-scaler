@@ -127,7 +127,7 @@ claude-sonnet-4-6
 
 ### File List
 
-- `docker-compose.dev.yml` — NEW
+- `tests/e2e/docker-compose.dev.yml` — NEW
 - `package.json` — UPDATE (added `dev` and `dev:down` scripts)
 - `README.md` — UPDATE (added `## Development` section)
 
