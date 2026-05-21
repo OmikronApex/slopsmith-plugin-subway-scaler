@@ -13,9 +13,12 @@ async function navigateToPlugin(page: any) {
   await page.getByRole('button', { name: 'Plugins' }).click();
   await page.getByText('Subway Scaler', { exact: true }).first().click();
   await page.getByRole('button', { name: 'START' }).waitFor({ timeout: 10000 });
+  // START → onSetupComplete → auto-starts the run and calls startAudio()
   await page.getByRole('button', { name: 'START' }).click();
-  await page.getByRole('button', { name: 'Audio Settings' }).waitFor({ timeout: 10000 });
-  await page.getByRole('button', { name: 'Audio Settings' }).click();
+  await page.waitForFunction(
+    () => (window as any).__gameState?.session?.phase !== 'idle',
+    { timeout: 10000 }
+  );
 }
 
 test('A4 440Hz is detected as "A4" within 2000ms', async () => {

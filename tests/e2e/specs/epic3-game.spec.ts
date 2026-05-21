@@ -19,11 +19,8 @@ async function navigateToPlugin(page: Page) {
 
 async function startGame(page: Page) {
   await navigateToPlugin(page);
-  // Setup screen START → onSetupComplete → shows game menu
+  // Setup screen START → onSetupComplete → auto-starts the run
   await page.getByRole('button', { name: 'START' }).click();
-  // Game menu "Start Run" → start() → game loop → phase becomes 'playing'
-  await page.getByRole('button', { name: 'Start Run' }).waitFor({ timeout: 5000 });
-  await page.getByRole('button', { name: 'Start Run' }).click();
   await page.waitForFunction(
     () => (window as any).__gameState?.session?.phase !== 'idle',
     { timeout: 10000 }

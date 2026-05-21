@@ -9,11 +9,13 @@ async function navigateToPlugin(page: Page) {
   // Plugin nav item is injected dynamically by Slopsmith under the Plugins dropdown
   await page.getByRole('button', { name: 'Plugins' }).click();
   await page.getByText('Subway Scaler', { exact: true }).first().click();
-  // Submit setup screen — bootstrap() fetches scales/instruments/settings first
+  // Submit setup screen — START → onSetupComplete → auto-starts run and calls startAudio()
   await page.getByRole('button', { name: 'START' }).waitFor({ timeout: 10000 });
   await page.getByRole('button', { name: 'START' }).click();
-  // Game menu (with Audio Settings) is shown after onSetupComplete runs
-  await page.getByRole('button', { name: 'Audio Settings' }).waitFor({ timeout: 10000 });
+  await page.waitForFunction(
+    () => (window as any).__gameState?.session?.phase !== 'idle',
+    { timeout: 10000 }
+  );
 }
 
 test.describe('fake microphone device', () => {
@@ -34,7 +36,6 @@ test.describe('fake microphone device', () => {
 
   test('window.__audioState.micActive becomes true within 3000ms of audio start', async ({ page }) => {
     await navigateToPlugin(page);
-    await page.getByRole('button', { name: 'Audio Settings' }).click();
 
     await page.waitForFunction(
       () => (window as any).__audioState?.micActive === true,
@@ -47,7 +48,6 @@ test.describe('fake microphone device', () => {
 
   test('window.__audioState.pipelineReady becomes true within 5000ms of audio start', async ({ page }) => {
     await navigateToPlugin(page);
-    await page.getByRole('button', { name: 'Audio Settings' }).click();
 
     await page.waitForFunction(
       () => (window as any).__audioState?.pipelineReady === true,
@@ -60,7 +60,6 @@ test.describe('fake microphone device', () => {
 
   test('window.__audioState.streamType equals "fake" with Chromium fake device', async ({ page }) => {
     await navigateToPlugin(page);
-    await page.getByRole('button', { name: 'Audio Settings' }).click();
 
     await page.waitForFunction(
       () => (window as any).__audioState?.streamType != null,
