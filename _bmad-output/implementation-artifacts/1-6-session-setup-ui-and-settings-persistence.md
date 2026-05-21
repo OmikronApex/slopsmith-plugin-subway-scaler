@@ -1,6 +1,6 @@
 # Story 1.6: Session Setup UI and Settings Persistence
 
-**Status:** review
+**Status:** in-progress
 **Epic:** 1 — Foundation & Session Setup
 **Story ID:** 1.6
 **Story Key:** 1-6-session-setup-ui-and-settings-persistence

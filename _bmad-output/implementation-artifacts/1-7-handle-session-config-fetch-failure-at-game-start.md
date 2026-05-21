@@ -1,6 +1,6 @@
 # Story 1.7: Handle Session-Config Fetch Failure at Game Start
 
-**Status:** review
+**Status:** in-progress
 **Epic:** 1 — Foundation & Session Setup
 **Story ID:** 1.7
 **Story Key:** 1-7-handle-session-config-fetch-failure-at-game-start

@@ -1,6 +1,6 @@
 # Story 1.5: Vendor Font and Setup CSS Foundation
 
-**Status:** review
+**Status:** in-progress
 **Epic:** 1 — Foundation & Session Setup
 **Story ID:** 1.5
 **Story Key:** 1-5-vendor-font-and-setup-css-foundation

@@ -39,21 +39,21 @@ development_status:
 
   1-5-vendor-font-and-setup-css-foundation:
     title: "Vendor Font and Setup CSS Foundation"
-    status: review
+    status: in-progress
     last_updated: 2026-05-21
-    notes: "Space Mono fonts vendored, setup.css with responsive design created"
+    notes: "Code review complete: 3 critical patches applied, 2 medium/low action items"
 
   1-6-session-setup-ui-and-settings-persistence:
     title: "Session Setup UI and Settings Persistence"
-    status: review
+    status: in-progress
     last_updated: 2026-05-21
-    notes: "Setup screen with form logic, localStorage persistence, session-config integration"
+    notes: "Code review complete: 6 critical/high patches applied, 19 medium/low action items"
 
   1-7-handle-session-config-fetch-failure-at-game-start:
     title: "Handle Session-Config Fetch Failure at Game Start"
-    status: review
+    status: in-progress
     last_updated: 2026-05-21
-    notes: "Error handling integrated in setup.js"
+    notes: "Code review complete: 1 high patch applied, 4 medium action items"
 
 ## Status Definitions
 
