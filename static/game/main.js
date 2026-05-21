@@ -191,6 +191,12 @@ export async function bootstrap(root) {
     }
   }).observe(shell);
 
+  // Grab the microphone on the setup screen so it's ready when the game starts.
+  // Errors are handled silently here; start() will surface them if audio is still null.
+  startAudio({ deviceId: state.audio.deviceId })
+    .then(a => { audio = a; })
+    .catch(() => {});
+
   const gameClient = new GameClient(API);
   const safeZoneRenderer = new SafeZoneRenderer(scene.threeScene || scene.scene);
 
@@ -402,7 +408,8 @@ export async function bootstrap(root) {
       overlay.classList.add('hidden');
       pauseBtn.classList.remove('hidden');
       abandonBtn.classList.remove('hidden');
-      audio = await startAudio({ deviceId: state.audio.deviceId });
+      // Reuse the mic pipeline started on the setup screen; start fresh only if it failed.
+      if (!audio) audio = await startAudio({ deviceId: state.audio.deviceId });
       audio.onDetection(async (det) => {
         if (!run || run.state !== 'running') return;
 
@@ -547,7 +554,8 @@ export async function bootstrap(root) {
     gameClient.stopPolling();
     if (rafId) cancelAnimationFrame(rafId);
     rafId = null;
-    if (audio) { audio.stop(); audio = null; }
+    // Keep the mic stream alive for the next run; just silence the detection handler.
+    if (audio) { audio.onDetection(() => {}); }
     pauseBtn.classList.add('hidden');
     abandonBtn.classList.add('hidden');
     if (window.__gameState) {
