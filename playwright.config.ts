@@ -13,6 +13,12 @@ export default defineConfig({
     screenshot: 'only-on-failure',
     video: 'on-first-retry',
   },
+  webServer: {
+    command: 'docker compose -f tests/e2e/docker-compose.dev.yml up',
+    url: 'http://localhost:8000',
+    reuseExistingServer: !process.env.CI,
+    timeout: 60000,
+  },
   projects: [
     {
       name: 'chromium',

@@ -1,6 +1,6 @@
 # Story 0.2: Playwright Test Harness
 
-Status: review
+Status: done
 
 ## Story
 
@@ -147,3 +147,12 @@ claude-sonnet-4-6
 ### Change Log
 
 - 2026-05-21: Implemented story 0-2 — Playwright harness, smoke test, directory structure, npm scripts, gitignore entries.
+
+### Review Findings
+
+- [x] [Review][Decision] Added `webServer` block to `playwright.config.ts` — starts container via `docker compose up`, waits for `http://localhost:8000`, reuses existing server locally. Smoke test re-verified passing. [playwright.config.ts]
+- [x] [Review][Patch] Smoke test: added `await page.waitForLoadState('networkidle')` after `goto`. [tests/e2e/specs/smoke.spec.ts:7]
+- [x] [Review][Patch] Smoke test: changed title assertion to `toHaveTitle(/\S/)`. [tests/e2e/specs/smoke.spec.ts:8]
+- [x] [Review][Patch] `.gitignore` trailing newline added. [.gitignore]
+- [x] [Review][Defer] `gitignore` scope change: `specs/` → `/specs/` could track previously-ignored nested `specs/` dirs — intentional to unblock `tests/e2e/specs/`, but any other nested `specs/` directories elsewhere in the tree are now tracked when they weren't before. [.gitignore:18] — deferred, intentional behavior with acceptable side-effect
+- [x] [Review][Defer] Volume mount relative path resolution differs in some CI environments — `../../` resolves from compose file location in Docker Compose v2, but behavior may vary. Confirmed working locally; defer until CI is wired in story 0-4. [tests/e2e/docker-compose.dev.yml:8] — deferred, pre-existing

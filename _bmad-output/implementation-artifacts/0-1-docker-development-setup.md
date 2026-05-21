@@ -1,6 +1,6 @@
 # Story 0.1: Docker Development Setup
 
-Status: review
+Status: done
 
 ## Story
 
@@ -134,3 +134,12 @@ claude-sonnet-4-6
 ### Change Log
 
 - 2026-05-21: Implemented story 0-1 — Docker dev setup with compose build-from-source, healthcheck, npm scripts, and README docs.
+
+### Review Findings
+
+- [x] [Review][Decision] No published image: README updated with note that no Docker Hub image exists yet; build command pinned to SHA `477d22068cbc`; note to update when image is published. [README.md]
+- [x] [Review][Patch] Supply-chain risk: pinned `docker buildx build` to commit SHA `477d22068cbc` with note to update. [README.md]
+- [x] [Review][Patch] README duplicate step number "# 2." — Fixed to 1/2/3/4. [README.md]
+- [x] [Review][Patch] `DLC_DIR=/dlc` removed from compose env — not mounted and not needed for plugin dev. [tests/e2e/docker-compose.dev.yml]
+- [x] [Review][Defer] Broad volume mount exposes full repo to container — `../../:/app/plugins/subway-scaler` mounts the entire repo root including `.git` and any local secrets. Required for hot-reload; document the scope in README. [tests/e2e/docker-compose.dev.yml:8] — deferred, design constraint
+- [x] [Review][Defer] Healthcheck on `/` passes on redirect — `curl -f http://localhost:8000` treats 3xx as success; if `/` redirects and the destination is unreachable the container reports healthy incorrectly. Confirmed passing in live test; defer until redirect behavior is an issue. [tests/e2e/docker-compose.dev.yml:11] — deferred, pre-existing
