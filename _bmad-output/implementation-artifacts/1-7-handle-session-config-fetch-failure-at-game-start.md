@@ -205,10 +205,10 @@ try {
 - [x] [Review][Patch] Missing isLoading Reset After Success — Fixed so button state resets properly after successful session start (setup.js:190)
 
 ### Remaining Issues (Action Items)
-- [ ] [Review][Patch] Error Message Never Re-hidden After Success — DOM error message persists if retry succeeds [MEDIUM] (setup.js)
-- [ ] [Review][Patch] No Accessibility Focus Management After Error — Focus and announcement timing needs review [MEDIUM] (setup.js)
+- [x] [Review][Patch] Error Message Never Re-hidden After Success — DOM error message persists if retry succeeds [MEDIUM] (setup.js:244-246)
+- [x] [Review][Patch] No Accessibility Focus Management After Error — Focus and announcement timing needs review [MEDIUM] (setup.js:261-263)
 - [ ] [Review][Patch] Timing Vulnerability: Setup Hidden Before Fetch Completes — Add timeout/promise safeguards [HIGH] (main.js:97-104)
-- [ ] [Review][Patch] Concurrent Requests Not Protected — Multiple clicks before first completes → race condition [MEDIUM] (setup.js:161-197)
+- [x] [Review][Patch] Concurrent Requests Not Protected — Multiple clicks before first completes → race condition [MEDIUM] (setup.js:206-209)
 
 ---
 
