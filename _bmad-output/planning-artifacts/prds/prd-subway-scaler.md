@@ -217,9 +217,58 @@ Subway Scaler is a **guitar/bass scale trainer plugin** for Slopsmith that teach
 - Save audio device preferences
 - Reset to defaults option
 
-### 6. Constraints
+### 6. Testing Strategy
 
-#### 6.1 Technical
+#### 6.1 Three-Layer Testing Approach
+
+Subway Scaler uses a three-layer testing pyramid to ensure correctness, integration, and end-to-end user experience:
+
+**Layer 1: Unit Tests**
+- Individual module behavior (CartSystem, DifficultyManager, GameState, etc.)
+- Pure logic and state mutations
+- Fast feedback loop (milliseconds)
+- Examples: score calculation, speed scaling, collision detection logic
+
+**Layer 2: Integration Tests**
+- Modules wired together (GameLoop → CartSystem → DifficultyManager)
+- State flow across module boundaries
+- Mocked I/O (audio, rendering)
+- Examples: session config → GameState → game loop → score increment
+
+**Layer 3: End-to-End (E2E) Tests**
+- Full user journeys in Slopsmith (Docker environment at localhost:8000)
+- Real DOM, ARIA attributes, visual behavior, keyboard navigation
+- Automated via Playwright
+- Examples: user setup → plays session → pauses → resumes → game-over → restart
+
+#### 6.2 E2E Testing Requirements by Epic
+
+**Standard E2E Test Suite** (applies to every Epic)
+- Plugin loads at localhost:8000
+- DOM renders without errors
+- No console errors or warnings
+- ARIA attributes present and correct (accessibility baseline)
+- Keyboard navigation functional (Tab, Enter, Escape)
+- Focus management working (focus trap, restoration)
+
+**Epic-Specific E2E Tests**
+- Epic 1: Setup form renders, settings persist to localStorage, error handling on fetch failure
+- Epic 2: (Engine layer — no E2E coverage required; unit/integration sufficient)
+- Epic 3: Game loop runs, character moves, score increments, collision triggers game-over
+- Epic 4: Pause overlay appears/disappears, game-over overlay shows correct score/context, keyboard/focus work
+- Epic 5: Variant track renders, decision window timer counts down, variant acceptance transitions smoothly
+
+#### 6.3 E2E Test Validation Gate
+
+Each story's Definition of Done includes: "All standard E2E tests + epic-specific E2E tests passing in Slopsmith Docker."
+
+A dedicated Epic will establish the E2E test harness, helper library, and Docker setup to enable this validation.
+
+---
+
+### 7. Constraints
+
+#### 7.1 Technical
 
 **C-001: Slopsmith Compatibility**
 - Follow Slopsmith plugin API
@@ -236,7 +285,7 @@ Subway Scaler is a **guitar/bass scale trainer plugin** for Slopsmith that teach
 - No WebGL fallback required
 - Modern browsers only
 
-#### 6.2 Product
+#### 7.2 Product
 
 **C-004: Open Source**
 - Free, no monetization
@@ -248,7 +297,7 @@ Subway Scaler is a **guitar/bass scale trainer plugin** for Slopsmith that teach
 - Focus on single-scale mastery
 - Environment/themes: Future iterations
 
-### 7. Open Questions
+### 8. Open Questions
 
 | ID | Question | Owner | Target |
 |----|----------|-------|--------|
@@ -258,7 +307,7 @@ Subway Scaler is a **guitar/bass scale trainer plugin** for Slopsmith that teach
 | OQ-004 | How often to offer variants? (Time vs. score) | Product | Technical spec |
 | OQ-005 | Should we add sound effects for notes/collisions? | Product | Future backlog |
 
-### 8. Assumptions
+### 9. Assumptions
 
 **[ASSUMPTION A-001]** Users have basic knowledge of fretboard geography (frets, strings, scale positions).
 
@@ -268,11 +317,13 @@ Subway Scaler is a **guitar/bass scale trainer plugin** for Slopsmith that teach
 
 **[ASSUMPTION A-004]** Slopsmith's audio detection API will become available for plugins.
 
-### 9. Notes for PM
+### 10. Notes for PM
 
 **[NOTE FOR PM]** This is an open-source project; prioritize community feedback and feature requests from GitHub issues.
 
 **[NOTE FOR PM]** The `001-background-scroll` task is legacy; ignore it. Focus on core gameplay loop first.
+
+**[NOTE FOR PM]** E2E testing via Slopsmith Docker is a core quality gate. The dedicated E2E infrastructure Epic should be planned early to unblock story implementations.
 
 ---
 
