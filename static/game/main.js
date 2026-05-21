@@ -52,6 +52,15 @@ export async function bootstrap(root) {
   // Inject design tokens (CSS custom properties) at initialization
   injectTokens();
 
+  // Initialize audio state observable for E2E tests (story 0-2a)
+  window.__audioState = {
+    micActive: false,
+    pipelineReady: false,
+    lastDetectedNote: null,
+    detectionConfidence: 0,
+    streamType: null,
+  };
+
   if (!root) return;
   root.innerHTML = '';
   root.className = 'subway-scaler';
@@ -183,7 +192,7 @@ export async function bootstrap(root) {
   menu.appendChild(el('label', {}, 'Instrument ', instrumentSelect));
   menu.appendChild(startBtn);
   menu.appendChild(audioBtn);
-  menu.style.display = 'none';
+  menu.classList.add('hidden');
   root.appendChild(menu);
 
   // --- Game container ---
