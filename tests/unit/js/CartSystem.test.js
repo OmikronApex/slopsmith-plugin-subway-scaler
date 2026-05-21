@@ -42,7 +42,7 @@ function makeMockGameState(overrides = {}) {
 
 describe('CartSystem', () => {
   describe('cart movement', () => {
-    it.skip('CartSystem.update(deltaTime) moves carts by speed * deltaTime', () => {
+    it('CartSystem.update(deltaTime) moves carts by speed * deltaTime', () => {
       const gameState = makeMockGameState({
         scene: {
           carts: [{ z: 50, lane: 2, cleared: false }],
@@ -55,7 +55,7 @@ describe('CartSystem', () => {
       expect(gameState.scene.carts[0].z).toBeCloseTo(49, 5);
     });
 
-    it.skip('carts past character Z are removed from GameState.scene.carts', () => {
+    it('carts past character Z are removed from GameState.scene.carts', () => {
       const gameState = makeMockGameState({
         scene: {
           carts: [{ z: -5, lane: 2, cleared: false }],
@@ -69,7 +69,7 @@ describe('CartSystem', () => {
   });
 
   describe('collision and game over', () => {
-    it.skip('cart in same lane as character sets GameState.runtime.phase to PHASES.GAME_OVER', () => {
+    it('cart in same lane as character sets GameState.runtime.phase to PHASES.GAME_OVER', () => {
       const gameState = makeMockGameState({
         scene: {
           carts: [{ z: 0, lane: 2, cleared: false }],
@@ -81,7 +81,7 @@ describe('CartSystem', () => {
       expect(gameState.runtime.phase).toBe(PHASES.GAME_OVER);
     });
 
-    it.skip('phase is set using PHASES constant (not string literal) — GameState.runtime.phase === PHASES.GAME_OVER', () => {
+    it('phase is set using PHASES constant (not string literal) — GameState.runtime.phase === PHASES.GAME_OVER', () => {
       const gameState = makeMockGameState({
         scene: {
           carts: [{ z: 0, lane: 3, cleared: false }],
@@ -95,8 +95,8 @@ describe('CartSystem', () => {
   });
 
   describe('scoring', () => {
-    it.skip('correct note match increments GameState.runtime.score by 100 * difficultyMultiplier', () => {
-      const difficultyMultiplier = 1; // medium
+    it('correct note match increments GameState.runtime.score by 100 * difficultyMultiplier', () => {
+      const difficultyMultiplier = 1.5; // medium
       const gameState = makeMockGameState({
         runtime: {
           score: 0,
@@ -114,7 +114,7 @@ describe('CartSystem', () => {
       expect(gameState.runtime.score).toBe(100 * difficultyMultiplier);
     });
 
-    it.skip('matched safe zone is marked cleared in GameState.scene.carts', () => {
+    it('matched safe zone is marked cleared in GameState.scene.carts', () => {
       const gameState = makeMockGameState({
         runtime: {
           score: 0,
@@ -141,7 +141,7 @@ describe('CartSystem', () => {
   });
 
   describe('sole writer contract', () => {
-    it.skip('CartSystem is sole writer to GameState.scene.carts — other modules read only', () => {
+    it('CartSystem is sole writer to GameState.scene.carts — other modules read only', () => {
       // This test documents the architectural contract.
       // Verify CartSystem does mutate scene.carts (adds, removes, or updates entries).
       const gameState = makeMockGameState({
