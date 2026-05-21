@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "vitest run"
+    "test": "vitest run",
+    "dev": "docker compose -f docker-compose.dev.yml up",
+    "dev:down": "docker compose -f docker-compose.dev.yml down"
   },
   "devDependencies": {
     "vitest": "^1.6.0"

@@ -1,0 +1,24 @@
+services:
+  slopsmith:
+    build:
+      context: https://github.com/byrongamatos/slopsmith.git
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./:/app/plugins/subway-scaler
+      - slopsmith-config:/config
+    environment:
+      - PYTHONPATH=/app/lib:/app
+      - CONFIG_DIR=/config
+      - DLC_DIR=/dlc
+      - DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000"]
+      interval: 5s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+
+volumes:
+  slopsmith-config:

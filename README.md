@@ -27,6 +27,29 @@ python -m pytest
 npm test
 ```
 
+## Development
+
+Run the plugin inside a live Slopsmith container with hot-reload.
+
+**Prerequisites:** [Docker Desktop](https://docs.docker.com/get-docker/) installed and running.
+
+```bash
+# 1. Start the container (builds Slopsmith image on first run — takes a few minutes)
+npm run dev
+
+# 2. Verify the plugin loads
+#    Open http://localhost:8000 — "Subway Scaler" should appear in the nav.
+#    Or check via curl:
+curl http://localhost:8000
+
+# 3. Stop the container
+npm run dev:down
+```
+
+**Hot-reload behaviour:**
+- Static files (`static/`, `screen.html`, `screen.js`) — volume-mounted; browser refresh is sufficient.
+- Python files (`routes.py`, `services/`) — reload depends on Slopsmith's FastAPI `--reload` flag; restart the container if changes don't apply.
+
 ## Files
 - `scales.json`: Scale definitions.
 - `services/`: Tabulator, scales, instruments logic.
