@@ -413,13 +413,9 @@ export async function bootstrap(root) {
         notesResp.num_lanes,
       );
 
-      const countdownStart = performance.now();
-      // Set a future game start time so waves stay at spawn during countdown
-      let gameStartTime = countdownStart + 3500;
-      scene.setGameStartTime(gameStartTime);
-
       // Start the rendering loop so we can see the initial state
       let _pausedAt = null;
+      let gameStartTime = 0; // set after audio setup so countdownStart is accurate
       const loop = (now) => {
         if (!run) return;
 
@@ -490,6 +486,12 @@ export async function bootstrap(root) {
         if (run && run.state === 'running') pauseGame('audio-error');
         else cleanup();
       });
+
+      // countdownStart must be captured AFTER audio setup so any async delay
+      // doesn't skew gameStartTime and cause waves to appear early.
+      const countdownStart = performance.now();
+      gameStartTime = countdownStart + 3500;
+      scene.setGameStartTime(gameStartTime);
 
       rafId = requestAnimationFrame(loop);
 
