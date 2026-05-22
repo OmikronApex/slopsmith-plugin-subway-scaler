@@ -689,11 +689,7 @@ export async function bootstrap(root) {
     pauseBtn.textContent = 'Resume';
     if (window.__gameState) window.__gameState.session.phase = 'paused';
   });
-  window.addEventListener('focus', () => {
-    if (run && run.state === 'paused') {
-      resumeGame();
-      overlayMgr.hide();
-    }
-  });
+  // No auto-resume on focus — user must click Resume explicitly to avoid
+  // unintentionally resuming a manually-paused game after alt-tab.
 
 }

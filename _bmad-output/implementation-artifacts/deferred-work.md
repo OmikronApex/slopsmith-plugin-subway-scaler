@@ -38,6 +38,10 @@
 - Test mock `appendChild` is `vi.fn()` no-op — pre-existing mock pattern across all unit tests. Real append would need DOM tree; current assertions work via direct property references.
 - No separate `overlay-manager.js` file — OverlayManager lives in `overlay.js`. Acknowledged architectural deviation; single file reduces import complexity without functional impact.
 
+## Deferred from: code review of 4-1-implement-overlay-container-with-rgb-shift-glitch-animation (2026-05-22)
+
+- `forceCollision` test hook sets `run.state = 'failed'` and calls `cleanup()` directly, potentially racing with an in-flight RAF frame that still holds the run reference. Pre-existing test infrastructure pattern; only affects `__TEST_MODE`.
+
 ## Deferred from: code review of 2-3-implement-difficultymanager-module (2026-05-21)
 
 - AC-1 says constructor sets `gameState.runtime.speed` but implementation uses `init(gameState)`. AC-1 is ambiguous; Dev Notes API spec defines `init()` as the correct call. Clarify AC-1 wording in next story review or architecture doc.

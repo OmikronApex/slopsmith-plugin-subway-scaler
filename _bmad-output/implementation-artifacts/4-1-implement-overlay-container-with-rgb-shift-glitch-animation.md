@@ -1,6 +1,7 @@
 # Story 4.1: Implement Overlay Container with RGB-Shift Glitch Animation
 
 **Status:** done
+<!-- Post-review: all patches applied 2026-05-22 -->
 
 **Epic:** 4 — Session UX & Accessibility
 **Story ID:** 4.1
@@ -274,7 +275,21 @@ From `tokens.js` / design system:
 
 ---
 
+### Senior Developer Review (AI) — 2026-05-22
+
+**Review Outcome:** Changes Requested
+
+**Action Items:**
+
+- [x] [Review][Patch] Remove auto-resume on window.focus — removed `resumeGame() + overlayMgr.hide()` from focus handler; user must click Resume explicitly. [`static/game/main.js`]
+- [x] [Review][Patch] Refactor to base class architecture — Introduced `class Overlay` base, `PauseOverlay extends Overlay`, `GameOverOverlay extends Overlay`. OverlayManager is now lifecycle coordinator. [`static/game/ui/overlay.js`]
+- [x] [Review][Patch] localStorage score not saved on MAIN MENU — `_saveScore()` now called in both `onRestartClick` and `onMainMenuClick`. [`static/game/ui/overlay.js`]
+- [x] [Review][Patch] `parseInt(stored, 10)` → NaN guard — added `isNaN(lastScore)` check; treats corrupt stored value as null → "Personal Best!". [`static/game/ui/overlay.js`]
+- [x] [Review][Patch] `hide()` double-call leaks animationend listener — `_animationEndListener` now tracked and removed at start of `hide()` and `show()`; no leaked listeners on rapid double-hide. [`static/game/ui/overlay.js`]
+- [x] [Review][Defer] `forceCollision` test hook bypasses RAF loop — sets `run.state = 'failed'` directly then calls `cleanup()`, which could race with an in-flight RAF frame that still holds a reference to the old `run` object. Pre-existing test infrastructure pattern; only affects `__TEST_MODE`. [`static/game/main.js:639-651`] — deferred, pre-existing
+
 ## Change Log
 
 - 2026-05-21: Story created. RGB-shift glitch animation and overlay container architecture planned per UX-DR9, UX-DR10.
 - 2026-05-21: Implemented. CSS keyframes, OverlayManager class with focus trap, type-specific animation timing, 27 unit tests.
+- 2026-05-22: Code review. 2 decisions needed, 3 patches, 1 deferred, 6 dismissed.

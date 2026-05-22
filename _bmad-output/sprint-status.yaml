@@ -201,7 +201,7 @@ development_status:
   # Stories - Epic 4
   4-1-implement-overlay-container-with-rgb-shift-glitch-animation:
     title: "Implement Overlay Container with RGB-Shift Glitch Animation"
-    status: review
+    status: done
     last_updated: 2026-05-22
     notes: "Implemented. overlays.css (RGB-shift keyframes, reduced-motion fallback), overlay.js (OverlayManager with focus trap, show/hide lifecycle). 220 tests passing."
 

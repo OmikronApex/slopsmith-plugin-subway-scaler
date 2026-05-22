@@ -1,5 +1,5 @@
-// OverlayManager: unified overlay system for pause and game-over dialogs.
-// Manages a single persistent container element mounted into the game shell.
+// Overlay system: base class + PauseOverlay / GameOverOverlay subclasses.
+// OverlayManager coordinates lifecycle and exposes the public API used by main.js.
 
 const LAST_SCORE_KEY = 'subway-scaler-last-score';
 
@@ -13,22 +13,22 @@ function _safeAppend(parent, child) {
   if (parent && child && parent.appendChild) parent.appendChild(child);
 }
 
-export class OverlayManager {
-  constructor({ onResume, onRestart, onMainMenu } = {}) {
-    this._onResume = onResume;
-    this._onMainMenu = onMainMenu;
-    this._onRestart = onRestart;
-    this._type = null;
+function _saveScore(score) {
+  if (typeof localStorage === 'undefined') return;
+  try { localStorage.setItem(LAST_SCORE_KEY, String(score)); } catch (_) {}
+}
+
+// ─── Base class ───────────────────────────────────────────────────────────────
+
+class Overlay {
+  constructor(containerElement) {
+    this.containerElement = containerElement;
     this._previousFocus = null;
     this.focusTrapActive = false;
     this._cleanupTimer = null;
     this._hideInProgress = false;
+    this._animationEndListener = null;
 
-    // Persistent container — mounted once, hidden when not in use
-    this.containerElement = document.createElement('div');
-    this.containerElement.className = 'overlay overlay--dialog hidden';
-
-    // Child element references (populated on show())
     this.headingElement = null;
     this.resumeButton = null;
     this.quitLink = null;
@@ -37,24 +37,15 @@ export class OverlayManager {
     this.restartButton = null;
     this.mainMenuButton = null;
 
-    // Callable handlers exposed for unit testing
     this.onResumeClick = null;
     this.onRestartClick = null;
     this.onMainMenuClick = null;
+    // Exposed for OverlayManager delegation and unit tests
     this.onKeyDown = (e) => this._handleKeyDown(e);
-
-    this.containerElement.addEventListener('keydown', this.onKeyDown);
   }
 
-  /** Append the container to a parent DOM element (call once during bootstrap). */
-  mount(parent) {
-    _safeAppend(parent, this.containerElement);
-  }
-
-  /** Show the overlay with the given type and options. */
-  show({ type, reason = 'normal', score = 0 }) {
-    this._type = type;
-    this._score = score;
+  show(options = {}) {
+    const el = this.containerElement;
 
     if (typeof document !== 'undefined') {
       const active = document.activeElement;
@@ -63,16 +54,17 @@ export class OverlayManager {
       this._previousFocus = null;
     }
 
-    const el = this.containerElement;
-
-    // Cancel pending hide cleanup (stale animationend listener from hide())
+    // Cancel any in-flight hide (stale timer + animationend listener)
     this._hideInProgress = false;
     if (this._cleanupTimer) {
       clearTimeout(this._cleanupTimer);
       this._cleanupTimer = null;
     }
+    if (this._animationEndListener) {
+      el.removeEventListener('animationend', this._animationEndListener);
+      this._animationEndListener = null;
+    }
 
-    // Reset child refs and content
     el.innerHTML = '';
     this.headingElement = null;
     this.resumeButton = null;
@@ -82,42 +74,110 @@ export class OverlayManager {
     this.restartButton = null;
     this.mainMenuButton = null;
 
-    // ARIA dialog attributes
     el.setAttribute('role', 'dialog');
     el.setAttribute('aria-modal', 'true');
+    el.classList.remove('hidden', 'overlay--exiting', 'overlay--entering',
+      'overlay--fade-enter', 'overlay--fade-exit', 'overlay--pause', 'overlay--game-over');
 
-    // Remove hidden, reset animation classes and type classes
-    el.classList.remove('hidden', 'overlay--exiting', 'overlay--entering', 'overlay--fade-enter', 'overlay--fade-exit', 'overlay--pause', 'overlay--game-over');
+    // Subclass builds content and adds its type class
+    this._build(options);
 
-    el.classList.add(type === 'pause' ? 'overlay--pause' : 'overlay--game-over');
-
-    // Always add overlay--entering; CSS @media (prefers-reduced-motion: reduce)
-    // swaps the animation to a simple fade. No JS branching needed.
-    el.classList.add('overlay--entering');
-
-    if (type === 'pause') {
-      this._buildPause(reason);
-    } else if (type === 'game-over') {
-      this._buildGameOver(score);
-    }
-
-    // aria-labelledby points to the heading
     if (this.headingElement) {
       this.headingElement.id = 'overlay-heading';
       el.setAttribute('aria-labelledby', 'overlay-heading');
     }
 
+    // CSS @media (prefers-reduced-motion: reduce) swaps to fade — no JS branch needed
+    el.classList.add('overlay--entering');
     this.focusTrapActive = true;
 
-    // Move focus to first button after paint
     const firstBtn = this.resumeButton || this.restartButton;
     if (firstBtn && firstBtn.focus) {
       setTimeout(() => firstBtn.focus(), 0);
     }
   }
 
-  _buildPause(reason) {
+  /** Subclasses override: add type class and build DOM content. */
+  _build(_options) {}
+
+  /** Subclasses override: handle Escape key per overlay semantics. */
+  _onEscape(_e) {}
+
+  hide() {
+    this.focusTrapActive = false;
     const el = this.containerElement;
+    el.classList.remove('overlay--entering');
+    el.classList.add('overlay--exiting');
+
+    if (this._previousFocus && this._previousFocus.focus) {
+      this._previousFocus.focus();
+    }
+
+    // Cancel any previous hide in progress before starting a new one
+    if (this._cleanupTimer) {
+      clearTimeout(this._cleanupTimer);
+      this._cleanupTimer = null;
+    }
+    if (this._animationEndListener) {
+      el.removeEventListener('animationend', this._animationEndListener);
+      this._animationEndListener = null;
+    }
+
+    this._hideInProgress = true;
+    const done = () => {
+      if (!this._hideInProgress) return;
+      this._hideInProgress = false;
+      this._cleanupTimer = null;
+      this._animationEndListener = null;
+      el.classList.add('hidden');
+      el.classList.remove('overlay--exiting');
+    };
+
+    this._animationEndListener = done;
+    el.addEventListener('animationend', done, { once: true });
+    this._cleanupTimer = setTimeout(done, 350);
+  }
+
+  _handleKeyDown(e) {
+    if (e.key === 'Escape') {
+      this._onEscape(e);
+      return;
+    }
+    if (e.key === 'Tab') {
+      const focusables = [
+        this.resumeButton,
+        this.restartButton,
+        this.quitLink,
+        this.mainMenuButton,
+      ].filter(Boolean);
+      if (focusables.length === 0) return;
+      e.preventDefault();
+      const active = typeof document !== 'undefined' ? document.activeElement : null;
+      const idx = focusables.indexOf(active);
+      const next = e.shiftKey
+        ? (idx <= 0 ? focusables.length - 1 : idx - 1)
+        : (idx + 1) % focusables.length;
+      if (focusables[next] && focusables[next].focus) focusables[next].focus();
+    }
+  }
+
+  get isVisible() {
+    return !this.containerElement.classList.contains('hidden');
+  }
+}
+
+// ─── PauseOverlay ─────────────────────────────────────────────────────────────
+
+class PauseOverlay extends Overlay {
+  constructor(containerElement, { onResume, onMainMenu } = {}) {
+    super(containerElement);
+    this._onResume = onResume;
+    this._onMainMenu = onMainMenu;
+  }
+
+  _build({ reason = 'normal' } = {}) {
+    const el = this.containerElement;
+    el.classList.add('overlay--pause');
 
     const heading = _el('h2', 'overlay-heading');
     heading.textContent = reason === 'audio-error'
@@ -148,12 +208,27 @@ export class OverlayManager {
       this.hide();
     });
     _safeAppend(buttons, quitBtn);
-
     _safeAppend(el, buttons);
   }
 
-  _buildGameOver(score) {
+  _onEscape(e) {
+    e.preventDefault();
+    this.onResumeClick?.();
+  }
+}
+
+// ─── GameOverOverlay ──────────────────────────────────────────────────────────
+
+class GameOverOverlay extends Overlay {
+  constructor(containerElement, { onRestart, onMainMenu } = {}) {
+    super(containerElement);
+    this._onRestart = onRestart;
+    this._onMainMenu = onMainMenu;
+  }
+
+  _build({ score = 0 } = {}) {
     const el = this.containerElement;
+    el.classList.add('overlay--game-over');
 
     const heading = _el('h2', 'overlay-heading');
     heading.textContent = 'GAME OVER';
@@ -168,7 +243,7 @@ export class OverlayManager {
     const contextEl = _el('p', 'overlay-score-context');
     const stored = typeof localStorage !== 'undefined' ? localStorage.getItem(LAST_SCORE_KEY) : null;
     const lastScore = stored !== null ? parseInt(stored, 10) : null;
-    if (lastScore === null) {
+    if (lastScore === null || isNaN(lastScore)) {
       contextEl.textContent = 'Personal Best!';
     } else {
       const delta = score - lastScore;
@@ -186,11 +261,7 @@ export class OverlayManager {
     restartBtn.type = 'button';
     this.restartButton = restartBtn;
     this.onRestartClick = () => {
-      if (typeof localStorage !== 'undefined') {
-        try {
-          localStorage.setItem(LAST_SCORE_KEY, String(score));
-        } catch (_) { /* storage full — silent skip */ }
-      }
+      _saveScore(score);
       if (this._onRestart) this._onRestart();
       this.hide();
     };
@@ -202,71 +273,79 @@ export class OverlayManager {
     menuBtn.type = 'button';
     this.mainMenuButton = menuBtn;
     this.onMainMenuClick = () => {
+      _saveScore(score); // persist score on menu exit too
       if (this._onMainMenu) this._onMainMenu();
       this.hide();
     };
     menuBtn.addEventListener('click', this.onMainMenuClick);
     _safeAppend(buttons, menuBtn);
-
     _safeAppend(el, buttons);
   }
 
-  _handleKeyDown(e) {
-    if (e.key === 'Escape' && this._type === 'pause') {
-      e.preventDefault();
-      this.onResumeClick?.();
-      return;
-    }
-    if (e.key === 'Tab') {
-      const focusables = [
-        this.resumeButton,
-        this.restartButton,
-        this.quitLink,
-        this.mainMenuButton,
-      ].filter(Boolean);
-      if (focusables.length === 0) return;
-      e.preventDefault();
-      const active = typeof document !== 'undefined' ? document.activeElement : null;
-      const idx = focusables.indexOf(active);
-      let next;
-      if (e.shiftKey) {
-        next = idx <= 0 ? focusables.length - 1 : idx - 1;
-      } else {
-        next = (idx + 1) % focusables.length;
-      }
-      if (focusables[next] && focusables[next].focus) {
-        focusables[next].focus();
-      }
-    }
+  // Escape does nothing on game-over — no action to cancel
+  _onEscape(_e) {}
+}
+
+// ─── OverlayManager ───────────────────────────────────────────────────────────
+
+export class OverlayManager {
+  constructor({ onResume, onRestart, onMainMenu } = {}) {
+    this.containerElement = document.createElement('div');
+    this.containerElement.className = 'overlay overlay--dialog hidden';
+
+    this._pause = new PauseOverlay(this.containerElement, { onResume, onMainMenu });
+    this._gameOver = new GameOverOverlay(this.containerElement, { onRestart, onMainMenu });
+    this._active = null;
+
+    // Single keydown listener delegates to whichever overlay is active
+    this.onKeyDown = (e) => this._active?._handleKeyDown(e);
+    this.containerElement.addEventListener('keydown', this.onKeyDown);
+
+    // Element refs — synced after each show()
+    this.headingElement = null;
+    this.resumeButton = null;
+    this.quitLink = null;
+    this.scoreElement = null;
+    this.contextElement = null;
+    this.restartButton = null;
+    this.mainMenuButton = null;
+    this.onResumeClick = null;
+    this.onRestartClick = null;
+    this.onMainMenuClick = null;
+  }
+
+  mount(parent) {
+    _safeAppend(parent, this.containerElement);
+  }
+
+  show({ type, reason = 'normal', score = 0 }) {
+    this._active = type === 'pause' ? this._pause : this._gameOver;
+    this._active.show(type === 'pause' ? { reason } : { score });
+    this._syncRefs();
   }
 
   hide() {
-    this.focusTrapActive = false;
-    const el = this.containerElement;
-    el.classList.remove('overlay--entering');
-    el.classList.add('overlay--exiting');
-
-    // Restore focus to element that was focused before overlay opened
-    if (this._previousFocus && this._previousFocus.focus) {
-      this._previousFocus.focus();
-    }
-
-    this._hideInProgress = true;
-    const done = () => {
-      if (!this._hideInProgress) return; // show() was called, abort cleanup
-      if (this._cleanupTimer === null) return; // already cleaned up
-      clearTimeout(this._cleanupTimer);
-      this._cleanupTimer = null;
-      el.classList.add('hidden');
-      el.classList.remove('overlay--exiting');
-    };
-
-    el.addEventListener('animationend', done, { once: true });
-    // Fallback: ensure hidden even if animation doesn't fire (e.g. tests, no CSS)
-    this._cleanupTimer = setTimeout(done, 350);
+    this._active?.hide();
   }
 
-  /** Returns true if the overlay is currently visible. */
+  _syncRefs() {
+    const a = this._active;
+    this.headingElement   = a?.headingElement   ?? null;
+    this.resumeButton     = a?.resumeButton     ?? null;
+    this.quitLink         = a?.quitLink         ?? null;
+    this.scoreElement     = a?.scoreElement     ?? null;
+    this.contextElement   = a?.contextElement   ?? null;
+    this.restartButton    = a?.restartButton    ?? null;
+    this.mainMenuButton   = a?.mainMenuButton   ?? null;
+    this.onResumeClick    = a?.onResumeClick    ?? null;
+    this.onRestartClick   = a?.onRestartClick   ?? null;
+    this.onMainMenuClick  = a?.onMainMenuClick  ?? null;
+  }
+
+  get focusTrapActive() {
+    return this._active?.focusTrapActive ?? false;
+  }
+
   get isVisible() {
     return !this.containerElement.classList.contains('hidden');
   }
