@@ -234,3 +234,34 @@ Developers have comprehensive E2E test coverage for all implemented epics and ex
 | NFR-E2E-006 | 0-4 | Machine-readable JSON test results |
 | NFR-E2E-007 | 0-2, 0-3, 0-4 | Screenshot/video capture on failure |
 
+---
+
+## Epic 4: Session UX & Accessibility
+
+### Story Sequence (with prerequisites)
+
+**Timing Refactor Stories (MUST complete before 4-2):**
+
+| Story | Title | Status | Depends on |
+|---|---|---|---|
+| 4-1 | Implement Overlay Container with RGB-Shift Glitch Animation | done | — |
+| 4-T1 | Strip Python Wave Queue and Expose timing_params | todo | — |
+| 4-T2 | Implement WaveScheduler.js | todo | 4-T1 |
+| 4-T3 | Rework CartSystem.js and SafeZoneRenderer.js to Consume WaveScheduler | todo | 4-T2 |
+| 4-T4 | Wire WaveScheduler into GameLoop and Simplify main.js | todo | 4-T3 |
+
+**Remaining Epic 4 Stories (require 4-T1 through 4-T4):**
+
+| Story | Title | Status | Depends on |
+|---|---|---|---|
+| 4-2 | Implement Pause Overlay | review | 4-T4 |
+| 4-3 | Implement Game Over Overlay | todo | 4-T4 |
+| 4-4 | Implement ARIA Roles and Keyboard Navigation | todo | 4-T4 |
+| 4-5 | Implement Touch Targets and Final Accessibility Audit | todo | 4-4 |
+
+**Rationale for 4-T prerequisite block:**
+Stories 4-T1 through 4-T4 eliminate the dual-clock instability between Python's `time.time()` and
+JS's `performance.now()`. Pause/resume timing, wave delivery lag, and cart pop-in are all symptoms
+of this split. Story 4-2 (pause overlay) depends on reliable pause/resume; without the timing
+refactor it would ship on top of a broken foundation. See `architecture.md` amendment (2026-05-22).
+

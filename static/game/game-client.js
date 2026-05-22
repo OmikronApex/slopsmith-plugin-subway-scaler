@@ -51,6 +51,16 @@ export class GameClient {
     return await response.json();
   }
 
+  async pause() {
+    if (!this.sessionId) return;
+    await fetch(`${this.baseUrl}/game/${this.sessionId}/pause`, { method: 'POST' });
+  }
+
+  async resume() {
+    if (!this.sessionId) return;
+    await fetch(`${this.baseUrl}/game/${this.sessionId}/resume`, { method: 'POST' });
+  }
+
   startPolling(callback, intervalMs = 200) {
     this.stopPolling();
     this.pollingInterval = setInterval(async () => {

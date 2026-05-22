@@ -218,11 +218,9 @@ export async function bootstrap(root) {
   const variantHud = el('div', { class: 'variant-indicator hidden' });
   const overlay = el('div', { class: 'overlay hidden' });
   const pauseBtn = el('button', { class: 'pause-btn hidden' }, 'Pause');
-  const abandonBtn = el('button', { class: 'abandon-btn hidden' }, 'Abandon');
   hud.appendChild(expectedEl);
   hud.appendChild(feedbackEl);
   hud.appendChild(pauseBtn);
-  hud.appendChild(abandonBtn);
   // game-wrap fills the shell absolutely; canvas, overlay, hud all position within it.
   const gameWrap = el('div', { class: 'game-wrap', style: 'display:none' }, canvas, overlay, hud, variantHud);
   shell.appendChild(gameWrap);
@@ -480,7 +478,6 @@ export async function bootstrap(root) {
 
       overlay.classList.add('hidden');
       pauseBtn.classList.remove('hidden');
-      abandonBtn.classList.remove('hidden');
       // Reuse the mic pipeline started on the setup screen; start fresh only if it failed.
       if (!audio) audio = await startAudio({ deviceId: state.audio.deviceId });
       audio.onError(() => pauseGame('audio-error'));
@@ -628,7 +625,6 @@ export async function bootstrap(root) {
     // Keep the mic stream alive for the next run; just silence the detection handler.
     if (audio) { audio.onDetection(() => {}); }
     pauseBtn.classList.add('hidden');
-    abandonBtn.classList.add('hidden');
     if (window.__gameState) {
       window.__gameState.session.phase = 'idle';
       window.__gameState.loop.running = false;
@@ -695,13 +691,6 @@ export async function bootstrap(root) {
       overlayMgr.hide();
     }
   });
-  abandonBtn.addEventListener('click', () => {
-    if (!run) return;
-    run.abandon();
-    showOverlay('Run abandoned.');
-    cleanup();
-  });
-
   // Pause on window blur (silent — no overlay, so E2E test hooks stay unblocked)
   window.addEventListener('blur', () => {
     if (!run || run.state !== 'running') return;

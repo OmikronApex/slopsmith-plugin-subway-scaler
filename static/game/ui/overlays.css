@@ -3,6 +3,7 @@
 /* Full-viewport dialog overlay — stacks above game and canvas */
 /* Backdrop: semi-opaque var(--color-bg-void) so game is faintly visible beneath */
 .subway-scaler .overlay--dialog {
+  display: flex;
   flex-direction: column;
   gap: 1.5rem;
   background: color-mix(in srgb, var(--color-bg-void, #0D0D1A) 96%, transparent);

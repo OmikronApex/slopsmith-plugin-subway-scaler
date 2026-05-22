@@ -162,17 +162,10 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
       s.name
     ))
   );
-  const scalePreview = el('div', { class: 'scale-preview' });
-  const defaultScale = scales.find(s => s.id === defaultScaleId);
-  scalePreview.textContent = defaultScale ? defaultScale.name : '';
-
   scaleSelect.addEventListener('change', (e) => {
     currentScaleId = e.target.value;
-    const selected = scales.find(s => s.id === e.target.value);
-    scalePreview.textContent = selected ? selected.name : '';
   });
   scaleGroup.appendChild(scaleSelect);
-  scaleGroup.appendChild(scalePreview);
   form.appendChild(scaleGroup);
 
   // Difficulty toggle

@@ -22,10 +22,22 @@ export class SafeZoneRenderer {
   }
 
   update(waves, currentTrack, laneXFn, nowMs, gameStartTime, instrument) {
-    // Clean up old waves
-    const currentIds = new Set(waves.map(w => w.wave_id));
+    // Clean up old waves — but only if they've visually passed the player.
+    // Waves absent from the backend list but still in front of z=0 are kept alive
+    // AND continue to be positioned each frame using their cached userData.
+    const waveMap = new Map(waves.map(w => [w.wave_id, w]));
     for (const [id, mesh] of this.zones.entries()) {
-      if (!currentIds.has(id)) {
+      if (!waveMap.has(id)) {
+        const wdata = mesh.userData;
+        if (wdata && wdata.spawn_time_ms !== undefined) {
+          const elapsed = Math.max(0, nowMs - gameStartTime - wdata.spawn_time_ms);
+          const z = SPAWN_Z + (elapsed * wdata.speed_px_per_ms * 0.5) + (SAFE_ZONE_DEPTH / 2);
+          if (z < 0) {
+            // Still in front of player — keep moving it so it doesn't freeze.
+            mesh.position.z = z;
+            continue;
+          }
+        }
         this.scene.remove(mesh);
         this.zones.delete(id);
       }
@@ -40,6 +52,7 @@ export class SafeZoneRenderer {
         this.scene.add(mesh);
         this.zones.set(wave.wave_id, mesh);
       }
+      mesh.userData = { spawn_time_ms: wave.spawn_time_ms, speed_px_per_ms: wave.speed_px_per_ms };
 
       const x = laneXFn(wave.safe_track);
       const elapsed = Math.max(0, nowMs - gameStartTime - wave.spawn_time_ms);

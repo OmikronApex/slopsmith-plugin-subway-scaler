@@ -1,7 +1,8 @@
 ---
 stepsCompleted: [1, 2, 3, 4, 5, 6, 7, 8]
-status: complete
+status: amended
 completedAt: '2026-05-20'
+amendedAt: '2026-05-22'
 lastStep: 8
 inputDocuments:
   - prd-subway-scaler.md
@@ -699,3 +700,181 @@ All 8 functional requirements and 6 non-functional requirements are architectura
 1. `GameState.js` — foundation all other modules depend on
 2. `services/game_routes.py` — add `/game/session-config` endpoint (validate against `tabulator.py` output first)
 3. `AudioDetector.js` — refactor `audio.js` to adapter pattern, keep `yin.js`/`yin-worklet.js` intact
+
+---
+
+## Architectural Amendment: JS-Owned Timing
+
+**Date:** 2026-05-22
+**Supersedes:** "State Split" table in _Starter Template / Tech Foundation_
+**Motivation:** The original split (Python generates wave queue with wall-clock timestamps; JS animates with `performance.now()`) requires two independent clocks to stay synchronized across network calls. Pause/resume exposes this: Python shifts `started_at_ms` via HTTP; JS shifts `gameStartTime` via RAF state. If these arrive out of order, all cart positions are wrong. The 200ms poll also introduces visible cart pop-in at high speed. **Decision:** JS owns all timing, wave scheduling, and pause/resume. Python owns data and logic (notes, fret positions, variant geometry, score persistence) only.
+
+---
+
+### New State Split
+
+| State | Owner | Transport |
+|---|---|---|
+| Scale catalog | Python | REST (load once at session start) |
+| Settings | Python | REST |
+| Notes + fret/string positions | Python | REST (at session start, immutable) |
+| Timing params (`base_duration_ms`, `speed_increment_per_note`, `wave_spacing_factor`, `wave_lookahead_ms`) | Python | REST (at session start, immutable) |
+| Wave queue (spawn times, safe tracks) | **JS — `WaveScheduler.js`** | In-memory, generated locally each frame |
+| Cart positions, collision | **JS — `CartSystem.js`** | In-memory |
+| Safe zone rendering | **JS — `SafeZoneRenderer.js`** | Reads from `WaveScheduler` |
+| Score (local) | **JS — `CartSystem.js`** | In-memory |
+| Score (persisted) | Python | REST async (non-blocking) |
+| Speed multiplier | **JS** (authoritative) + Python (confirmed per play-note) | Async REST |
+| Variant eligibility + geometry | Python | REST (propose/accept/timeout — unchanged) |
+| Pause/resume timing | **JS** | No network call required for timing |
+
+---
+
+### Revised API Surface
+
+| Endpoint | Method | Change | Response shape |
+|---|---|---|---|
+| `/game/start` | POST | Returns `timing_params` instead of `waves` | `{ session_id, notes, base_fret, num_lanes, initial_track, timing_params }` |
+| `/game/{id}` | GET | Score + variant only — no waves | `{ score, octave_loops_completed, active_variant, active_window, status }` |
+| `/game/{id}/play-note` | POST | Returns `speed_multiplier` confirmation | `{ success, speed_multiplier, current_track, required_timestamp_ms }` |
+| `/game/{id}/pause` | POST | State bookkeeping only — not timing-critical | `{ status }` |
+| `/game/{id}/resume` | POST | State bookkeeping only — not timing-critical | `{ status }` |
+| `/game/{id}/variant/*` | POST | **Unchanged** | (as before) |
+
+**`timing_params` shape (returned by `/game/start`):**
+```json
+{
+  "base_duration_ms": 2500,
+  "wave_spacing_factor": 0.4,
+  "wave_lookahead_ms": 10000,
+  "speed_increment_per_note": 0.05
+}
+```
+
+Poll interval remains **200ms** (variant responsiveness; revisit if performance profiling shows overhead).
+
+---
+
+### Python Simplifications
+
+**Removed from `game_engine.py`:**
+- `update_session_state()` — wave queue generation moves to `WaveScheduler.js`
+- `generate_next_wave()` — ditto
+- Constants: `WAVE_LOOKAHEAD_MS`, `WAVE_SPACING_FACTOR`
+
+**Removed from `GameSession`:**
+- `waves: List[CartWave]`
+- `next_deadline_ms`
+- `next_wave_note_index`
+- `total_waves_spawned`
+
+**Kept in Python:** All variant logic (`propose_variant`, `accept_variant`, `timeout_variant`), score tracking (`play_note`), note sequence + fret/string generation, pause/resume state bookkeeping.
+
+---
+
+### New JS Module: `WaveScheduler.js`
+
+Single source of truth for the active wave queue. Ported from Python's `update_session_state` / `generate_next_wave`. Both `CartSystem.js` and `SafeZoneRenderer.js` read from it — neither receives `currentWaves` from the poll any longer.
+
+```js
+export class WaveScheduler {
+  constructor(notes, timingParams) { ... }
+
+  // Called every frame by GameLoop. Tops up the queue, prunes expired waves.
+  tick(game_now, speedMultiplier) { ... }
+
+  // Read-only access for CartSystem and SafeZoneRenderer
+  get waves() { return this._waves; }
+}
+```
+
+**Owns:** `WaveScheduler._waves` array (written only by `WaveScheduler`)
+**Called by:** `GameLoop.js` each frame, passing `game_now = performance.now() - gameStartTime`
+**Read by:** `CartSystem.js` (collision + scoring), `SafeZoneRenderer.js` (safe zone visuals)
+
+---
+
+### Revised Data Flow
+
+```
+Session start:
+  main.js → POST /game/start
+           ← { notes, base_fret, num_lanes, initial_track, timing_params }
+  JS: waveScheduler = new WaveScheduler(notes, timing_params)
+  JS: gameStartTime = performance.now()   ← single clock, no Python sync needed
+
+Active game loop (per frame):
+  game_now = performance.now() - gameStartTime
+  waveScheduler.tick(game_now, speedMultiplier)    → waves[] (local, exact timing)
+  CartSystem.update(waveScheduler.waves)           → collision, score
+  SafeZoneRenderer.update(waveScheduler.waves)     → safe zone positions
+  SceneManager.render()
+
+Note detected (audio callback):
+  JS: run.onDetection(det) → local score update
+  POST /game/{id}/play-note  (async, non-blocking)
+  ← { speed_multiplier, current_track, required_timestamp_ms }
+  JS: speedMultiplier = resp.speed_multiplier
+
+Pause:
+  JS: run.pause() — gameStartTime accumulation stops in RAF
+  gameClient.pause()  (fire-and-forget, state bookkeeping only)
+
+Resume:
+  JS: run.resume() — gameStartTime continues from performance.now()
+  gameClient.resume()  (fire-and-forget, state bookkeeping only)
+  ← no clock sync needed: performance.now() never stopped
+
+Score + variant poll (200ms):
+  GET /game/{id} → { score, octave_loops_completed, active_variant, active_window }
+  (no waves in response)
+
+Variant lifecycle:
+  Unchanged (POST variant/propose|accept|timeout)
+  On accept: backend returns { speed_multiplier: 1.0, notes, ... }
+             → JS: speedMultiplier = 1.0; waveScheduler.reset(newNotes)
+```
+
+---
+
+### Updated Component Boundaries
+
+| Module | Owns | Notes |
+|---|---|---|
+| `WaveScheduler.js` (new) | Wave queue (`_waves[]`), spawn timing | Ported from Python `update_session_state` |
+| `CartSystem.js` | `scene.carts`, `runtime.score` | Reads `waveScheduler.waves`; no longer fed from poll |
+| `SafeZoneRenderer.js` | Safe zone overlays | Reads `waveScheduler.waves`; no longer fed from poll |
+| `GameLoop.js` | rAF tick, `game_now`, calls `waveScheduler.tick()` | Passes single clock to scheduler |
+| `game_engine.py` | Score, note sequence, variant geometry | Simplified — wave queue removed |
+
+**Ownership table addition for GameState:**
+
+| Sub-object | Owner (writes) | Others (read-only) |
+|---|---|---|
+| `runtime.speedMultiplier` | `GameLoop.js` (from play-note response) | `WaveScheduler` |
+| (wave queue) | `WaveScheduler.js` (internal `_waves[]`) | `CartSystem`, `SafeZoneRenderer` |
+
+---
+
+### Test Impact
+
+**Python tests unaffected:** All variant tests, play-note tests, session-config tests remain valid.
+
+**Python tests to delete/update:**
+- Any test asserting `session.waves` content
+- Any test calling `update_session_state` directly
+
+**New JS tests required:**
+- `tests/unit/js/WaveScheduler.test.js` — wave generation correctness, speed scaling, queue pruning, reset on variant accept
+- Update `tests/unit/js/CartSystem.test.js` — provide a stub `WaveScheduler` instead of raw `currentWaves` array
+- Update `tests/unit/js/SafeZoneRenderer.test.js` — same stub pattern
+
+---
+
+### Revised Implementation Priority
+
+1. `WaveScheduler.js` — port wave logic from Python; all timing work builds on this
+2. `game_engine.py` — strip wave fields from `GameSession`, remove `update_session_state` / `generate_next_wave`, add `timing_params` to `/game/start` response
+3. `CartSystem.js` + `SafeZoneRenderer.js` — rework to consume `WaveScheduler.waves`
+4. `GameLoop.js` — wire `waveScheduler.tick(game_now, speedMultiplier)` into the RAF loop; remove poll-fed `currentWaves`
+5. `main.js` — remove clock-sync code in pause/resume; simplify `gameClient.pause/resume` to fire-and-forget

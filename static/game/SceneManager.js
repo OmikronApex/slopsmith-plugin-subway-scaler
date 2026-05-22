@@ -277,6 +277,12 @@ export function createScene(canvas) {
     const currentIds = new Set(waves.map(w => w.wave_id));
     for (const [id, w] of activeWaves.entries()) {
       if (!currentIds.has(id)) {
+        // Only remove the wave if it has visually passed the player. This prevents
+        // the backend's real-time clock from expiring waves that the frontend's
+        // pause-adjusted clock still considers alive (e.g. after a long pause).
+        const elapsed = Math.max(0, nowMs - gameStartTime - w.data.spawn_time_ms);
+        const z = SPAWN_Z + (elapsed * w.data.speed_px_per_ms * 0.5);
+        if (z < FRONT_Z) continue; // still in front — keep it alive
         scene.remove(w.mesh);
         activeWaves.delete(id);
       }
