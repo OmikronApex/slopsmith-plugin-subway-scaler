@@ -1,5 +1,5 @@
 generated: "2026-05-21"
-last_updated: "2026-05-22"  # updated after code-review: epic-4-1 patches applied, moved to done
+last_updated: "2026-05-22"  # 4-3 moved to review
 project: "slopsmith-plugin-subway-scaler"
 project_key: "SS"
 tracking_system: "local"
@@ -54,7 +54,7 @@ development_status:
   epic-4: in-progress
   4-1-implement-overlay-container-with-rgb-shift-glitch-animation: done
   4-2-implement-pause-overlay: review
-  4-3-implement-game-over-overlay: ready-for-dev
+  4-3-implement-game-over-overlay: review
   4-4-implement-aria-roles-and-keyboard-navigation: ready-for-dev
   4-5-implement-touch-targets-and-final-accessibility-audit: ready-for-dev
 

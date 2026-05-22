@@ -114,6 +114,7 @@ export async function bootstrap(root) {
   // Helper: pause the run and show the pause overlay
   function pauseGame(reason = 'normal') {
     if (!run || run.state !== 'running') return;
+    _pauseReason = reason;
     run.pause(performance.now());
     if (audio) audio.pause();
     pauseBtn.textContent = 'Resume';
@@ -123,8 +124,19 @@ export async function bootstrap(root) {
   }
 
   // Helper: resume the run and hide the overlay
-  function resumeGame() {
+  async function resumeGame() {
     if (!run || run.state !== 'paused') return;
+    const reason = _pauseReason;
+    _pauseReason = 'normal';
+    if (reason === 'audio-error' && audio) {
+      try {
+        await audio.switchInput(state.audio.deviceId);
+      } catch (_err) {
+        _pauseReason = 'audio-error';
+        pauseGame('audio-error');
+        return;
+      }
+    }
     run.resume(performance.now());
     if (audio) audio.resume();
     pauseBtn.textContent = 'Pause';
@@ -136,6 +148,15 @@ export async function bootstrap(root) {
   const overlayMgr = new OverlayManager({
     onResume: resumeGame,
     onRestart: () => {
+      const inst = currentInstrument();
+      if (inst && inst.tuning && inst.tuning[0]) {
+        const lo = inst.tuning[0];
+        const fretMin = Math.max(21, lo + 5);
+        const fretMax = Math.min(108, lo + 8);
+        state.rootMidi = fretMin <= fretMax
+          ? Math.floor(Math.random() * (fretMax - fretMin + 1)) + fretMin
+          : 60;
+      }
       cleanup();
       start();
     },
@@ -263,6 +284,7 @@ export async function bootstrap(root) {
 
   let run = null;
   let audio = null;
+  let _pauseReason = 'normal';
   let rafId = null;
   let prevFretPos = null;
 
@@ -461,6 +483,14 @@ export async function bootstrap(root) {
         scene.render(now);
         rafId = requestAnimationFrame(loop);
       };
+      // Ensure mic pipeline is ready before countdown; start fresh only if setup-screen grab failed.
+      if (!audio) audio = await startAudio({ deviceId: state.audio.deviceId });
+      // Wire error handler now so a disconnect during countdown aborts cleanly instead of silently.
+      audio.onError(() => {
+        if (run && run.state === 'running') pauseGame('audio-error');
+        else cleanup();
+      });
+
       rafId = requestAnimationFrame(loop);
 
       // 3-second countdown
@@ -478,9 +508,6 @@ export async function bootstrap(root) {
 
       overlay.classList.add('hidden');
       pauseBtn.classList.remove('hidden');
-      // Reuse the mic pipeline started on the setup screen; start fresh only if it failed.
-      if (!audio) audio = await startAudio({ deviceId: state.audio.deviceId });
-      audio.onError(() => pauseGame('audio-error'));
       audio.onDetection(async (det) => {
         if (!run || run.state !== 'running') return;
 
@@ -622,8 +649,8 @@ export async function bootstrap(root) {
     gameClient.stopPolling();
     if (rafId) cancelAnimationFrame(rafId);
     rafId = null;
-    // Keep the mic stream alive for the next run; just silence the detection handler.
-    if (audio) { audio.onDetection(() => {}); }
+    // Keep the mic stream alive for the next run; silence detection and error handlers.
+    if (audio) { audio.onDetection(() => {}); audio.onError(() => {}); }
     pauseBtn.classList.add('hidden');
     if (window.__gameState) {
       window.__gameState.session.phase = 'idle';

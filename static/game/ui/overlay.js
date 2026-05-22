@@ -199,8 +199,8 @@ class PauseOverlay extends Overlay {
     resumeBtn.addEventListener('click', this.onResumeClick);
     _safeAppend(buttons, resumeBtn);
 
-    const quitBtn = _el('button', 'overlay-link');
-    quitBtn.textContent = 'Quit to Menu';
+    const quitBtn = _el('button', 'overlay-btn-secondary');
+    quitBtn.textContent = 'MAIN MENU';
     quitBtn.type = 'button';
     this.quitLink = quitBtn;
     quitBtn.addEventListener('click', () => {
@@ -282,8 +282,8 @@ class GameOverOverlay extends Overlay {
     _safeAppend(el, buttons);
   }
 
-  // Escape does nothing on game-over — no action to cancel
-  _onEscape(_e) {}
+  // Escape suppressed on game-over: explicit button action required to exit
+  _onEscape(e) { e.preventDefault(); }
 }
 
 // ─── OverlayManager ───────────────────────────────────────────────────────────

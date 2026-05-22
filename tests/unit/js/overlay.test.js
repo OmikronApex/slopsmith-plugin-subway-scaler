@@ -186,10 +186,10 @@ describe('OverlayManager — pause overlay (Story 4.2)', () => {
     expect(overlay.resumeButton.textContent).toMatch(/resume/i);
   });
 
-  it('"Quit to Menu" link is present in pause overlay', () => {
+  it('"Main Menu" button is present in pause overlay', () => {
     overlay.show({ type: 'pause' });
     expect(overlay.quitLink).toBeTruthy();
-    expect(overlay.quitLink.textContent).toMatch(/quit/i);
+    expect(overlay.quitLink.textContent).toMatch(/main menu/i);
   });
 
   it('activating RESUME calls the onResume callback', () => {
@@ -302,9 +302,11 @@ describe('OverlayManager — game over overlay (Story 4.3)', () => {
 
   it('Escape key does nothing when game-over overlay is open', () => {
     overlay.show({ type: 'game-over', score: 500 });
-    overlay.onKeyDown?.({ key: 'Escape', preventDefault: vi.fn() });
+    const preventDefault = vi.fn();
+    overlay.onKeyDown?.({ key: 'Escape', preventDefault });
     expect(mockOnRestart).not.toHaveBeenCalled();
     expect(mockOnMainMenu).not.toHaveBeenCalled();
+    expect(preventDefault).toHaveBeenCalled();
   });
 
   it('Tab key prevents default (focus trap active)', () => {
