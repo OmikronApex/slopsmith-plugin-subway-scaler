@@ -431,6 +431,12 @@ export async function bootstrap(root) {
           return;
         }
 
+        // Freeze scene while paused — keep RAF alive for seamless resume
+        if (run.state === 'paused') {
+          rafId = requestAnimationFrame(loop);
+          return;
+        }
+
         // Update waves and safe zones
         if (currentWaves.length > 0) {
           scene.setWaves(currentWaves, now);
