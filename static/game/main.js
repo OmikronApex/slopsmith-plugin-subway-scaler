@@ -536,6 +536,7 @@ export async function bootstrap(root) {
 
       gameClient.startPolling((pollState) => {
         if (!pollState) return;
+        if (run && run.state === 'paused') return;
 
         if (pollState.score !== undefined) {
           feedbackEl.textContent = `Score: ${pollState.score}`;
