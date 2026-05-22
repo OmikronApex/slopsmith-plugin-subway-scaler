@@ -197,6 +197,11 @@ export async function startAudio({ deviceId = null } = {}) {
       stream = next.stream;
       source = next.source;
       source.connect(node);
+      stream.getTracks().forEach(track => {
+        track.addEventListener('ended', () => {
+          if (errorListener) errorListener('Audio track ended unexpectedly');
+        });
+      });
     },
     stop() {
       try { source.disconnect(); } catch (_) {}

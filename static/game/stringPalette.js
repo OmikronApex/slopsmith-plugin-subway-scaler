@@ -11,12 +11,14 @@
 // Bass (4 strings) uses indices 0..3 only.
 
 export const STRING_COLOURS = [
-  0xE53935, // Red
-  0xFDD835, // Yellow
-  0x1E88E5, // Blue
-  0xFB8C00, // Orange
-  0x43A047, // Green
-  0x8E24AA, // Purple
+  0xCC0000, // Red
+  0xCCA800, // Yellow
+  0x0066CC, // Blue
+  0xCC6600, // Orange
+  0x00CC66, // Green
+  0x9900CC, // Purple
+  0xCC00AA, // Magenta
+  0x00CCCC, // Teal
 ];
 
 export function colourForString(stringIdx, instrument) {

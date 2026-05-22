@@ -45,3 +45,10 @@
 ## Deferred from: code review of 2-3-implement-difficultymanager-module (2026-05-21)
 
 - AC-1 says constructor sets `gameState.runtime.speed` but implementation uses `init(gameState)`. AC-1 is ambiguous; Dev Notes API spec defines `init()` as the correct call. Clarify AC-1 wording in next story review or architecture doc.
+
+## Deferred from: code review of 4-2-implement-pause-overlay (2026-05-22)
+
+- W1 — `_pausedAt` set to rAF `now` (one frame after `run.pause()`) → tiny under-compensation of gameStartTime shift per pause. Pre-existing minor timing drift; cosmetic at normal framerates.
+- W2 — Score shows 0 in game-over overlay if backend poll hasn't delivered first score update when collision occurs. Pre-existing race condition between collision detection and score polling.
+- W3 — `resumeGame()` does not call `overlayMgr.hide()` — by design (overlay self-hides via onResumeClick), but any future external caller would leave overlay visible while game runs. No current broken path.
+- W4 — `forceCollision` test hook sets `run.state = 'failed'` directly without `run.abandon()` — test-only hook, bypass is intentional.

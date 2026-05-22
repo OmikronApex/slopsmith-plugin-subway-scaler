@@ -226,6 +226,24 @@ This pattern already works — just missing the explicit audio-error variant tes
 
 ---
 
+### Review Findings
+
+**Decision Needed:**
+- [x] [Review][Decision] D1 — Blur pause intentionally silent (no overlay, no gameClient.pause()). Resolved: keep silent — blur is a system action, not a deliberate game pause. AC-1 "window blur" trigger dropped.
+- [ ] [Review][Patch] D2→P3 — On audio-error resume, attempt mic pipeline restart: call `startAudio()` again with same deviceId in `resumeGame()` when last pause reason was 'audio-error'. If restart fails, call `pauseGame('audio-error')` again [main.js, AudioDetector.js]
+
+**Patch:**
+- [ ] [Review][Patch] P1 — `audio.onError` fires during countdown when `run.state === 'idle'` → `pauseGame()` returns early, error silently dropped, game continues with dead audio [main.js, AudioDetector.js]
+- [ ] [Review][Patch] P2 — `cleanup()` does not clear the `onError` callback (`audio.onError(() => {})`) — stale error from ended track on previous run can silently trigger `pauseGame` during countdown of next run [main.js]
+
+**Deferred:**
+- [x] [Review][Defer] W1 — `_pausedAt` set to rAF `now` (one frame after `run.pause()`) → tiny under-compensation of gameStartTime shift per pause [main.js] — deferred, pre-existing minor timing drift
+- [x] [Review][Defer] W2 — Score shows 0 in game-over overlay if backend poll hasn't delivered first score update when collision occurs [main.js] — deferred, pre-existing race condition
+- [x] [Review][Defer] W3 — `resumeGame()` does not call `overlayMgr.hide()` — works by design (overlay self-hides), but any future external caller would leave overlay visible while game runs [main.js] — deferred, no current broken path
+- [x] [Review][Defer] W4 — `forceCollision` test hook sets `run.state = 'failed'` directly without `run.abandon()` [main.js] — deferred, test-only hook
+
+---
+
 ## Change Log
 
 - 2026-05-21: Story created. Pause overlay and audio disconnect variant planned per UX-DR10.
