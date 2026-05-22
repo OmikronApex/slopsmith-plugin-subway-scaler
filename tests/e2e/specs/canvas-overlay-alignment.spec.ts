@@ -25,9 +25,10 @@ async function startGameAndTriggerOverlay(page: Page) {
     () => (window as any).__gameState?.session?.phase === 'playing',
     { timeout: 10000 }
   );
-  // Trigger run-failed overlay
+  // Trigger run-failed overlay; wait for entry animation to settle (250ms)
   await page.evaluate(() => (window as any).__gameState._test.forceCollision());
   await page.locator('.game-wrap .overlay:not(.hidden)').waitFor({ timeout: 3000 });
+  await page.waitForTimeout(300);
 }
 
 function viewportTest(label: string, width: number) {

@@ -142,7 +142,6 @@ export async function bootstrap(root) {
       showMenu();
     },
   });
-  overlayMgr.mount(shell);
 
   // Setup screen callback: initialize game once session-config succeeds
   async function onSetupComplete(sessionConfig) {
@@ -224,6 +223,7 @@ export async function bootstrap(root) {
   // game-wrap fills the shell absolutely; canvas, overlay, hud all position within it.
   const gameWrap = el('div', { class: 'game-wrap', style: 'display:none' }, canvas, overlay, hud, variantHud);
   shell.appendChild(gameWrap);
+  overlayMgr.mount(gameWrap);
 
   const scene = createScene(canvas);
 
@@ -460,6 +460,7 @@ export async function bootstrap(root) {
       abandonBtn.classList.remove('hidden');
       // Reuse the mic pipeline started on the setup screen; start fresh only if it failed.
       if (!audio) audio = await startAudio({ deviceId: state.audio.deviceId });
+      audio.onError(() => pauseGame('audio-error'));
       audio.onDetection(async (det) => {
         if (!run || run.state !== 'running') return;
 

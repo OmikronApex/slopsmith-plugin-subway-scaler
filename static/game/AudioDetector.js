@@ -153,6 +153,19 @@ export async function startAudio({ deviceId = null } = {}) {
   // Worklet is a sink for analysis; do not connect to destination (avoid feedback).
 
   let listener = () => {};
+  let errorListener = null;
+
+  stream.getTracks().forEach(track => {
+    track.addEventListener('ended', () => {
+      if (errorListener) errorListener('Audio track ended unexpectedly');
+    });
+  });
+  audioCtx.addEventListener('statechange', () => {
+    if ((audioCtx.state === 'interrupted' || audioCtx.state === 'closed') && errorListener) {
+      errorListener(`AudioContext ${audioCtx.state}`);
+    }
+  });
+
   node.port.onmessage = (ev) => {
     const { frequencyHz, confidence, timestampMs } = ev.data;
     let note = null;
@@ -174,6 +187,7 @@ export async function startAudio({ deviceId = null } = {}) {
   return {
     audioContext: audioCtx,
     onDetection(cb) { listener = cb; },
+    onError(cb) { errorListener = cb; },
     async pause() { try { await audioCtx.suspend(); } catch (_) {} },
     async resume() { try { await audioCtx.resume(); } catch (_) {} },
     async switchInput(newDeviceId) {
