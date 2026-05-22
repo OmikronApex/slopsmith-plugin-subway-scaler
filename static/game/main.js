@@ -10,6 +10,7 @@ import { SafeZoneRenderer } from './ui/SafeZoneRenderer.js';
 import { laneX } from './TrackSystem.js';
 import { injectTokens } from './ui/tokens.js';
 import { renderSetupScreen } from './ui/setup.js';
+import { OverlayManager } from './ui/overlay.js';
 
 const API = '/api/plugins/subway-scaler';
 const STATIC = '/plugins/subway-scaler/static/game';
@@ -58,6 +59,7 @@ export async function bootstrap(root) {
     timestamp: Date.now(),
     loop: { running: false, frameCount: 0, deltaTime: 0 },
     character: { positionX: 0, positionY: 0, velocityX: 0, velocityY: 0, state: 'idle' },
+    scene: { waveCount: 0 },
     score: { current: 0, highScore: 0, distanceTraveled: 0 },
     collision: { lastCollisionType: null, lastCollisionTimestamp: null, invincibilityFrames: 0 },
     gameOver: { isGameOver: false, reason: null, triggeredAt: null },
@@ -99,6 +101,48 @@ export async function bootstrap(root) {
     root.appendChild(el('div', { class: 'error-panel' }, `Failed to load plugin data: ${err.message}`));
     return;
   }
+
+  // Helper: show / hide the setup screen vs. game wrap
+  function showMenu() {
+    Array.from(shell.children).forEach(child => {
+      if (child.classList && child.classList.contains('setup-container')) child.style.display = '';
+      if (child.classList && child.classList.contains('game-wrap')) child.style.display = 'none';
+    });
+  }
+
+  // Helper: pause the run and show the pause overlay
+  function pauseGame(reason = 'normal') {
+    if (!run || run.state !== 'running') return;
+    run.pause(performance.now());
+    if (audio) audio.pause();
+    pauseBtn.textContent = 'Resume';
+    if (window.__gameState) window.__gameState.session.phase = 'paused';
+    overlayMgr.show({ type: 'pause', reason });
+  }
+
+  // Helper: resume the run and hide the overlay
+  function resumeGame() {
+    if (!run || run.state !== 'paused') return;
+    run.resume(performance.now());
+    if (audio) audio.resume();
+    pauseBtn.textContent = 'Pause';
+    if (window.__gameState) window.__gameState.session.phase = 'playing';
+  }
+
+  // Overlay manager — wired before game starts so restart/quit work in any phase
+  const overlayMgr = new OverlayManager({
+    onResume: resumeGame,
+    onRestart: () => {
+      cleanup();
+      start();
+    },
+    onMainMenu: () => {
+      if (run) { run.abandon(); }
+      cleanup();
+      showMenu();
+    },
+  });
+  overlayMgr.mount(shell);
 
   // Setup screen callback: initialize game once session-config succeeds
   async function onSetupComplete(sessionConfig) {
@@ -362,6 +406,11 @@ export async function bootstrap(root) {
           const phaseMap = { running: 'playing', paused: 'paused', succeeded: 'game_over', failed: 'game_over', abandoned: 'game_over' };
           window.__gameState.session.phase = phaseMap[run.state] || 'idle';
           window.__gameState.loop.running = true;
+          // Only update waveCount while game is active; cleanup() resets run to null on the
+          // same tick that triggers the final RAF frame, so guard against both conditions.
+          if (run.state === 'running' && scene) {
+            window.__gameState.scene.waveCount = scene.getWaveCount();
+          }
         }
 
         if (run.state === 'succeeded') {
@@ -371,12 +420,13 @@ export async function bootstrap(root) {
           return;
         }
         if (run.state === 'failed') {
+          const finalScore = window.__gameState?.score?.current || 0;
           if (window.__gameState) {
             window.__gameState.gameOver.isGameOver = true;
             window.__gameState.gameOver.reason = 'collision';
             window.__gameState.gameOver.triggeredAt = Date.now();
           }
-          showOverlay('Run failed! Collision detected.');
+          overlayMgr.show({ type: 'game-over', score: finalScore });
           cleanup();
           return;
         }
@@ -589,11 +639,26 @@ export async function bootstrap(root) {
   // Wire _test hooks now that closure variables (run, audio, pauseBtn) are in scope
   if (window.__TEST_MODE) {
     window.__gameState._test = {
-      forceCollision: () => { if (run && run.state === 'running') run.state = 'failed'; },
+      forceCollision: () => {
+        if (!run || run.state === 'abandoned') return;
+        run.state = 'failed';
+        const finalScore = window.__gameState?.score?.current || 0;
+        if (window.__gameState) {
+          window.__gameState.gameOver.isGameOver = true;
+          window.__gameState.gameOver.reason = 'collision';
+          window.__gameState.gameOver.triggeredAt = Date.now();
+        }
+        overlayMgr.show({ type: 'game-over', score: finalScore });
+        cleanup();
+      },
       triggerPause: () => {
         if (!run) return;
-        if (run.state === 'running') { run.pause(performance.now()); audio && audio.pause(); pauseBtn.textContent = 'Resume'; }
-        else if (run.state === 'paused') { run.resume(performance.now()); audio && audio.resume(); pauseBtn.textContent = 'Pause'; }
+        if (run.state === 'running') {
+          pauseGame();
+        } else if (run.state === 'paused') {
+          resumeGame();
+          overlayMgr.hide();
+        }
       },
       resetGame: () => { if (run) { run.abandon(); cleanup(); } },
       setVariant: null,
@@ -603,11 +668,10 @@ export async function bootstrap(root) {
   pauseBtn.addEventListener('click', () => {
     if (!run) return;
     if (run.state === 'running') {
-      run.pause(performance.now()); audio && audio.pause(); pauseBtn.textContent = 'Resume';
-      if (window.__gameState) window.__gameState.session.phase = 'paused';
+      pauseGame();
     } else if (run.state === 'paused') {
-      run.resume(performance.now()); audio && audio.resume(); pauseBtn.textContent = 'Pause';
-      if (window.__gameState) window.__gameState.session.phase = 'playing';
+      resumeGame();
+      overlayMgr.hide();
     }
   });
   abandonBtn.addEventListener('click', () => {
@@ -617,19 +681,18 @@ export async function bootstrap(root) {
     cleanup();
   });
 
-  // Pause on window blur
+  // Pause on window blur (silent — no overlay, so E2E test hooks stay unblocked)
   window.addEventListener('blur', () => {
-    if (run && run.state === 'running') {
-      run.pause(performance.now());
-      audio && audio.pause();
-      pauseBtn.textContent = 'Resume';
-    }
+    if (!run || run.state !== 'running') return;
+    run.pause(performance.now());
+    if (audio) audio.pause();
+    pauseBtn.textContent = 'Resume';
+    if (window.__gameState) window.__gameState.session.phase = 'paused';
   });
   window.addEventListener('focus', () => {
     if (run && run.state === 'paused') {
-      run.resume(performance.now());
-      audio && audio.resume();
-      pauseBtn.textContent = 'Pause';
+      resumeGame();
+      overlayMgr.hide();
     }
   });
 

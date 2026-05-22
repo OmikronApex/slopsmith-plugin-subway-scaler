@@ -70,6 +70,7 @@
 
 .form-group select,
 .toggle-group {
+  min-height: 44px;
   background: var(--color-bg-near, #0f0f0f);
   border: 1px solid var(--color-edge, #404040);
   color: var(--color-text-primary, #e0e0e0);
@@ -110,6 +111,7 @@
 .toggle-button {
   flex: 1;
   padding: 0.75rem;
+  min-height: 44px;
   background: var(--color-bg-void, #000000);
   border: 1px solid var(--color-edge, #404040);
   color: var(--color-text-primary, #e0e0e0);

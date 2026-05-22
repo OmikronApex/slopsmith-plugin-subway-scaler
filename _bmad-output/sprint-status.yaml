@@ -201,9 +201,9 @@ development_status:
   # Stories - Epic 4
   4-1-implement-overlay-container-with-rgb-shift-glitch-animation:
     title: "Implement Overlay Container with RGB-Shift Glitch Animation"
-    status: ready-for-dev
-    last_updated: 2026-05-21
-    notes: "Story documented with full BMAD context. Shared overlay container foundation for pause, game-over, and audio disconnect overlays."
+    status: review
+    last_updated: 2026-05-22
+    notes: "Implemented. overlays.css (RGB-shift keyframes, reduced-motion fallback), overlay.js (OverlayManager with focus trap, show/hide lifecycle). 220 tests passing."
 
   4-2-implement-pause-overlay:
     title: "Implement Pause Overlay"

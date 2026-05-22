@@ -1,4 +1,5 @@
 @import url('game/ui/setup.css');
+@import url('game/ui/overlays.css');
 
 /* Root: normal block inside Slopsmith's .screen div.
    padding-top clears the fixed navbar (h-16 = 4rem = 64px).

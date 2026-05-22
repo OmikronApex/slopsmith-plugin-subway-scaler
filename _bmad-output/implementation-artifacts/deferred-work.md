@@ -1,5 +1,12 @@
 # Deferred Work
 
+## Deferred from: code review of epic-0-5 stories (2026-05-21)
+
+- `waveCount=0` persists if `scene` creation fails silently — pre-existing game init behavior; waveCount=0 is actually accurate for a failed scene so no immediate fix needed.
+- Network polling errors swallowed in `startGame()` test helper — pre-existing test infrastructure pattern; would require refactoring the gamePage fixture.
+- `waveCount` snapshot lags in backgrounded tab — inherent RAF throttling (browser throttles rAF to 1fps when tab hidden); not caused by Epic 0.5 changes.
+- `loop.running = true` set unconditionally before waveCount update — pre-existing main.js RAF loop pattern; full audit of loop ordering is separate work.
+
 ## Deferred from: code review of 0-1-docker-development-setup (2026-05-21)
 
 - Broad volume mount exposes full repo root (including `.git`) to container — required for hot-reload; document scope in README when revisiting security posture.
@@ -23,6 +30,13 @@
 - Local `carts` alias diverges from `gameState.scene.carts` after filter reassignment (CartSystem.js:23,49); latent bug if code is added post-filter using the alias. Refactor filter to avoid reference split.
 - Static class fields (`_nextDeadlineMs`, `_nextWaveNoteIndex`, `_totalWavesSpawned`) prevent parallel game sessions. Design trade-off made to match test scaffold. Revisit if multi-session support is needed.
 - `BASE_SPEED` constants duplicated in `CartSystem.js` and `DifficultyManager.js`; risk of silent drift. Consider exporting from a shared constants module when both files are stable.
+
+## Deferred from: code review of story 4.1 (2026-05-21)
+
+- Focus restoration fires synchronously at `hide()` start rather than after exit animation — immediate focus return is subjectively better UX; revisit if AT feedback suggests otherwise.
+- Score not saved to localStorage when player clicks MAIN MENU (only on RESTART) — intentional: menu exit skips persistence to avoid "last score" being a menu-quit.
+- Test mock `appendChild` is `vi.fn()` no-op — pre-existing mock pattern across all unit tests. Real append would need DOM tree; current assertions work via direct property references.
+- No separate `overlay-manager.js` file — OverlayManager lives in `overlay.js`. Acknowledged architectural deviation; single file reduces import complexity without functional impact.
 
 ## Deferred from: code review of 2-3-implement-difficultymanager-module (2026-05-21)
 

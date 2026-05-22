@@ -414,6 +414,7 @@ export function createScene(canvas) {
     setGameStartTime,
     setBaseFret,
     checkCollision,
+    getWaveCount() { return activeWaves.size; },
     reset,
     render,
     proposeVariantTracks,

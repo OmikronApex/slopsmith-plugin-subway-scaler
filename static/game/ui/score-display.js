@@ -2,6 +2,7 @@ export class ScoreDisplay {
   constructor() {
     const el = document.createElement('div');
     el.setAttribute('aria-live', 'polite');
+    el.setAttribute('aria-atomic', 'true');
     el.setAttribute('role', 'status');
     el.classList.add('score-display');
     el.style.position = 'absolute';

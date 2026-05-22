@@ -1,0 +1,62 @@
+generated: "2026-05-21"
+last_updated: "2026-05-21"  # updated after code-review: epic-4-1 patches applied, moved to done
+project: "slopsmith-plugin-subway-scaler"
+project_key: "SS"
+tracking_system: "local"
+story_location: "_bmad-output/implementation-artifacts"
+
+development_status:
+  # Epic 0 — E2E Testing Infrastructure
+  epic-0: done
+  0-1-docker-development-setup: done
+  0-2-playwright-test-harness: done
+  0-2a-fake-microphone-device: done
+  0-2b-wav-audio-injection: done
+  0-3-standard-baseline-test-suite: done
+  0-4-test-integration-and-templates: done
+  0-5-canvas-observable-interface: done
+
+  # Epic 0.5 — E2E Coverage Review
+  epic-0-5: done
+  0-5a-e2e-coverage-epic2: done
+  0-5b-e2e-coverage-epic4: done
+  0-5c-atdd-scaffold-epic5: done
+
+  # Epic 1 — Foundation & Session Setup
+  epic-1: in-progress
+  1-1-rename-and-scaffold-js-module-files: review
+  1-2-implement-gamestate-module-with-phases-constants: review
+  1-3-implement-design-token-system: review
+  1-4-implement-game-session-config-endpoint: review
+  1-5-vendor-font-and-setup-css-foundation: in-progress
+  1-6-session-setup-ui-and-settings-persistence: in-progress
+  1-7-handle-session-config-fetch-failure-at-game-start: in-progress
+  1-8-implement-ux-design-polish-and-mockup-styling: review
+
+  # Epic 2 — Core Game Modules
+  epic-2: done
+  2-1-analyse-and-document-game-engine-py: review
+  2-2-implement-cartsystem-module: done
+  2-3-implement-difficultymanager-module: done
+
+  # Epic 3 — Core Gameplay Loop
+  epic-3: in-progress
+  3-1-implement-scenemanager-and-threejs-canvas: done
+  3-2-implement-tracksystem-and-safe-zone-rendering: review
+  3-3-implement-audiodetector-with-yin-adapter: done
+  3-4-implement-gameloop-with-phase-management: done
+  3-5-implement-first-wave-tutorial-hint: review
+  3-6-implement-score-display: review
+  3-7-implement-visual-feedback-on-correct-note: review
+  3-8-integration-test-session-config-to-score: review
+
+  # Epic 4 — Session UX & Accessibility
+  epic-4: in-progress
+  4-1-implement-overlay-container-with-rgb-shift-glitch-animation: done
+  4-2-implement-pause-overlay: ready-for-dev
+  4-3-implement-game-over-overlay: ready-for-dev
+  4-4-implement-aria-roles-and-keyboard-navigation: ready-for-dev
+  4-5-implement-touch-targets-and-final-accessibility-audit: ready-for-dev
+
+  # Epic 5 — Variant Track System
+  epic-5: backlog

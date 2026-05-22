@@ -1,5 +1,5 @@
 ---
-stepsCompleted: [1, 2]
+stepsCompleted: [1, 2, 3]
 inputDocuments:
   - prds/prd-subway-scaler.md
   - architecture.md
@@ -185,8 +185,52 @@ Developers can validate the entire plugin user journey (setup → play → pause
 
 ---
 
-## Placeholder Sections
+---
 
-### Story Breakdown
-*To be populated in Step 3: detailed story creation with acceptance criteria and tasks*
+### Epic 0.5: E2E Coverage Review
+
+Developers have comprehensive E2E test coverage for all implemented epics and executable ATDD acceptance tests written in advance for open epics, ensuring regressions are caught automatically and new epics ship with a green test baseline from day one.
+
+**User Outcomes:**
+- Regressions in CartSystem, DifficultyManager, overlays, and accessibility are caught by CI before merge
+- Epic 5 implementer has executable acceptance tests to work against (ATDD)
+- Test gaps from Epics 2 and 4 are filled without duplicating existing Epic 3 coverage
+
+**Stories:**
+- 0.5a: E2E Coverage — Epic 2 (CartSystem & DifficultyManager observable behavior)
+- 0.5b: E2E Coverage — Epic 4 (Overlays, keyboard shortcuts, ARIA accessibility)
+- 0.5c: ATDD Scaffold — Epic 5 (Variant track & decision window — written to fail until Epic 5 ships)
+
+**Coverage rationale:**
+- Epic 1: ✅ Already covered by `epic1-setup.spec.ts` and `ux-design-audit.spec.ts`
+- Epic 2: ❌ No dedicated spec — CartSystem and DifficultyManager have no E2E tests → Story 0.5a
+- Epic 3: ✅ Well covered by `epic3-game.spec.ts`, `epic3-score.spec.ts`, `audio-injection.spec.ts`, `mic-access.spec.ts`, `canvas-overlay-alignment.spec.ts`
+- Epic 4: ❌ No dedicated spec — Overlays, keyboard shortcuts, and ARIA untested → Story 0.5b
+- Epic 5: ⏳ Not yet implemented → ATDD scaffold → Story 0.5c
+
+---
+
+## Requirements Coverage Map
+
+### E2E Testing Requirements → Epic 0
+
+| Requirement | Story | Coverage |
+|---|---|---|
+| FR-E2E-001 | 0-2, 0-3 | Plugin loads at localhost:8000 |
+| FR-E2E-002 | 0-3 | DOM renders without errors |
+| FR-E2E-003 | 0-3 | No console errors/warnings |
+| FR-E2E-004 | 0-3 | ARIA attributes present and correct |
+| FR-E2E-005 | 0-3, 0.5b | Keyboard navigation functional |
+| FR-E2E-006 | 0-3, 0.5b | Focus management working |
+| FR-E2E-007 | 0-2a, 0-3, 0-4, 0.5a | Game loop runs, character moves, score increments |
+| FR-E2E-008 | 0-2a, 0-3, 0-4, 0.5a | Collision triggers game-over overlay |
+| FR-E2E-009 | 0-3, 0-4, 0.5b | Pause/resume overlay functionality |
+| FR-E2E-010 | 0-4, 0.5c | Variant track and timer testing |
+| NFR-E2E-001 | 0-1 | Docker dev setup with `/app/plugins/subway-scaler` mount |
+| NFR-E2E-002 | 0-2 | Playwright-based test framework |
+| NFR-E2E-003 | 0-1, 0-2 | Tests run in Slopsmith Docker at localhost:8000 |
+| NFR-E2E-004 | 0-4 | Tests complete in < 5 minutes |
+| NFR-E2E-005 | 0-2 | Helper utilities for plugin interactions |
+| NFR-E2E-006 | 0-4 | Machine-readable JSON test results |
+| NFR-E2E-007 | 0-2, 0-3, 0-4 | Screenshot/video capture on failure |
 
