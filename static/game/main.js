@@ -390,6 +390,7 @@ export async function bootstrap(root) {
       scene.setGameStartTime(gameStartTime);
 
       // Start the rendering loop so we can see the initial state
+      let _pausedAt = null;
       const loop = (now) => {
         if (!run) return;
 
@@ -431,10 +432,16 @@ export async function bootstrap(root) {
           return;
         }
 
-        // Freeze scene while paused — keep RAF alive for seamless resume
+        // Freeze scene while paused; accumulate paused duration into gameStartTime on resume
         if (run.state === 'paused') {
+          if (_pausedAt === null) _pausedAt = now;
           rafId = requestAnimationFrame(loop);
           return;
+        }
+        if (_pausedAt !== null) {
+          gameStartTime += now - _pausedAt;
+          scene.setGameStartTime(gameStartTime);
+          _pausedAt = null;
         }
 
         // Update waves and safe zones
