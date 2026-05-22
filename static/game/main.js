@@ -11,6 +11,7 @@ import { laneX } from './TrackSystem.js';
 import { injectTokens } from './ui/tokens.js';
 import { renderSetupScreen } from './ui/setup.js';
 import { OverlayManager } from './ui/overlay.js';
+import { WaveScheduler } from './WaveScheduler.js';
 
 const API = '/api/plugins/subway-scaler';
 const STATIC = '/plugins/subway-scaler/static/game';
@@ -117,6 +118,7 @@ export async function bootstrap(root) {
     if (audio) audio.pause();
     pauseBtn.textContent = 'Resume';
     if (window.__gameState) window.__gameState.session.phase = 'paused';
+    gameClient.pause().catch(() => {});
     overlayMgr.show({ type: 'pause', reason });
   }
 
@@ -127,6 +129,7 @@ export async function bootstrap(root) {
     if (audio) audio.resume();
     pauseBtn.textContent = 'Pause';
     if (window.__gameState) window.__gameState.session.phase = 'playing';
+    gameClient.resume().catch(() => {});
   }
 
   // Overlay manager — wired before game starts so restart/quit work in any phase
@@ -383,10 +386,16 @@ export async function bootstrap(root) {
       });
       setExpected();
 
-      let currentWaves = notesResp.waves || [];
+      const waveScheduler = new WaveScheduler(
+        notesResp.notes,
+        notesResp.timing_params,
+        notesResp.base_fret,
+        notesResp.num_lanes,
+      );
+
       const countdownStart = performance.now();
       // Set a future game start time so waves stay at spawn during countdown
-      let gameStartTime = countdownStart + 3500; 
+      let gameStartTime = countdownStart + 3500;
       scene.setGameStartTime(gameStartTime);
 
       // Start the rendering loop so we can see the initial state
@@ -407,11 +416,6 @@ export async function bootstrap(root) {
           const phaseMap = { running: 'playing', paused: 'paused', succeeded: 'game_over', failed: 'game_over', abandoned: 'game_over' };
           window.__gameState.session.phase = phaseMap[run.state] || 'idle';
           window.__gameState.loop.running = true;
-          // Only update waveCount while game is active; cleanup() resets run to null on the
-          // same tick that triggers the final RAF frame, so guard against both conditions.
-          if (run.state === 'running' && scene) {
-            window.__gameState.scene.waveCount = scene.getWaveCount();
-          }
         }
 
         if (run.state === 'succeeded') {
@@ -444,10 +448,16 @@ export async function bootstrap(root) {
           _pausedAt = null;
         }
 
-        // Update waves and safe zones
-        if (currentWaves.length > 0) {
-          scene.setWaves(currentWaves, now);
-          safeZoneRenderer.update(currentWaves, 0, (track) => laneX(track, notesResp.num_lanes), now, gameStartTime, currentInstrument());
+        const game_now = now - gameStartTime;
+        const speedMultiplier = 1.0; // TODO: wire run.speedMultiplier when available
+        waveScheduler.tick(game_now, speedMultiplier);
+        const waves = waveScheduler.waves;
+
+        scene.setWaves(waves, now);
+        safeZoneRenderer.update(waves, 0, (track) => laneX(track, notesResp.num_lanes), now, gameStartTime, currentInstrument());
+
+        if (window.__gameState) {
+          window.__gameState.scene.waveCount = waves.length;
         }
 
         scene.render(now);
@@ -491,8 +501,8 @@ export async function bootstrap(root) {
               run.cursor = 1 % resp.notes.length;
               setExpected();
             }
-            // Clear waves immediately for visual feedback
-            currentWaves = [];
+            // Reset WaveScheduler to new note sequence; clear visual state
+            if (resp.notes) waveScheduler.reset(resp.notes);
             scene.setWaves([], performance.now());
             safeZoneRenderer.reset();
 
@@ -541,10 +551,6 @@ export async function bootstrap(root) {
         if (pollState.score !== undefined) {
           feedbackEl.textContent = `Score: ${pollState.score}`;
           if (window.__gameState) window.__gameState.score.current = pollState.score;
-        }
-
-        if (pollState.game_state && pollState.game_state.waves) {
-            currentWaves = pollState.game_state.waves;
         }
 
         if (pollState.game_state && pollState.game_state.required_timestamp_ms !== undefined) {

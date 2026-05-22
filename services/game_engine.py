@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 from services.schemas import (
-    Note, CartWave, GameState, Track, SpeedMultiplier, Instrument,
+    Note, GameState, Track, SpeedMultiplier, Instrument,
     VariantTrackSet, SwitchWindow,
 )
 from services.scales import expand
@@ -36,16 +36,11 @@ class GameSession(BaseModel):
     current_note_index: int = 0
     started_at_ms: int = Field(default_factory=lambda: int(time.time() * 1000))
     ended_at_ms: Optional[int] = None
-    next_deadline_ms: int = 0
-    waves: List[CartWave] = []
     base_fret: int = 0
     num_lanes: int = 6
-    # Index into `notes` for the NEXT wave to spawn. Advances per wave
-    # generated, independent of player input — waves come continuously.
-    next_wave_note_index: int = 1
-    total_waves_spawned: int = 0
     total_notes_played: int = 0
     required_timestamp_ms: int = 0
+    paused_at_ms: Optional[int] = None
     # --- Variant switching (008-track-variants) ---
     root_midi: int = 60
     instrument_id: str = "guitar-standard"
@@ -130,30 +125,11 @@ class GameEngine:
         duration_map = {"easy": 4000, "medium": 2500, "hard": 1500}
         base_duration = duration_map.get(difficulty, 2500)
         
-        # Speed to cross 50 units in base_duration ms (with 0.5 factor in frontend)
-        # 50 = duration * speed * 0.5  => speed = 100 / duration
-        base_speed = 100.0 / base_duration
-        
-        first_wave = CartWave(
-            wave_id="w-0",
-            wave_index=0,
-            safe_track=first_safe_track,
-            safe_string=notes[0].string if notes else None,
-            safe_midi=notes[0].midi if notes else None,
-            note_name=notes[0].name if notes else None,
-            spawn_time_ms=0,
-            speed_px_per_ms=base_speed,
-            duration_ms=base_duration
-        )
-        
         session = GameSession(
             scale_id=scale_id,
             difficulty=difficulty,
             notes=notes,
             current_track=start_track,
-            waves=[first_wave],
-            total_waves_spawned=1,
-            next_deadline_ms=base_duration, # T_reach_0
             base_fret=base_fret,
             num_lanes=num_lanes,
             root_midi=root_midi,
@@ -182,11 +158,6 @@ class GameEngine:
         if midi == expected_note.midi:
             session.current_score += 100
             prev_idx = session.current_note_index
-            # Find the wave that was spawned for this note instance to set the next gate.
-            target_wave = next((w for w in session.waves if w.wave_index == session.total_notes_played), None)
-            if target_wave:
-                session.required_timestamp_ms = target_wave.spawn_time_ms + target_wave.duration_ms
-            
             session.total_notes_played += 1
             session.current_note_index = (session.current_note_index + 1) % len(session.notes)
             # Detect completion of an asc+desc octave loop (last index → 0).
@@ -224,91 +195,25 @@ class GameEngine:
                 }
             }
 
+    def pause_session(self, session: GameSession):
+        if session.status != "running":
+            return
+        session.status = "paused"
+        session.paused_at_ms = int(time.time() * 1000)
+
+    def resume_session(self, session: GameSession):
+        if session.status != "paused" or session.paused_at_ms is None:
+            return
+        pause_duration = int(time.time() * 1000) - session.paused_at_ms
+        # Shift started_at_ms forward so game_now = now - started_at_ms
+        # remains equal to what it was at the moment of pause.
+        session.started_at_ms += pause_duration
+        session.paused_at_ms = None
+        session.status = "running"
+
     def fail_session(self, session: GameSession, reason: str):
         session.status = "failed"
         session.ended_at_ms = int(time.time() * 1000)
-
-    # How many milliseconds to keep queued ahead of the current game time.
-    # Frontend polls every 200ms.
-    WAVE_LOOKAHEAD_MS = 10000
-    
-    # Adjusts distance between waves. < 1.0 means closer together / spawn earlier.
-    WAVE_SPACING_FACTOR = 0.4
-
-    def update_session_state(self, session: GameSession):
-        if session.status != "running":
-            return
-        # Top up the wave queue so carts keep coming whether or not the player
-        # plays anything. Each generated wave advances next_wave_note_index
-        # through the scale.
-        if not session.notes:
-            return
-
-        now_ms = int(time.time() * 1000)
-        game_now = now_ms - session.started_at_ms
-
-        # Prune old waves that are far in the past (e.g. 10s past their exit).
-        # This keeps the session.waves list from growing indefinitely.
-        session.waves = [
-            w for w in session.waves 
-            if w.spawn_time_ms + w.duration_ms > game_now - 10000
-        ]
-
-        duration_map = {"easy": 4000, "medium": 2500, "hard": 1500}
-        base_duration = duration_map.get(session.difficulty, 2500)
-        
-        # Continue spawning until we have at least WAVE_LOOKAHEAD_MS in the future.
-        while session.next_deadline_ms < game_now + self.WAVE_LOOKAHEAD_MS:
-            # Bump deadline FIRST so this wave's spawn lands after the prior
-            # wave's reach time.
-            session.next_deadline_ms += (base_duration * self.WAVE_SPACING_FACTOR) / session.speed_multiplier
-            next_note = session.notes[session.next_wave_note_index]
-            next_wave = self.generate_next_wave(session, next_note)
-            session.waves.append(next_wave)
-            session.next_wave_note_index = (session.next_wave_note_index + 1) % len(session.notes)
-            session.total_waves_spawned += 1
-
-    def generate_next_wave(self, session: GameSession, next_note: Note) -> CartWave:
-        # Safe track is now fret-based: fret relative to base_fret
-        safe_track = (next_note.fret - session.base_fret) if next_note.fret is not None else 0
-        # Clamp to available lanes
-        safe_track = max(0, min(session.num_lanes - 1, safe_track))
-        
-        duration_map = {"easy": 4000, "medium": 2500, "hard": 1500}
-        base_duration = duration_map.get(session.difficulty, 2500)
-        
-        # Speed increases with multiplier
-        # 50 = (duration / mult) * (base_speed * mult) * 0.5
-        # So base_speed = 100 / duration
-        base_speed = 100.0 / base_duration
-        current_speed = base_speed * session.speed_multiplier
-        
-        # spawn_time_ms_i = sum(j=0 to i-1) of (base_duration / multiplier_j)
-        # We can calculate this from the last wave's spawn time and multiplier
-        
-        # We need the multiplier that was active when last wave was generated.
-        # This is slightly tricky. Let's assume the gap is based on the current (increased) multiplier.
-        # Actually, to be precise, the gap between w_{i-1} and w_i should be base_duration / mult_{i-1}.
-        
-        # Let's just use the next_deadline_ms which is already t_reach_i.
-        # t_reach_i = session.next_deadline_ms
-        # duration_focus_i = 30 / (current_speed * 0.5) = 60 / current_speed = base_duration / mult
-        # spawn_time_i = t_reach_i - (base_duration / mult)
-        
-        current_focus_duration = base_duration / session.speed_multiplier
-        spawn_time_ms = session.next_deadline_ms - current_focus_duration
-        
-        return CartWave(
-            wave_id=f"w-{session.total_waves_spawned}",
-            wave_index=session.total_waves_spawned,
-            safe_track=safe_track,
-            safe_string=next_note.string,
-            safe_midi=next_note.midi,
-            note_name=next_note.name,
-            spawn_time_ms=int(spawn_time_ms),
-            speed_px_per_ms=current_speed,
-            duration_ms=int(current_focus_duration)
-        )
 
     def get_session(self, session_id: str) -> Optional[GameSession]:
         return self.sessions.get(session_id)
@@ -492,15 +397,10 @@ class GameEngine:
         session.active_window.state = "SWITCHED"
 
         # Reseat session on the new root using the variant's clean geometry.
-        old_base_fret = session.base_fret
         session.root_midi = variant.root_midi
         session.base_fret = variant.base_fret
         session.num_lanes = variant.num_lanes
 
-        # Adjust existing waves to stay on the same absolute frets relative to the new base_fret.
-        fret_diff = old_base_fret - session.base_fret
-        for wave in session.waves:
-            wave.safe_track += fret_diff
         # Rebuild notes for the new root and assign frets within the variant
         # window (so safe_track calculation stays consistent with the rendered
         # tracks). Skip tabulator here — it wraps modulo 12 and would push notes
@@ -523,20 +423,6 @@ class GameEngine:
         
         # Reset speed to difficulty base (multiplier 1.0) to give the player a breather.
         session.speed_multiplier = 1.0
-        
-        # Clear all waves so the new scale starts fresh.
-        now_real = int(time.time() * 1000)
-        game_now = now_real - session.started_at_ms
-        session.waves = []
-        
-        # Start next wave after a small delay (base_duration)
-        duration_map = {"easy": 4000, "medium": 2500, "hard": 1500}
-        base_duration = duration_map.get(session.difficulty, 2500)
-        session.next_deadline_ms = game_now
-
-        # Restart the wave-spawn cursor so upcoming waves match the new scale.
-        # Starting from index 1 because the root (index 0) was just played.
-        session.next_wave_note_index = 1 % len(new_notes) if new_notes else 0
 
         # Finalize variant state.
         variant.state = "SWITCHED"

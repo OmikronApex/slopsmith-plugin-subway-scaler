@@ -118,46 +118,52 @@ describe('Integration — session config → GameState → score (Story 3.8)', (
   });
 
   it('after 3 simulated ticks with correct note detection, GameState.runtime.score equals 300 * difficultyMultiplier', async () => {
-    // Populate session from config
     gameState.session.rootMidi = 60;
     gameState.session.scale = 'major';
     gameState.runtime.phase = PHASES.PLAYING;
 
-    // Cart at z=50 (safe distance from character at z=0; no collision, safe zone active)
-    gameState.scene.carts = [
-      { z: 50, lane: 3, notemidi: 60, safeZoneActive: true, cleared: false },
-    ];
+    // Wave scheduler stub providing a wave matching the detected note
+    const makeWave = () => ({ wave_id: 'w-0', safe_midi: 60, cleared: false, spawn_time_ms: 0, speed_px_per_ms: 0.04, duration_ms: 2500, safe_track: 3 });
+    const waveSchedulerStub = { tick: vi.fn(), waves: [makeWave()] };
+    const gl = new GameLoop({
+      gameState,
+      audioDetector: stubs.audioDetector,
+      cartSystem,
+      difficultyManager,
+      sceneManager: stubs.sceneManager,
+      waveScheduler: waveSchedulerStub,
+    });
 
-    // Audio returns correct note (midi=60) every tick
     stubs.audioDetector.detect.mockResolvedValue({ midi: 60, confidence: 0.95 });
 
-    gameLoop.start();
-    await gameLoop.runOneTick(16);
-    // Replenish the cart for next tick
-    gameState.scene.carts = [{ z: 50, lane: 3, notemidi: 60, safeZoneActive: true, cleared: false }];
-    await gameLoop.runOneTick(32);
-    gameState.scene.carts = [{ z: 50, lane: 3, notemidi: 60, safeZoneActive: true, cleared: false }];
-    await gameLoop.runOneTick(48);
+    gl.start();
+    await gl.runOneTick(16);
+    waveSchedulerStub.waves = [makeWave()];
+    await gl.runOneTick(32);
+    waveSchedulerStub.waves = [makeWave()];
+    await gl.runOneTick(48);
 
     // medium difficulty: 3 * 100 * 1.5 = 450
     expect(gameState.runtime.score).toBe(450);
   });
 
-  it('cart positions in GameState.scene.carts are updated (advanced toward character) each tick', async () => {
+  it('WaveScheduler.tick is called each frame so waves are updated', async () => {
     gameState.runtime.phase = PHASES.PLAYING;
-    gameState.scene.carts = [{ z: 50, lane: 1, notemidi: 99, safeZoneActive: true, cleared: false }];
 
-    gameLoop.start();
-    await gameLoop.runOneTick(16);
+    const waveSchedulerStub = { tick: vi.fn(), waves: [] };
+    const gl = new GameLoop({
+      gameState,
+      audioDetector: stubs.audioDetector,
+      cartSystem,
+      difficultyManager,
+      sceneManager: stubs.sceneManager,
+      waveScheduler: waveSchedulerStub,
+    });
 
-    // Cart should have moved closer (z decreased) OR been removed (if past character)
-    const cartStillPresent = gameState.scene.carts.find(c => c.notemidi === 99);
-    if (cartStillPresent) {
-      expect(cartStillPresent.z).toBeLessThan(50);
-    } else {
-      // Cart was removed after passing character — that's also valid movement
-      expect(gameState.scene.carts.length).toBeLessThanOrEqual(0);
-    }
+    gl.start();
+    await gl.runOneTick(16);
+
+    expect(waveSchedulerStub.tick).toHaveBeenCalled();
   });
 
   it('GameState.runtime.phase remains PHASES.PLAYING across 3 ticks when no collision occurs', async () => {

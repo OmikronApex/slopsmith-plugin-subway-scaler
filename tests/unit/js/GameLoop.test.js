@@ -87,13 +87,23 @@ describe('GameLoop — phase management (Story 3.4)', () => {
     expect(callOrder).toEqual(['detect', 'cartUpdate', 'dmTick', 'render']);
   });
 
-  it('DifficultyManager.tick receives true when detected note matches a safe zone lane this tick', async () => {
-    // Set up a cart whose note matches what audio returns
-    gameState.scene.carts = [{ z: 0, lane: gameState.scene.character.lane, notemidi: 60, safeZoneActive: true, cleared: false }];
+  it('DifficultyManager.tick receives true when detected note matches a wave safe_midi this tick', async () => {
+    const waveSchedulerStub = {
+      tick: vi.fn(),
+      waves: [{ wave_id: 'w-0', safe_midi: 60, cleared: false, spawn_time_ms: 0, speed_px_per_ms: 0.04, duration_ms: 2500, safe_track: 2 }],
+    };
+    const gl = new GameLoop({
+      gameState,
+      audioDetector: stubs.audioDetector,
+      cartSystem: stubs.cartSystem,
+      difficultyManager: stubs.difficultyManager,
+      sceneManager: stubs.sceneManager,
+      waveScheduler: waveSchedulerStub,
+    });
     stubs.audioDetector.detect.mockResolvedValue({ midi: 60, confidence: 0.9 });
 
-    gameLoop.start();
-    await gameLoop.runOneTick(16);
+    gl.start();
+    await gl.runOneTick(16);
 
     expect(stubs.difficultyManager.tick).toHaveBeenCalledWith(true, expect.anything());
   });
@@ -192,24 +202,44 @@ describe('GameLoop — tutorial hint (Story 3.5)', () => {
   });
 
   it('after first correct note is detected, tutorial state is cleared/hidden', async () => {
+    const waveSchedulerStub = {
+      tick: vi.fn(),
+      waves: [{ wave_id: 'w-0', safe_midi: 60, cleared: false, spawn_time_ms: 0, speed_px_per_ms: 0.04, duration_ms: 2500, safe_track: 2 }],
+    };
+    const gl = new GameLoop({
+      gameState,
+      audioDetector: stubs.audioDetector,
+      cartSystem: stubs.cartSystem,
+      difficultyManager: stubs.difficultyManager,
+      sceneManager: stubs.sceneManager,
+      waveScheduler: waveSchedulerStub,
+    });
     stubs.audioDetector.detect.mockResolvedValue({ midi: 60, confidence: 0.9 });
-    gameState.scene.carts = [{ z: 0, lane: gameState.scene.character.lane, notemidi: 60, safeZoneActive: true, cleared: false }];
-    gameLoop.start();
-    await gameLoop.runOneTick(16);
-    const tutorialActive = gameState.runtime.tutorialActive ?? gameLoop.tutorialActive;
+    gl.start();
+    await gl.runOneTick(16);
+    const tutorialActive = gameState.runtime.tutorialActive ?? gl.tutorialActive;
     expect(tutorialActive).toBeFalsy();
   });
 
   it('tutorial never reappears after first correct note in a session', async () => {
+    const waveSchedulerStub = {
+      tick: vi.fn(),
+      waves: [{ wave_id: 'w-0', safe_midi: 60, cleared: false, spawn_time_ms: 0, speed_px_per_ms: 0.04, duration_ms: 2500, safe_track: 2 }],
+    };
+    const gl = new GameLoop({
+      gameState,
+      audioDetector: stubs.audioDetector,
+      cartSystem: stubs.cartSystem,
+      difficultyManager: stubs.difficultyManager,
+      sceneManager: stubs.sceneManager,
+      waveScheduler: waveSchedulerStub,
+    });
     stubs.audioDetector.detect.mockResolvedValue({ midi: 60, confidence: 0.9 });
-    gameState.scene.carts = [{ z: 0, lane: gameState.scene.character.lane, notemidi: 60, safeZoneActive: true, cleared: false }];
-    gameLoop.start();
-    // First correct note — tutorial dismissed
-    await gameLoop.runOneTick(16);
-    // Additional ticks
-    await gameLoop.runOneTick(32);
-    await gameLoop.runOneTick(48);
-    const tutorialActive = gameState.runtime.tutorialActive ?? gameLoop.tutorialActive;
+    gl.start();
+    await gl.runOneTick(16);
+    await gl.runOneTick(32);
+    await gl.runOneTick(48);
+    const tutorialActive = gameState.runtime.tutorialActive ?? gl.tutorialActive;
     expect(tutorialActive).toBeFalsy();
   });
 });

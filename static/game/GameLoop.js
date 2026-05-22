@@ -2,14 +2,17 @@ import { PHASES } from './GameState.js';
 import { CartSystem } from './CartSystem.js';
 
 export class GameLoop {
-  constructor({ gameState, audioDetector, cartSystem, difficultyManager, sceneManager }) {
+  constructor({ gameState, audioDetector, cartSystem, difficultyManager, sceneManager, waveScheduler }) {
     this._gameState = gameState;
     this._audioDetector = audioDetector;
     this._cartSystem = cartSystem;
     this._dm = difficultyManager;
     this._sceneManager = sceneManager;
+    this._waveScheduler = waveScheduler ?? null;
     this._running = false;
     this._lastTime = 0;
+    this._gameStartTime = 0;
+    this._pausedAt = null;
     this._tutorialDone = false;
     this.tutorialActive = false;
     this.baseSpeed = 0;
@@ -17,7 +20,7 @@ export class GameLoop {
     this.onVariantAccepted = null;
   }
 
-  start() {
+  start(gameStartTime = 0) {
     this._gameState.runtime.phase = PHASES.PLAYING;
     this.baseSpeed = this._gameState.runtime.speed;
     this.firstWaveSpeed = this.baseSpeed * 0.5;
@@ -26,6 +29,8 @@ export class GameLoop {
     this._gameState.runtime.tutorialActive = true;
     this._running = true;
     this._lastTime = 0;
+    this._gameStartTime = gameStartTime;
+    this._pausedAt = null;
     try {
       CartSystem.init(this._gameState);
     } catch (err) {
@@ -55,7 +60,27 @@ export class GameLoop {
       return;
     }
 
+    if (phase === PHASES.PAUSED) {
+      if (this._pausedAt === null) this._pausedAt = timestamp;
+      return;
+    }
+
     if (phase === PHASES.PLAYING) {
+      // JS-local pause tracking: detect resume
+      if (this._pausedAt !== null) {
+        this._gameStartTime += timestamp - this._pausedAt;
+        this._pausedAt = null;
+      }
+
+      // Tick WaveScheduler each frame
+      const game_now = timestamp - this._gameStartTime;
+      const speedMultiplier = this._gameState.runtime.speedMultiplier ?? 1.0;
+      let waves = [];
+      if (this._waveScheduler) {
+        this._waveScheduler.tick(game_now, speedMultiplier);
+        waves = this._waveScheduler.waves;
+      }
+
       try {
         const result = await this._audioDetector.detect();
         if (!result) return;
@@ -70,15 +95,13 @@ export class GameLoop {
         }
 
         // noteDetected: check before CartSystem processes (stub-safe pre-check)
-        const noteDetected = this._gameState.scene?.carts?.some(
-          c => !c.cleared && c.safeZoneActive && c.notemidi === result.midi,
-        ) || false;
+        const noteDetected = waves.some(w => !w.cleared && w.safe_midi === result.midi) || false;
 
         // CartSystem: use injected instance if it has update(), else fall back to static
         const cs = (typeof this._cartSystem?.update === 'function')
           ? this._cartSystem
           : CartSystem;
-        cs.update(deltaTime, this._gameState);
+        cs.update(game_now, this._gameState, waves);
 
         // Tutorial lifecycle: clear on first correct note
         if (!this._tutorialDone && noteDetected) {

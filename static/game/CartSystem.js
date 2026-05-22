@@ -1,91 +1,45 @@
 import { PHASES } from './GameState.js';
+import { SPAWN_Z } from './TrackSystem.js';
 
-const COLLISION_THRESHOLD = 0.5;
-const WAVE_LOOKAHEAD_MS = 10000;
-const WAVE_SPACING_FACTOR = 0.4;
-const BASE_DURATION = { easy: 4000, medium: 2500, hard: 1500 };
-const BASE_SPEED = { easy: 10, medium: 16, hard: 25 };
+const COLLISION_THRESHOLD = 3.0;
 
 export class CartSystem {
-  static _nextDeadlineMs = 0;
-  static _nextWaveNoteIndex = 1;
-  static _totalWavesSpawned = 0;
-
   static init(gameState) {
-    CartSystem._nextDeadlineMs = Date.now();
-    CartSystem._nextWaveNoteIndex = 1;
-    CartSystem._totalWavesSpawned = 0;
+    // Wave queue is now owned by WaveScheduler; nothing to initialise here.
   }
 
-  static update(deltaTime, gameState) {
-    const character = gameState.scene.character;
-    const carts = gameState.scene.carts;
+  static update(game_now, gameState, waves) {
+    if (!waves || waves.length === 0) return;
 
-    if (character.lane !== undefined) {
-      for (const cart of carts) {
-        if (!cart.cleared && cart.lane === character.lane && Math.abs(cart.z - character.z) < COLLISION_THRESHOLD) {
+    const character = gameState.scene.character;
+    const characterZ = character.z ?? 0;
+    const characterLane = character.lane;
+
+    for (const wave of waves) {
+      if (wave.cleared) continue;
+      const elapsed = Math.max(0, game_now - wave.spawn_time_ms);
+      const z = SPAWN_Z + elapsed * wave.speed_px_per_ms * 0.5;
+
+      if (Math.abs(z - characterZ) < COLLISION_THRESHOLD) {
+        if (characterLane !== undefined && characterLane !== wave.safe_track) {
           gameState.runtime.phase = PHASES.GAME_OVER;
-          break;
+          return;
         }
       }
-    }
-
-    for (const cart of carts) {
-      cart.z -= gameState.runtime.speed * deltaTime;
     }
 
     const currentNote = gameState.runtime.currentNote;
     if (currentNote) {
-      for (const cart of carts) {
-        if (!cart.cleared && cart.safeZoneActive && cart.notemidi === currentNote.midi) {
+      for (const wave of waves) {
+        if (!wave.cleared && wave.safe_midi === currentNote.midi) {
           gameState.runtime.score += 100 * CartSystem._difficultyMultiplier(gameState.session.difficulty);
-          cart.cleared = true;
+          wave.cleared = true;
         }
       }
     }
-
-    const now = Date.now();
-    gameState.scene.carts = carts.filter(c => {
-      if (c.z < character.z) return false;
-      if (c.spawnTime != null && c.duration != null && c.spawnTime + c.duration <= now - 10000) return false;
-      return true;
-    });
-
-    CartSystem._topUpWaveQueue(gameState, now);
   }
 
   static _difficultyMultiplier(difficulty) {
     return { easy: 1, medium: 1.5, hard: 2 }[difficulty] ?? 1;
-  }
-
-  static _topUpWaveQueue(gameState, now) {
-    const notes = gameState.session.notes;
-    if (!notes || notes.length === 0) return;
-    const diff = gameState.session.difficulty ?? 'medium';
-    const baseDuration = BASE_DURATION[diff] ?? 2500;
-    const baseSpeed = BASE_SPEED[diff] ?? 16;
-    const speedMultiplier = Math.max(gameState.runtime.speed / baseSpeed, 0.1);
-
-    while (CartSystem._nextDeadlineMs < now + WAVE_LOOKAHEAD_MS) {
-      const gap = baseDuration * WAVE_SPACING_FACTOR / speedMultiplier;
-      CartSystem._nextDeadlineMs += gap;
-      const note = notes[CartSystem._nextWaveNoteIndex];
-      const cart = CartSystem._buildCart(note, CartSystem._nextDeadlineMs, gameState, baseDuration);
-      gameState.scene.carts.push(cart);
-      CartSystem._nextWaveNoteIndex = (CartSystem._nextWaveNoteIndex + 1) % notes.length;
-      CartSystem._totalWavesSpawned++;
-    }
-  }
-
-  static _buildCart(note, deadlineMs, gameState, baseDuration) {
-    return {
-      z: 100,
-      lane: note.lane ?? 0,
-      notemidi: note.midi,
-      cleared: false,
-      safeZoneActive: true,
-      spawnTime: deadlineMs,
-      duration: baseDuration,
-    };
   }
 }

@@ -135,6 +135,15 @@ async def start_game(payload: dict):
         speed_multiplier=SpeedMultiplier(current_value=session.speed_multiplier)
     )
     
+    duration_map = {"easy": 4000, "medium": 2500, "hard": 1500}
+    base_duration_ms = duration_map.get(session.difficulty, 2500)
+    timing_params = {
+        "base_duration_ms": base_duration_ms,
+        "wave_spacing_factor": 0.4,
+        "wave_lookahead_ms": 10000,
+        "speed_increment_per_note": 0.05,
+    }
+
     return {
         "session_id": session.session_id,
         "initial_track": session.current_track,
@@ -142,7 +151,7 @@ async def start_game(payload: dict):
         "num_lanes": session.num_lanes,
         "notes": session.notes,
         "root_note": session.notes[0] if session.notes else None,
-        "waves": session.waves,
+        "timing_params": timing_params,
         "game_state": game_state
     }
 
@@ -172,9 +181,7 @@ async def get_session_route(session_id: str):
     session = engine.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-        
-    engine.update_session_state(session)
-    
+
     track = Track(
         length=20.0,
         spawn_z=-50.0,
@@ -189,15 +196,11 @@ async def get_session_route(session_id: str):
         speed_multiplier=SpeedMultiplier(current_value=session.speed_multiplier)
     )
     
-    # Return all waves so frontend can render them
-    waves = session.waves
-    
     return {
         "session_id": session.session_id,
         "status": session.status,
         "game_state": {
             **game_state.model_dump(),
-            "waves": waves,
             "required_timestamp_ms": session.required_timestamp_ms,
         },
         "score": session.current_score,
@@ -208,6 +211,24 @@ async def get_session_route(session_id: str):
         "active_variant": session.active_variant.model_dump() if session.active_variant else None,
         "active_window": session.active_window.model_dump() if session.active_window else None,
     }
+
+@router.post("/{session_id}/pause")
+async def pause_session_route(session_id: str):
+    session = engine.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    engine.pause_session(session)
+    return {"status": session.status}
+
+
+@router.post("/{session_id}/resume")
+async def resume_session_route(session_id: str):
+    session = engine.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    engine.resume_session(session)
+    return {"status": session.status}
+
 
 # -----------------------------------------------------------------------------
 # Variant switching (feature 008-track-variants)
