@@ -174,6 +174,43 @@ describe('OverlayManager — ARIA roles (Story 4.4)', () => {
     const handled = preventDefault.mock.calls.length > 0 || overlay.focusTrapActive;
     expect(handled).toBe(true);
   });
+
+  it('Tab from last focusable element wraps to first (focus trap cycle)', () => {
+    overlay.show({ type: 'pause' });
+    // Pause overlay: resumeButton, quitLink — set activeElement to last (quitLink)
+    mockDocument.activeElement = overlay.quitLink;
+    const preventDefault = vi.fn();
+    overlay.onKeyDown?.({ key: 'Tab', preventDefault, shiftKey: false });
+    expect(overlay.resumeButton.focus).toHaveBeenCalled();
+  });
+
+  it('Shift+Tab from first focusable element wraps to last (focus trap cycle)', () => {
+    overlay.show({ type: 'pause' });
+    // Set activeElement to first (resumeButton)
+    mockDocument.activeElement = overlay.resumeButton;
+    const preventDefault = vi.fn();
+    overlay.onKeyDown?.({ key: 'Tab', preventDefault, shiftKey: true });
+    expect(overlay.quitLink.focus).toHaveBeenCalled();
+  });
+
+  it('hide() restores focus to previously-focused element', () => {
+    const prevEl = { focus: vi.fn(), isConnected: true };
+    mockDocument.activeElement = prevEl;
+    overlay.show({ type: 'pause' });
+    overlay.hide();
+    expect(prevEl.focus).toHaveBeenCalled();
+  });
+
+  it('hide() falls back to document.body when previous element is disconnected at close time', () => {
+    // isConnected=true at show() so element is stored; becomes false before hide()
+    const prevEl = { focus: vi.fn(), isConnected: true };
+    mockDocument.activeElement = prevEl;
+    overlay.show({ type: 'pause' });
+    prevEl.isConnected = false;
+    overlay.hide();
+    expect(prevEl.focus).not.toHaveBeenCalled();
+    expect(mockDocument.body.focus).toHaveBeenCalled();
+  });
 });
 
 // ─── Story 4.4: Keyboard navigation ──────────────────────────────────────────

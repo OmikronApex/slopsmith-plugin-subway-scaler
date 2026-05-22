@@ -110,7 +110,11 @@ class Overlay {
     el.classList.add('overlay--exiting');
 
     if (this._previousFocus && this._previousFocus.focus) {
-      this._previousFocus.focus();
+      if (this._previousFocus.isConnected !== false) {
+        this._previousFocus.focus();
+      } else if (typeof document !== 'undefined' && document.body && document.body.focus) {
+        document.body.focus();
+      }
     }
 
     // Cancel any previous hide in progress before starting a new one
