@@ -1,5 +1,5 @@
 generated: "2026-05-21"
-last_updated: "2026-05-22"  # 4-4 moved to review
+last_updated: "2026-05-23"  # fix: 1-5/1-6/1-7 marked done
 project: "slopsmith-plugin-subway-scaler"
 project_key: "SS"
 tracking_system: "local"
@@ -28,9 +28,9 @@ development_status:
   1-2-implement-gamestate-module-with-phases-constants: review
   1-3-implement-design-token-system: review
   1-4-implement-game-session-config-endpoint: review
-  1-5-vendor-font-and-setup-css-foundation: in-progress
-  1-6-session-setup-ui-and-settings-persistence: in-progress
-  1-7-handle-session-config-fetch-failure-at-game-start: in-progress
+  1-5-vendor-font-and-setup-css-foundation: done
+  1-6-session-setup-ui-and-settings-persistence: done
+  1-7-handle-session-config-fetch-failure-at-game-start: done
   1-8-implement-ux-design-polish-and-mockup-styling: review
 
   # Epic 2 — Core Game Modules
@@ -53,10 +53,14 @@ development_status:
   # Epic 4 — Session UX & Accessibility
   epic-4: in-progress
   4-1-implement-overlay-container-with-rgb-shift-glitch-animation: done
+  4-T1-strip-python-wave-queue-and-expose-timing-params: review
+  4-T2-implement-wavescheduler-js: review
+  4-T3-rework-cartsystem-and-safezonrenderer-to-consume-wavescheduler: review
+  4-T4-wire-wavescheduler-into-gameloop-and-simplify-main: review
   4-2-implement-pause-overlay: review
   4-3-implement-game-over-overlay: review
   4-4-implement-aria-roles-and-keyboard-navigation: review
-  4-5-implement-touch-targets-and-final-accessibility-audit: ready-for-dev
+  4-5-implement-touch-targets-and-final-accessibility-audit: review
 
   # Epic 5 — Variant Track System
   epic-5: backlog

@@ -1,4 +1,10 @@
 // ===== COLORS EXPORT (JS hex integers for Three.js) =====
+// WCAG 2.1 AA contrast audit (verified 2026-05-23, formula: (L1+0.05)/(L2+0.05)):
+//   ACCENT (#FFB800) on BG_VOID (#0D0D1A):    11.15:1 — pass AA+AAA (≥4.5:1)
+//   TEXT_PRIMARY (#E8E8F0) on BG_STAGE (#1A1A2E): 13.97:1 — pass AA+AAA
+//   TEXT_PRIMARY (#E8E8F0) on BG_VOID (#0D0D1A):  15.77:1 — pass AA+AAA
+//   ACCENT focus outline on BG_VOID:           11.15:1 — pass (≥3:1 required)
+//   ACCENT on BG_NEAR (#252538):               8.04:1  — pass AA+AAA
 export const COLORS = {
   // Night City Palette (7 colors)
   BG_VOID:       0x0D0D1A,
