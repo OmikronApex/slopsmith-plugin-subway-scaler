@@ -29,8 +29,7 @@ def _play_loops(client, session_id, loops=2):
             assert r.status_code == 200
             res = r.json()
             assert res["success"], res.get("error")
-            # Advance timing to satisfy the gate
-            t = res["game_state"]["required_timestamp_ms"] + 1
+            t += 1
 
 
 def test_full_variant_accept_flow_via_http(client):

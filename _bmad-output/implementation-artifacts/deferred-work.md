@@ -46,6 +46,13 @@
 
 - AC-1 says constructor sets `gameState.runtime.speed` but implementation uses `init(gameState)`. AC-1 is ambiguous; Dev Notes API spec defines `init()` as the correct call. Clarify AC-1 wording in next story review or architecture doc.
 
+## Deferred from: code review of 4-T1-strip-python-wave-queue-and-expose-timing-params (2026-05-23)
+
+- `timing_params` constants (`wave_spacing_factor: 0.4`, `speed_increment_per_note: 0.05`) hardcoded in `game_router.py` with no link to `game_engine.py`'s `speed_multiplier *= 1.05` — silent drift risk if engine changes. Consider extracting shared constants.
+- `cleanup_sessions` TTL calculation uses `now_ms - sess.started_at_ms`; `resume_session` shifts `started_at_ms` forward by pause duration, so very long pauses make a session appear younger than its wall-clock age, potentially escaping eviction.
+- `fail_session` sets `status = "failed"` unconditionally with no status guard — pre-existing, minor.
+- Contract test `test_game_start.py` hardcodes `base_duration_ms == 4000` for easy difficulty without asserting which difficulty the session was created with — minor test fragility.
+
 ## Deferred from: code review of 4-2-implement-pause-overlay (2026-05-22)
 
 - W1 — `_pausedAt` set to rAF `now` (one frame after `run.pause()`) → tiny under-compensation of gameStartTime shift per pause. Pre-existing minor timing drift; cosmetic at normal framerates.

@@ -39,7 +39,6 @@ class GameSession(BaseModel):
     base_fret: int = 0
     num_lanes: int = 6
     total_notes_played: int = 0
-    required_timestamp_ms: int = 0
     paused_at_ms: Optional[int] = None
     # --- Variant switching (008-track-variants) ---
     root_midi: int = 60
@@ -147,13 +146,6 @@ class GameEngine:
         if session.status != "running":
             return {"success": False, "error": "game_not_running"}
             
-        # Check deadline: removed as failure should only occur on collision with a cart.
-        # We still keep next_deadline_ms internally for wave spacing.
-        pass
-
-        if timing_ms < session.required_timestamp_ms:
-            return {"success": False, "error": "too_early"}
-
         expected_note = session.notes[session.current_note_index]
         if midi == expected_note.midi:
             session.current_score += 100
@@ -167,11 +159,7 @@ class GameEngine:
             # Difficulty scaling.
             session.speed_multiplier *= 1.05  # 5% increase per correct note
 
-            # Move character to the lane that matches the note just played
-            # (its fret offset within the current track window). Wave spawning
-            # is now driven independently by update_session_state, so no waves
-            # are appended here and the wave queue keeps flowing regardless of
-            # player input.
+            # Move character to the lane matching the note just played.
             if expected_note.fret is not None:
                 target = max(0, min(session.num_lanes - 1, expected_note.fret - session.base_fret))
                 session.current_track = target
@@ -182,7 +170,6 @@ class GameEngine:
                     "status": session.status,
                     "score": session.current_score,
                     "current_track": session.current_track,
-                    "required_timestamp_ms": session.required_timestamp_ms,
                 },
             }
         else:
@@ -417,7 +404,6 @@ class GameEngine:
         session.notes = new_notes
         session.current_note_index = 1 % len(new_notes) if new_notes else 0
         session.total_notes_played = 1
-        session.required_timestamp_ms = 0 # Allow next note immediately after switch
         session.current_track = variant.base_lane
         session.octave_loops_completed = 0
         
@@ -446,7 +432,6 @@ class GameEngine:
             "base_fret": session.base_fret,
             "num_lanes": session.num_lanes,
             "notes": [n.model_dump() for n in session.notes],
-            "required_timestamp_ms": session.required_timestamp_ms,
         }
 
     def timeout_variant(self, session_id: str, now_ms: Optional[int] = None) -> dict:

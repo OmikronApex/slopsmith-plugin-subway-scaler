@@ -1,6 +1,6 @@
 # Story 4-T1: Strip Python Wave Queue and Expose timing_params
 
-**Status:** review
+**Status:** done
 
 **Epic:** 4 — Session UX & Accessibility
 **Story ID:** 4-T1
@@ -115,6 +115,19 @@ All tests in `tests/` pass after this change. Tests that assert on `session.wave
   - [ ] `rtk grep -r "waves\|update_session_state\|generate_next_wave\|next_deadline\|total_waves_spawned" tests/` — list affected test files
   - [ ] For each affected test: delete the test if it exclusively tests wave queue behaviour; otherwise remove only the wave-related assertions
   - [ ] Run `rtk pytest tests/` — all must pass
+
+---
+
+### Review Findings
+
+- [x] [Review][Decision→Patch] Removed `required_timestamp_ms` entirely — field, gate check, all API responses, and frontend reads deleted; `requiredTimestamp` gate in main.js removed [services/game_engine.py, services/game_router.py, static/game/main.js, tests/integration/test_variant_flow.py]
+- [x] [Review][Patch] Deleted `CartWave` class from schemas.py — nothing imported it [services/schemas.py]
+- [x] [Review][Patch] Removed stale comment referencing deleted `update_session_state` in game_engine.py [services/game_engine.py]
+- [x] [Review][Patch] Removed stale comment referencing deleted `update_session_state` in test_game_play_note.py [tests/contract/test_game_play_note.py]
+- [x] [Review][Defer] `timing_params` constants hardcoded in router not linked to engine's `speed_multiplier *= 1.05` (0.05 == 1.05-1 but no shared constant); silent drift risk if engine changes [services/game_router.py] — deferred, maintenance concern
+- [x] [Review][Defer] `cleanup_sessions` TTL defeated by long pauses — `resume_session` shifts `started_at_ms` forward, making session appear younger; very long pauses can escape eviction [services/game_engine.py] — deferred, edge case for game use
+- [x] [Review][Defer] `fail_session` has no status guard — pre-existing, not introduced by this diff [services/game_engine.py] — deferred, pre-existing
+- [x] [Review][Defer] Contract test hardcodes `base_duration_ms==4000` without asserting session difficulty — minor test fragility [tests/contract/test_game_start.py] — deferred, minor test quality
 
 ---
 

@@ -292,7 +292,6 @@ export async function bootstrap(root) {
   // shownVariantId tracks which variant we've already rendered in the scene.
   let proposePending = false;
   let timeoutPending = false;
-  let requiredTimestamp = 0;
   let shownVariantId = null;
   let activeVariant = null; // last seen from polling
   let activeWindow = null;
@@ -519,9 +518,6 @@ export async function bootstrap(root) {
           const resp = await gameClient.acceptVariant(det.note.midi);
           if (resp && resp.success) {
             scene.acceptVariantTracks({ num_lanes: resp.num_lanes, base_fret: resp.base_fret });
-            if (resp.required_timestamp_ms !== undefined) {
-              requiredTimestamp = resp.required_timestamp_ms;
-            }
             if (run && resp.notes) {
               run.sequence = resp.notes;
               run.cursor = 1 % resp.notes.length;
@@ -540,19 +536,11 @@ export async function bootstrap(root) {
           }
         }
 
-        if (det && det.note && performance.now() - gameStartTime < requiredTimestamp) {
-          feedbackEl.textContent = 'Too early!';
-          return;
-        }
-
         const result = run.onDetection(det);
         if (result === 'accepted') {
           // Sync with backend
           const playResult = await gameClient.playNote(det.note.midi, performance.now() - run.startedAt);
           if (playResult && playResult.success) {
-            if (playResult.game_state && playResult.game_state.required_timestamp_ms !== undefined) {
-              requiredTimestamp = playResult.game_state.required_timestamp_ms;
-            }
             if (playResult.game_state && playResult.game_state.current_track !== undefined) {
               scene.moveToTrack(playResult.game_state.current_track);
             }
@@ -577,10 +565,6 @@ export async function bootstrap(root) {
         if (pollState.score !== undefined) {
           feedbackEl.textContent = `Score: ${pollState.score}`;
           if (window.__gameState) window.__gameState.score.current = pollState.score;
-        }
-
-        if (pollState.game_state && pollState.game_state.required_timestamp_ms !== undefined) {
-            requiredTimestamp = pollState.game_state.required_timestamp_ms;
         }
 
         if (pollState.status === 'failed') {

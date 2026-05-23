@@ -1,13 +1,12 @@
 /**
- * Epic 2: CartSystem & DifficultyManager observable behavior (Story 0.5a)
+ * Epic 2: Wave spawning and collision observable behavior (Story 0.5a)
  *
  * Tests what is observable via window.__gameState:
  *   - waveCount (mirrored from SceneManager.activeWaves.size) confirms waves spawn
  *   - gameOver.isGameOver / gameOver.reason confirm collision state is correct
  *
- * Note: DifficultyManager.runtime.speed is internal and not mirrored to __gameState.
- * Its effect (speed increase on correct notes) requires WAV injection to test and
- * is deferred to epic3-score.spec.ts / audio-injection.spec.ts.
+ * Wave scheduling and difficulty scaling are now owned by WaveScheduler.js and
+ * main.js (formerly CartSystem.js / DifficultyManager.js, which are removed).
  *
  * Chromium only: fake mic device required for game start.
  */
@@ -19,7 +18,7 @@ const ROOT = '#subway-scaler-root';
 test.skip(({ browserName }) => browserName !== 'chromium',
   'mic mock requires Chromium fake device flag');
 
-// ─── Story 2.2 — CartSystem wave spawning ────────────────────────────────────
+// ─── Story 2.2 — Wave spawning (WaveScheduler) ───────────────────────────────
 
 test.describe('Epic 2: wave spawning (Story 2.2)', () => {
   test('waveCount becomes > 0 within 10s of game start (waves are spawning)', async ({ gamePage }) => {
@@ -49,7 +48,7 @@ test.describe('Epic 2: wave spawning (Story 2.2)', () => {
   });
 });
 
-// ─── Story 2.2 — Collision detection (CartSystem) ────────────────────────────
+// ─── Story 2.2 — Collision detection ─────────────────────────────────────────
 //
 // NOTE: cleanup() resets gameOver.isGameOver = false immediately after setting it to true
 // (same synchronous call chain as run.state = 'failed'). Playwright's polling never sees
@@ -83,7 +82,7 @@ test.describe('Epic 2: collision detection (Story 2.2)', () => {
   });
 });
 
-// ─── Story 2.3 — DifficultyManager baseline ──────────────────────────────────
+// ─── Story 2.3 — Difficulty / speed baseline ─────────────────────────────────
 
 test.describe('Epic 2: difficulty / session persistence (Story 2.3)', () => {
   test('frameCount keeps increasing while game is playing (rendering loop alive)', async ({ gamePage }) => {

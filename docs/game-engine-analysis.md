@@ -2,6 +2,8 @@
 
 _Generated for Epic 2 (Game Engine Migration). Stories 2.2 and 2.3 must read this before writing any code._
 
+> **⚠️ Architecture note (2026-05-23):** `CartSystem.js`, `GameLoop.js`, `DifficultyManager.js`, and `ui/score-display.js` have been removed. Wave scheduling migrated to `WaveScheduler.js` (owned by `main.js`). Speed scaling is applied in `game_engine.py` (`speed_multiplier *= 1.05`) and exposed via `timing_params` at session start. References to those removed modules below reflect the original design intent and are no longer accurate.
+
 ---
 
 ## 1. Module-Level Constants

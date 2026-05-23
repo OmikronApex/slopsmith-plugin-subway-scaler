@@ -199,10 +199,7 @@ async def get_session_route(session_id: str):
     return {
         "session_id": session.session_id,
         "status": session.status,
-        "game_state": {
-            **game_state.model_dump(),
-            "required_timestamp_ms": session.required_timestamp_ms,
-        },
+        "game_state": game_state.model_dump(),
         "score": session.current_score,
         "current_note_index": session.current_note_index,
         "next_expected_note": session.notes[session.current_note_index] if session.notes else None,
