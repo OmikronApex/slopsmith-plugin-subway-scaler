@@ -16,34 +16,35 @@ def _start(client, **kwargs):
     return r.json()
 
 
-def _play_loops(client, session_id, loops=2):
-    """Play full asc+desc octave loops to advance the milestone counter."""
+def _play_passes(client, session_id, passes=3):
+    """Play enough notes to complete N half-cycle passes (ascending or descending)."""
     from services.game_router import engine
     sess = engine.get_session(session_id)
-    n = len(sess.notes)
     t = 0
-    for _ in range(loops):
-        for _ in range(n):
-            expected = sess.notes[sess.current_note_index].midi
-            r = client.post(f"{BASE}/{session_id}/play-note", json={"midi": expected, "timing_ms": t})
-            assert r.status_code == 200
-            res = r.json()
-            assert res["success"], res.get("error")
-            t += 1
+    completed = 0
+    while completed < passes:
+        expected = sess.notes[sess.current_note_index].midi
+        r = client.post(f"{BASE}/{session_id}/play-note", json={"midi": expected, "timing_ms": t})
+        assert r.status_code == 200
+        res = r.json()
+        assert res["success"], res.get("error")
+        t += 1
+        # Re-read pass counter from session
+        completed = sess.scale_passes_completed
 
 
 def test_full_variant_accept_flow_via_http(client):
-    """Start → play 2 octave loops → propose → accept → session reseats on new root."""
+    """Start → play 3 passes → propose → accept → session reseats on new root."""
     s = _start(client)
     sid = s["session_id"]
     original_root = 60
     assert s["notes"][0]["midi"] == original_root
 
-    _play_loops(client, sid, loops=2)
+    _play_passes(client, sid, passes=3)
 
     # GET session should reflect the milestone counter.
     state = client.get(f"{BASE}/{sid}").json()
-    assert state["octave_loops_completed"] >= 2
+    assert state["scale_passes_completed"] >= 3
     assert state["active_variant"] is None
 
     # Propose: should succeed.
@@ -51,8 +52,14 @@ def test_full_variant_accept_flow_via_http(client):
     assert propose["success"] is True
     new_root = propose["variant"]["root_midi"]
     side = propose["variant"]["side"]
-    expected_shift = 5 if side == "RIGHT" else 2
-    assert abs(new_root - original_root) == expected_shift
+    # RIGHT: highest_note + 2; LEFT: root - 2
+    from services.game_router import engine
+    sess = engine.get_session(sid)
+    if side == "RIGHT":
+        expected_root = max(n.midi for n in sess.notes) + 2
+    else:
+        expected_root = original_root - 2
+    assert new_root == expected_root
 
     # Poll exposes the active variant.
     state2 = client.get(f"{BASE}/{sid}").json()
@@ -77,10 +84,10 @@ def test_full_variant_accept_flow_via_http(client):
 
 
 def test_full_variant_timeout_flow_via_http(client):
-    """Start → loops → propose → no accept → timeout → state cleared."""
+    """Start → 3 passes → propose → no accept → timeout → state cleared."""
     s = _start(client)
     sid = s["session_id"]
-    _play_loops(client, sid, loops=2)
+    _play_passes(client, sid, passes=3)
 
     propose = client.post(f"{BASE}/{sid}/variant/propose", json={"now_ms": 0}).json()
     deadline = propose["window"]["deadline_ms"]
@@ -91,25 +98,26 @@ def test_full_variant_timeout_flow_via_http(client):
     state = client.get(f"{BASE}/{sid}").json()
     assert state["active_variant"] is None
     assert state["active_window"] is None
-    # Loop counter resets on timeout so the player must earn the next offer
-    # (prevents the camera jerking right back into another variant on the
-    # opposite side immediately after the first one fades out).
-    assert state["octave_loops_completed"] == 0
+    # Pass counter resets on timeout so the player must earn 3 more half-cycles.
+    assert state["scale_passes_completed"] == 0
 
 
 def test_consecutive_variants_alternate_sides_via_http(client):
-    """First variant on one side; after timeout, next variant on the opposite side."""
+    """First variant direction driven by last pass; second variant is opposite after 3 more passes."""
+    from services.game_router import engine
     s = _start(client)
     sid = s["session_id"]
-    _play_loops(client, sid, loops=2)
+    _play_passes(client, sid, passes=3)
 
     p1 = client.post(f"{BASE}/{sid}/variant/propose", json={"now_ms": 0}).json()
+    assert p1["success"] is True
     side1 = p1["variant"]["side"]
     client.post(f"{BASE}/{sid}/variant/timeout", json={"now_ms": p1["window"]["deadline_ms"] + 1})
 
-    # Force milestone again for second variant.
-    from services.game_router import engine
-    engine.get_session(sid).octave_loops_completed = 2
+    # Force second milestone with direction opposite to first.
+    sess = engine.get_session(sid)
+    sess.scale_passes_completed = 3
+    sess.last_pass_direction = "DOWN" if side1 == "RIGHT" else "UP"
 
     p2 = client.post(f"{BASE}/{sid}/variant/propose", json={"now_ms": 10000}).json()
     assert p2["success"] is True

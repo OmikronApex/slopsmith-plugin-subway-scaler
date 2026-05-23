@@ -43,6 +43,6 @@ def test_invalid_root(client):
 
 
 def test_invalid_octaves(client):
-    r = client.get("/api/plugins/subway-scaler/scales/major/notes", params={"root_midi": 60, "octaves": 3})
+    r = client.get("/api/plugins/subway-scaler/scales/major/notes", params={"root_midi": 60, "octaves": 5})
     assert r.status_code == 422
     assert r.json()["error"]["code"] == "invalid-octaves"

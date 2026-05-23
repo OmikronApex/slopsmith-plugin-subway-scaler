@@ -15,13 +15,12 @@ from services.scales import expand
 from services.tabulator import Tabulator
 from services.instruments import get as get_instrument
 
-# Variant feature: offer a variant track set every N completed octave loops.
-OCTAVES_PER_VARIANT = 2
-# Default switch window = next cart wave duration (clamped 4-8s).
+# Variant feature: offer after every N completed half-cycles (ascending OR descending).
+# Pattern: Up, Down, Up → RIGHT; Down, Up, Down → LEFT.
+SCALES_PER_VARIANT = 3
+# Default switch window duration.
 DEFAULT_WINDOW_MS = 10000
-# Variant root is shifted by a full note (2 semitones) for lower pitch,
-# and 5 semitones for higher pitch (to avoid overlap).
-VARIANT_SHIFT_UP = 5
+# Variant root offset: 2 frets above highest scale note (RIGHT) or below root (LEFT).
 VARIANT_SHIFT_DOWN = 2
 
 class GameSession(BaseModel):
@@ -44,10 +43,11 @@ class GameSession(BaseModel):
     root_midi: int = 60
     instrument_id: str = "guitar-standard"
     scale_id_for_variant: str = "major"
-    octave_loops_completed: int = 0
+    ascending_note_count: int = 0       # index where descending begins in notes
+    scale_passes_completed: int = 0     # half-cycles since last variant offer
+    last_pass_direction: Optional[str] = None  # "UP" or "DOWN"
     active_variant: Optional[VariantTrackSet] = None
     active_window: Optional[SwitchWindow] = None
-    last_variant_side: Optional[str] = None
     variant_history: List[dict] = []
 
 class GameEngine:
@@ -57,77 +57,29 @@ class GameEngine:
 
     def create_session(self, scale_id: str, difficulty: str = "easy", root_midi: int = 60, octaves: int = 1, descending: bool = False, instrument_id: str = "guitar-standard") -> GameSession:
         self.cleanup_sessions()
-        
-        # Force 1 octave and descending as requested by user for endless loop
-        octaves = 1
-        descending = True
-        
-        notes = expand(scale_id, root_midi=root_midi, octaves=octaves, descending=descending)
-        # Drop the last note: descending ends on root, which duplicates index 0 when looping
-        if descending and len(notes) > 1:
-            notes = notes[:-1]
-        
+
         instrument = get_instrument(instrument_id)
         if not instrument:
-            # Fallback to default guitar if not found
             instrument = Instrument(id="default", name="Default", kind="guitar", stringCount=6, tuning=[40, 45, 50, 55, 59, 64], maxFret=24)
 
-        # Use Tabulator to get natural finger patterns
-        from services.scales import get_scale as get_scale_def
-        scale_def = get_scale_def(scale_id)
-        root_name = notes[0].name if notes else "C"
-        pattern = self.tabulator.encode_scale(scale_def, root_name, instrument.tuning)
-        
-        # Map pattern to notes
-        for i, note in enumerate(notes):
-            if i < len(pattern.pattern):
-                p = pattern.pattern[i]
-                note.string = p.string
-                note.fret = p.fret
-            elif i >= len(pattern.pattern) and descending:
-                # Handle descending part by mirroring the pattern
-                # The expand function generates ascending then descending
-                # Pattern only covers ascending.
-                # Midis: [C, D, E, F, G, A, B, C, B, A, G, F, E, D]
-                # Pattern: [C, D, E, F, G, A, B, C]
-                # For notes[8] (B), we use pattern[6] (B).
-                # Length of ascending part is len(pattern.pattern)
-                asc_len = len(pattern.pattern)
-                if i < 2 * asc_len - 1:
-                    mirror_idx = (2 * asc_len - 2) - i
-                    if 0 <= mirror_idx < asc_len:
-                        p = pattern.pattern[mirror_idx]
-                        note.string = p.string
-                        note.fret = p.fret
+        notes, asc_count = self._build_full_scale_notes(scale_id, root_midi, instrument)
 
-        # Calculate base_fret (min fret used in the scale)
         scale_frets = [n.fret for n in notes if n.fret is not None]
         base_fret = min(scale_frets) if scale_frets else 0
         max_fret = max(scale_frets) if scale_frets else base_fret
-        
-        # Dynamic track count based on fret span
-        num_lanes = (max_fret - base_fret) + 1
-        # Minimum 3 lanes for playability/visuals, max 12 just in case
-        num_lanes = max(3, min(12, num_lanes))
-        
-        # First wave safe track corresponds to the first note's fret index
+        num_lanes = max(3, min(12, (max_fret - base_fret) + 1))
+
         first_safe_track = (notes[0].fret - base_fret) if notes and notes[0].fret is not None else 0
-        # Clamp to available lanes
         first_safe_track = max(0, min(num_lanes - 1, first_safe_track))
-        
-        # Random starting track that is NOT the safe track
+
         possible_tracks = [t for t in range(num_lanes) if t != first_safe_track]
         start_track = random.choice(possible_tracks) if possible_tracks else first_safe_track
-        
-        # Determine duration based on difficulty
-        # easy: 4000, medium: 2500, hard: 1500
-        duration_map = {"easy": 4000, "medium": 2500, "hard": 1500}
-        base_duration = duration_map.get(difficulty, 2500)
-        
+
         session = GameSession(
             scale_id=scale_id,
             difficulty=difficulty,
             notes=notes,
+            ascending_note_count=asc_count,
             current_track=start_track,
             base_fret=base_fret,
             num_lanes=num_lanes,
@@ -137,6 +89,97 @@ class GameEngine:
         )
         self.sessions[session.session_id] = session
         return session
+
+    def _build_full_scale_notes(self, scale_id: str, root_midi: int, instrument: Instrument):
+        """Generate ascending + descending notes spanning the full instrument.
+
+        Uses position playing: max 3 frets span and 3 notes per string,
+        walking from the lowest string to the highest. Returns (notes, ascending_count)
+        where ascending_count is the index where the descending half begins.
+        """
+        import math
+        from services.scales import get_scale as get_scale_def, make_note
+
+        # Compute octaves needed to reach the top of the instrument from root
+        highest_open = instrument.tuning[-1]
+        span = highest_open - root_midi
+        octaves = max(1, math.ceil(span / 12)) if span > 0 else 1
+        octaves = min(3, octaves)
+
+        # Generate ascending MIDI values
+        asc_raw = expand(scale_id, root_midi, octaves=octaves, descending=False)
+        max_midi = highest_open + instrument.maxFret
+        asc_midis = [n.midi for n in asc_raw if n.midi <= max_midi]
+
+        # Find root's starting string (lowest string where root fits in frets 1-12)
+        root_string_idx = 0
+        for i, open_midi in enumerate(instrument.tuning):
+            f = root_midi - open_midi
+            if 1 <= f <= 12:
+                root_string_idx = i
+                break
+            if f == 0:
+                root_string_idx = i
+
+        # Assign string/fret using position playing (max 3 fret span, max 3 notes per string)
+        ascending = []
+        str_idx = root_string_idx
+        notes_on_str = 0
+        str_base_fret = None
+
+        for midi in asc_midis:
+            placed = False
+            while str_idx < len(instrument.tuning):
+                open_midi = instrument.tuning[str_idx]
+                fret = midi - open_midi
+
+                if fret < 0:
+                    # Below this string's open tuning; skip note (unplayable on any string)
+                    break
+                if fret > instrument.maxFret:
+                    str_idx += 1
+                    notes_on_str = 0
+                    str_base_fret = None
+                    continue
+
+                if str_base_fret is None:
+                    str_base_fret = fret
+
+                if fret - str_base_fret > 3 or notes_on_str >= 3:
+                    str_idx += 1
+                    notes_on_str = 0
+                    str_base_fret = None
+                    continue
+
+                n = make_note(midi)
+                n.string = len(instrument.tuning) - str_idx  # 1-based from HIGH
+                n.fret = fret
+                ascending.append(n)
+                notes_on_str += 1
+                placed = True
+                break
+
+            if not placed:
+                if str_idx >= len(instrument.tuning):
+                    break  # All strings exhausted; no more notes can be placed
+                # else: note was below strings or out of position span; skip it
+
+        asc_count = len(ascending)
+
+        # Descending: mirror of ascending minus apex, same string/fret
+        descending = []
+        for n in reversed(ascending[:-1]):
+            dn = make_note(n.midi)
+            dn.string = n.string
+            dn.fret = n.fret
+            descending.append(dn)
+
+        # Drop final root note to avoid duplicate at loop wrap-around
+        all_notes = ascending + descending
+        if len(all_notes) > 1:
+            all_notes = all_notes[:-1]
+
+        return all_notes, asc_count
 
     def play_note(self, session_id: str, midi: int, timing_ms: int) -> dict:
         session = self.get_session(session_id)
@@ -152,9 +195,17 @@ class GameEngine:
             prev_idx = session.current_note_index
             session.total_notes_played += 1
             session.current_note_index = (session.current_note_index + 1) % len(session.notes)
-            # Detect completion of an asc+desc octave loop (last index → 0).
-            if session.current_note_index == 0 and prev_idx == len(session.notes) - 1:
-                session.octave_loops_completed += 1
+            new_idx = session.current_note_index
+            # Detect ascending pass (apex reached — last ascending note → first descending).
+            if (session.ascending_note_count > 0
+                    and prev_idx == session.ascending_note_count - 1
+                    and new_idx == session.ascending_note_count):
+                session.scale_passes_completed += 1
+                session.last_pass_direction = "UP"
+            # Detect descending pass (root reached — last note wraps to index 0).
+            elif new_idx == 0 and prev_idx == len(session.notes) - 1:
+                session.scale_passes_completed += 1
+                session.last_pass_direction = "DOWN"
 
             # Difficulty scaling.
             session.speed_multiplier *= 1.05  # 5% increase per correct note
@@ -230,23 +281,13 @@ class GameEngine:
         hi = instrument.tuning[-1] + instrument.maxFret
         return lo <= root_midi <= hi
 
-    def _next_side(self, session: GameSession, instrument: Instrument) -> Optional[str]:
-        # Alternate; fall back to same; None if neither is playable.
-        prefer = "RIGHT" if session.last_variant_side == "LEFT" else "LEFT"
-        other = "LEFT" if prefer == "RIGHT" else "RIGHT"
-        for side in (prefer, other):
-            candidate = self._candidate_root_for_side(session.root_midi, side)
-            if self._is_playable_root(candidate, instrument):
-                return side
-        return None
-
-    @staticmethod
-    def _candidate_root_for_side(current_root: int, side: str) -> int:
-        # RIGHT = higher pitch; LEFT = lower pitch.
+    def _candidate_root_for_side(self, session: GameSession, side: str) -> int:
+        # RIGHT: 2 frets above the highest scale note the player just played.
+        # LEFT: 2 frets below the current root.
         if side == "RIGHT":
-            return current_root + VARIANT_SHIFT_UP
+            return max(note.midi for note in session.notes) + 2
         else:
-            return current_root - VARIANT_SHIFT_DOWN
+            return session.root_midi - VARIANT_SHIFT_DOWN
 
     def _variant_geometry(self, root_midi: int, instrument: Instrument, target_num_lanes: int, preferred_string: Optional[int] = None):
         """Compute variant base_fret + num_lanes anchored at the root.
@@ -315,18 +356,21 @@ class GameEngine:
             return {"success": False, "error": "game_not_running"}
         if session.active_variant is not None:
             return {"success": False, "error": "variant_already_active"}
-        if session.octave_loops_completed < OCTAVES_PER_VARIANT:
+        if session.scale_passes_completed < SCALES_PER_VARIANT:
             return {"success": False, "error": "milestone_not_reached"}
 
         instrument = get_instrument(session.instrument_id) or Instrument(
             id="default", name="Default", kind="guitar",
             stringCount=6, tuning=[40, 45, 50, 55, 59, 64], maxFret=24,
         )
-        side = self._next_side(session, instrument)
-        if side is None:
-            return {"success": False, "error": "no_playable_variant"}
-
-        new_root = self._candidate_root_for_side(session.root_midi, side)
+        # Direction follows the last half-cycle: ascending → RIGHT, descending → LEFT.
+        side = "RIGHT" if session.last_pass_direction == "UP" else "LEFT"
+        new_root = self._candidate_root_for_side(session, side)
+        if not self._is_playable_root(new_root, instrument):
+            side = "LEFT" if side == "RIGHT" else "RIGHT"
+            new_root = self._candidate_root_for_side(session, side)
+            if not self._is_playable_root(new_root, instrument):
+                return {"success": False, "error": "no_playable_variant"}
         # Clean geometry: tight window matching the session's track count
         # anchored at the variant's root fret. Independent of tabulator's 
         # pitch-class wrap, which can produce 11-lane variants for roots like C 
@@ -339,7 +383,7 @@ class GameEngine:
 
         now_ms = now_ms if now_ms is not None else int(time.time() * 1000)
         variant = VariantTrackSet(
-            variant_id=f"v-{session.session_id[:8]}-{session.octave_loops_completed}",
+            variant_id=f"v-{session.session_id[:8]}-{session.scale_passes_completed}",
             root_midi=new_root,
             base_fret=v_base_fret,
             num_lanes=v_num_lanes,
@@ -383,36 +427,33 @@ class GameEngine:
         variant.state = "SWITCH_TRIGGERED"
         session.active_window.state = "SWITCHED"
 
-        # Reseat session on the new root using the variant's clean geometry.
+        # Reseat session on the new root, rebuilding the full multi-string scale.
         session.root_midi = variant.root_midi
-        session.base_fret = variant.base_fret
-        session.num_lanes = variant.num_lanes
-
-        # Rebuild notes for the new root and assign frets within the variant
-        # window (so safe_track calculation stays consistent with the rendered
-        # tracks). Skip tabulator here — it wraps modulo 12 and would push notes
-        # outside the window.
-        new_notes = expand(session.scale_id_for_variant, root_midi=variant.root_midi, octaves=1, descending=True)
-        if len(new_notes) > 1:
-            new_notes = new_notes[:-1]
-        instrument = get_instrument(session.instrument_id)
-        for note in new_notes:
-            s, f = self._fret_in_window(note.midi, instrument, variant.base_fret, variant.num_lanes)
-            if s is not None:
-                note.string = s
-                note.fret = f
+        instrument = get_instrument(session.instrument_id) or Instrument(
+            id="default", name="Default", kind="guitar",
+            stringCount=6, tuning=[40, 45, 50, 55, 59, 64], maxFret=24,
+        )
+        new_notes, new_asc_count = self._build_full_scale_notes(
+            session.scale_id_for_variant, variant.root_midi, instrument
+        )
         session.notes = new_notes
+        session.ascending_note_count = new_asc_count
+        # Recompute lane geometry from the new note set.
+        scale_frets = [n.fret for n in new_notes if n.fret is not None]
+        session.base_fret = min(scale_frets) if scale_frets else variant.base_fret
+        new_max_fret = max(scale_frets) if scale_frets else session.base_fret
+        session.num_lanes = max(3, min(12, (new_max_fret - session.base_fret) + 1))
         session.current_note_index = 1 % len(new_notes) if new_notes else 0
         session.total_notes_played = 1
         session.current_track = variant.base_lane
-        session.octave_loops_completed = 0
+        session.scale_passes_completed = 0
+        session.last_pass_direction = None
         
         # Reset speed to difficulty base (multiplier 1.0) to give the player a breather.
         session.speed_multiplier = 1.0
 
         # Finalize variant state.
         variant.state = "SWITCHED"
-        session.last_variant_side = variant.side
         session.variant_history.append({
             "variant_id": variant.variant_id,
             "root_midi": variant.root_midi,
@@ -448,7 +489,6 @@ class GameEngine:
         variant = session.active_variant
         variant.state = "TIMEOUT"
         session.active_window.state = "CLOSED"
-        session.last_variant_side = variant.side
         session.variant_history.append({
             "variant_id": variant.variant_id,
             "root_midi": variant.root_midi,
@@ -458,10 +498,9 @@ class GameEngine:
         })
         session.active_variant = None
         session.active_window = None
-        # Reset milestone counter so the player must earn the next offer.
-        # Without this, the next poll (200ms later) would immediately propose
-        # another variant on the opposite side and the camera would jerk back.
-        session.octave_loops_completed = 0
+        # Reset pass counter so the player earns 3 more half-cycles before next offer.
+        session.scale_passes_completed = 0
+        session.last_pass_direction = None
         logger.info(
             "variant.timeout session=%s variant=%s side=%s",
             session.session_id, variant.variant_id, variant.side,

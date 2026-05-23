@@ -236,7 +236,7 @@ export async function bootstrap(root) {
   const hud = el('div', { class: 'hud' });
   const expectedEl = el('div', { class: 'expected' });
   const feedbackEl = el('div', { class: 'feedback' });
-  const variantHud = el('div', { class: 'variant-indicator hidden' });
+  const variantHud = el('div', { class: 'variant-indicator hidden', 'data-variant-track': '' });
   const overlay = el('div', { class: 'overlay hidden' });
   const pauseBtn = el('button', { class: 'pause-btn hidden' }, 'Pause');
   hud.appendChild(expectedEl);
@@ -287,6 +287,7 @@ export async function bootstrap(root) {
   let _pauseReason = 'normal';
   let rafId = null;
   let prevFretPos = null;
+  let _testVariantTimer = null;
 
   // Variant state mirrors backend (feature 008-track-variants).
   // shownVariantId tracks which variant we've already rendered in the scene.
@@ -574,6 +575,13 @@ export async function bootstrap(root) {
         // Variant lifecycle (feature 008-track-variants).
         activeVariant = pollState.active_variant || null;
         activeWindow = pollState.active_window || null;
+        if (window.__gameState) {
+          window.__gameState.variant.id = activeVariant ? activeVariant.variant_id : null;
+          window.__gameState.variant.timerRunning = !!(activeVariant && activeWindow &&
+            activeWindow.state === 'OPEN' && Date.now() < activeWindow.deadline_ms);
+          window.__gameState.variant.timerMs = activeWindow
+            ? Math.max(0, activeWindow.deadline_ms - Date.now()) : 0;
+        }
 
         // Milestone trigger: ask backend to propose a variant if eligible.
         const loops = pollState.octave_loops_completed || 0;
@@ -585,6 +593,11 @@ export async function bootstrap(root) {
               // Will be picked up on next poll; render eagerly too.
               activeVariant = resp.variant;
               activeWindow = resp.window;
+              if (window.__gameState) {
+                window.__gameState.variant.id = resp.variant.variant_id;
+                window.__gameState.variant.timerRunning = true;
+                window.__gameState.variant.timerMs = Math.max(0, resp.window.deadline_ms - Date.now());
+              }
               if (shownVariantId !== resp.variant.variant_id) {
                 scene.proposeVariantTracks(resp.variant);
                 playVariantCue();
@@ -607,10 +620,16 @@ export async function bootstrap(root) {
           gameClient.timeoutVariant().then((resp) => {
             timeoutPending = false;
             if (resp && resp.success) {
+              if (window.__gameState) window.__gameState.variant.timerExpired = true;
               scene.dismissVariantTracks();
               shownVariantId = null;
               activeVariant = null;
               activeWindow = null;
+              if (window.__gameState) {
+                window.__gameState.variant.id = null;
+                window.__gameState.variant.timerRunning = false;
+                window.__gameState.variant.timerMs = 0;
+              }
             }
           }).catch(() => { timeoutPending = false; });
         }
@@ -647,6 +666,10 @@ export async function bootstrap(root) {
       window.__gameState.gameOver.triggeredAt = null;
     }
     // Variant cleanup.
+    if (_testVariantTimer) { clearInterval(_testVariantTimer); _testVariantTimer = null; }
+    if (window.__gameState) {
+      window.__gameState.variant = { id: null, timerMs: 0, timerRunning: false, timerExpired: false };
+    }
     if (scene.dismissVariantTracks) scene.dismissVariantTracks();
     shownVariantId = null;
     activeVariant = null;
@@ -691,7 +714,31 @@ export async function bootstrap(root) {
         }
       },
       resetGame: () => { if (run) { run.abandon(); cleanup(); } },
-      setVariant: null,
+      setVariant: (id, durationMs = 10000) => {
+        if (_testVariantTimer) { clearInterval(_testVariantTimer); _testVariantTimer = null; }
+        if (!id) {
+          window.__gameState.variant = { id: null, timerMs: 0, timerRunning: false, timerExpired: false };
+          updateVariantHud();
+          return;
+        }
+        window.__gameState.variant.id = id;
+        window.__gameState.variant.timerMs = durationMs;
+        window.__gameState.variant.timerRunning = true;
+        window.__gameState.variant.timerExpired = false;
+        updateVariantHud();
+        const start = Date.now();
+        _testVariantTimer = setInterval(() => {
+          const elapsed = Date.now() - start;
+          const remaining = Math.max(0, durationMs - elapsed);
+          window.__gameState.variant.timerMs = remaining;
+          if (remaining === 0) {
+            window.__gameState.variant.timerExpired = true;
+            window.__gameState.variant.timerRunning = false;
+            clearInterval(_testVariantTimer);
+            _testVariantTimer = null;
+          }
+        }, 50);
+      },
     };
   }
 

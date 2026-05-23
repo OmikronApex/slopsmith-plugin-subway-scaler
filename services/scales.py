@@ -79,7 +79,7 @@ def expand(
         raise ScaleNotFound(scale_id)
     if not (21 <= root_midi <= 108):
         raise InvalidRoot(root_midi)
-    if octaves not in (1, 2):
+    if octaves < 1 or octaves > 4:
         raise InvalidOctaves(octaves)
 
     intervals = SCALES[scale_id].intervals

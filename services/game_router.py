@@ -204,7 +204,8 @@ async def get_session_route(session_id: str):
         "current_note_index": session.current_note_index,
         "next_expected_note": session.notes[session.current_note_index] if session.notes else None,
         # Variant exposure (feature 008-track-variants).
-        "octave_loops_completed": session.octave_loops_completed,
+        "scale_passes_completed": session.scale_passes_completed,
+        "last_pass_direction": session.last_pass_direction,
         "active_variant": session.active_variant.model_dump() if session.active_variant else None,
         "active_window": session.active_window.model_dump() if session.active_window else None,
     }
