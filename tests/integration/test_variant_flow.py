@@ -114,7 +114,7 @@ def test_full_variant_timeout_flow_via_http(client):
 def test_consecutive_variants_alternate_sides_via_http(client):
     """First variant direction driven by last pass; second variant is opposite after 3 more passes."""
     from services.game_router import engine
-    s = _start(client)
+    s = _start(client, root_midi=48)  # C3 so RIGHT variant lands in playable frets
     sid = s["session_id"]
     _play_passes(client, sid, passes=3)
 

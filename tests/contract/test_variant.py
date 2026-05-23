@@ -163,7 +163,7 @@ def test_timeout_before_deadline_rejected(client):
 
 
 def test_side_alternates_across_consecutive_variants(client):
-    s = _start(client)
+    s = _start(client, root_midi=48)  # C3 so RIGHT variant lands in playable frets
     sid = s["session_id"]
     _force_milestone(client, sid, direction="UP")  # first variant → RIGHT
     first = client.post(f"{BASE}/{sid}/variant/propose", json={"now_ms": 1000}).json()

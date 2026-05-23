@@ -67,7 +67,7 @@ class GameEngine:
         scale_frets = [n.fret for n in notes if n.fret is not None]
         base_fret = min(scale_frets) if scale_frets else 0
         max_fret = max(scale_frets) if scale_frets else base_fret
-        num_lanes = max(3, min(12, (max_fret - base_fret) + 1))
+        num_lanes = max(3, min(instrument.maxFret, (max_fret - base_fret) + 1))
 
         first_safe_track = (notes[0].fret - base_fret) if notes and notes[0].fret is not None else 0
         first_safe_track = max(0, min(num_lanes - 1, first_safe_track))
@@ -102,13 +102,13 @@ class GameEngine:
 
         # Compute octaves needed to reach the top of the instrument from root
         highest_open = instrument.tuning[-1]
-        span = highest_open - root_midi
+        max_midi = highest_open + instrument.maxFret
+        span = max_midi - root_midi
         octaves = max(1, math.ceil(span / 12)) if span > 0 else 1
-        octaves = min(3, octaves)
+        octaves = min(4, octaves)                   # expand() accepts up to 4
 
         # Generate ascending MIDI values
         asc_raw = expand(scale_id, root_midi, octaves=octaves, descending=False)
-        max_midi = highest_open + instrument.maxFret
         asc_midis = [n.midi for n in asc_raw if n.midi <= max_midi]
 
         # Find root's starting string (lowest string where root fits in frets 1-12)
@@ -384,21 +384,27 @@ class GameEngine:
         # Direction follows the last half-cycle: ascending → RIGHT, descending → LEFT.
         # None means no pass recorded yet (e.g. tests that bump the counter directly); try RIGHT first.
         if session.last_pass_direction is None:
-            side = "RIGHT"
+            primary_side = "RIGHT"
         else:
-            side = "RIGHT" if session.last_pass_direction == "UP" else "LEFT"
-        new_root = self._candidate_root_for_side(session, side)
-        if not self._is_playable_root(new_root, instrument):
-            side = "LEFT" if side == "RIGHT" else "RIGHT"
-            new_root = self._candidate_root_for_side(session, side)
-            if not self._is_playable_root(new_root, instrument):
-                return {"success": False, "error": "no_playable_variant"}
-        # Clean geometry: tight window matching the session's track count
-        # anchored at the variant's root fret. Independent of tabulator's 
-        # pitch-class wrap, which can produce 11-lane variants for roots like C 
-        # that wrap from fret 8 to fret 0.
-        preferred_string = session.notes[0].string if session.notes else None
-        geom = self._variant_geometry(new_root, instrument, session.num_lanes, preferred_string=preferred_string)
+            primary_side = "RIGHT" if session.last_pass_direction == "UP" else "LEFT"
+
+        new_root = None
+        side = None
+        geom = None
+        for candidate_side in (primary_side, "LEFT" if primary_side == "RIGHT" else "RIGHT"):
+            candidate_root = self._candidate_root_for_side(session, candidate_side)
+            if not self._is_playable_root(candidate_root, instrument):
+                continue
+            candidate_geom = self._variant_geometry(
+                candidate_root, instrument, session.num_lanes,
+                preferred_string=session.notes[0].string if session.notes else None,
+            )
+            if candidate_geom is not None:
+                new_root = candidate_root
+                side = candidate_side
+                geom = candidate_geom
+                break
+
         if geom is None:
             return {"success": False, "error": "no_playable_variant"}
         v_base_fret, v_num_lanes, v_base_lane, v_base_string = geom
@@ -485,7 +491,7 @@ class GameEngine:
         scale_frets = [n.fret for n in new_notes if n.fret is not None]
         session.base_fret = min(scale_frets) if scale_frets else variant.base_fret
         new_max_fret = max(scale_frets) if scale_frets else session.base_fret
-        session.num_lanes = max(3, min(12, (new_max_fret - session.base_fret) + 1))
+        session.num_lanes = max(3, min(instrument.maxFret, (new_max_fret - session.base_fret) + 1))
         session.current_track = variant.base_lane
         session.scale_passes_completed = 0
         session.last_pass_direction = None

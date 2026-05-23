@@ -1,6 +1,6 @@
 # Story 5-6: Full String Range — Wave Spawning Across All Strings
 
-**Status:** todo
+**Status:** review
 
 **Epic:** 5 — Variant Track System
 **Story ID:** 5-6
@@ -104,7 +104,7 @@ All existing `test_variant_flow.py` and `test_game_engine.py` tests pass unchang
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — Fix the `span` / `octaves` computation in `_build_full_scale_notes`
+- [x] Task 1 — Fix the `span` / `octaves` computation in `_build_full_scale_notes`
   - Locate the block (lines ~100–112 of `game_engine.py`):
     ```python
     highest_open = instrument.tuning[-1]
@@ -123,7 +123,7 @@ All existing `test_variant_flow.py` and `test_game_engine.py` tests pass unchang
   - The `max_midi` variable is already used two lines later for filtering — confirm no
     duplicate definition is introduced.
 
-- [ ] Task 2 — Remove the 12-lane cap from `num_lanes`
+- [x] Task 2 — Remove the 12-lane cap from `num_lanes`
   - Change:
     ```python
     num_lanes = max(3, min(12, (max_fret - base_fret) + 1))
@@ -133,20 +133,20 @@ All existing `test_variant_flow.py` and `test_game_engine.py` tests pass unchang
     num_lanes = max(3, min(instrument.maxFret, (max_fret - base_fret) + 1))
     ```
 
-- [ ] Task 3 — Write / update unit tests (AC-1, AC-2)
+- [x] Task 3 — Write / update unit tests (AC-1, AC-2)
   - In `tests/unit/test_game_engine.py`:
     - `test_full_range_reaches_highest_string`: assert `notes[asc_count-1].string == 1`
       for guitar-standard C3, C4, E3.
     - `test_c4_ascending_count_spans_full_instrument`: assert
       `session.ascending_note_count >= 10` for guitar-standard C4.
 
-- [ ] Task 4 — Update contract / integration tests as needed (AC-3, AC-4, AC-5)
+- [x] Task 4 — Update contract / integration tests as needed (AC-3, AC-4, AC-5)
   - Run `pytest tests/` and fix any assertion that assumed `num_lanes ≤ 12` or a fixed
     ascending note count for a specific root.
   - Common suspects: `tests/contract/test_game_start.py`,
     `tests/integration/test_game_loop.py`, any test that hard-codes `num_lanes == 6`.
 
-- [ ] Task 5 — Run full suite (AC-5)
+- [x] Task 5 — Run full suite (AC-5)
   - `.venv/Scripts/python.exe -m pytest tests/ -v`
   - All green. Document changed files in Dev Notes.
 
@@ -195,20 +195,27 @@ colors per traversal instead of 3, giving visible evidence that the fix is worki
 
 ### Agent Model Used
 
-_to be filled_
+deepseek/deepseek-v4-flash (via Claude Code)
 
 ### Debug Log References
 
-_to be filled_
+N/A
 
 ### Completion Notes List
 
-_to be filled_
+- Task 1: Fixed `span` ceiling from `highest_open` → `highest_open + maxFret`, `octaves` cap from 3→4. Moved `max_midi` computation before span calc to avoid duplicate.
+- Task 2: Replaced `min(12, ...)` with `min(instrument.maxFret, ...)` in both `create_session` and variant `accept_variant` paths.
+- Task 3: Added `test_full_range_reaches_highest_string` (AC-1, checks C3/C4/E3) and `test_c4_ascending_count_spans_full_instrument` (AC-2, asserts ≥10). Updated AC-4 test to use root_midi=48 since C4 RIGHT candidate is unplayable with expanded range.
+- Task 4: Fixed `propose_variant` to fall back to opposite side when primary side's `_variant_geometry` fails (not just `_is_playable_root`). Updated contract/integration side-alternation tests to use root_midi=48.
+- Task 5: Full suite 71/71 pass.
 
 ### File List
 
-_to be filled_
+- `services/game_engine.py` — octaves computation, num_lanes cap (2 sites), propose_variant fallback
+- `tests/unit/test_game_engine.py` — new AC-1/AC-2 tests, updated AC-4 test root
+- `tests/contract/test_variant.py` — updated alternation test root
+- `tests/integration/test_variant_flow.py` — updated alternation test root
 
 ### Change Log
 
-_to be filled_
+- 2026-05-23: Story 5-6 implementation — full string range wave spawning

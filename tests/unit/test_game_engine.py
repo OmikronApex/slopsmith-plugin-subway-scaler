@@ -50,10 +50,33 @@ def test_left_accept_starts_ascending_from_root():
     assert session.notes[0].midi == new_root
 
 
-def test_right_accept_starts_descending_from_apex():
-    """AC-4: RIGHT accept sets current_note_index=ascending_note_count and apex=trigger_midi."""
+def test_full_range_reaches_highest_string():
+    """AC-1: For guitar-standard with any standard root, ascending notes reach string 1."""
+    engine = GameEngine()
+    for root in (48, 60, 52):  # C3, C4, E3
+        session = engine.create_session(scale_id="major", root_midi=root)
+        last_asc = session.notes[session.ascending_note_count - 1]
+        assert last_asc.string == 1, (
+            f"root MIDI {root}: last ascending note (MIDI {last_asc.midi}) "
+            f"on string {last_asc.string}, expected string 1"
+        )
+
+
+def test_c4_ascending_count_spans_full_instrument():
+    """AC-2: For guitar-standard C4, ascending_note_count >= 10 (was 8 with old one-octave)."""
     engine = GameEngine()
     session = engine.create_session(scale_id="major", root_midi=60)
+    assert session.ascending_note_count >= 10, (
+        f"ascending_note_count={session.ascending_note_count}, expected >= 10"
+    )
+
+
+def test_right_accept_starts_descending_from_apex():
+    """AC-4: RIGHT accept sets current_note_index=ascending_note_count and apex=trigger_midi.
+    Uses C3 (MIDI 48) so the RIGHT candidate lands in a playable fret (1-12).
+    """
+    engine = GameEngine()
+    session = engine.create_session(scale_id="major", root_midi=48)
     _force_milestone(engine, session, direction="UP")  # UP → RIGHT variant
 
     propose = engine.propose_variant(session.session_id, now_ms=1000)
