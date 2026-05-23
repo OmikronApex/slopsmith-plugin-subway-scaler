@@ -1,6 +1,6 @@
 # Story 5-2: Remove ATDD Scaffolding and Validate E2E
 
-**Status:** review
+**Status:** done
 
 **Epic:** 5 — Variant Track System
 **Story ID:** 5-2
@@ -133,6 +133,11 @@ None.
 
 ### Review Findings
 
+- [x] [Review][Patch] `test.describe` blocks still named "Epic 5 ATDD: ..." after ATDD wrappers removed — section comments were cleaned up but the describe block titles were not, leaving "ATDD" in CI test output reports [tests/e2e/specs/epic5-variant.spec.ts:19,71,111]
+- [x] [Review][Defer] Backend polling loop overwrites `__gameState.variant.id` set by `setVariant` hook every ~200ms — tests pass because Playwright's rapid waitForFunction resolves before the next poll clobbers the value, but could flake on a heavily loaded CI machine; pre-existing test hook design limitation [static/game/main.js, tests/e2e/specs/epic5-variant.spec.ts] — deferred, pre-existing
+- [x] [Review][Defer] `setInterval` timer subject to browser throttling in hidden/backgrounded tabs — 3000ms waitForFunction timeout gives headroom but underlying setInterval may be clamped to 1000ms in throttled contexts; not applicable in active Playwright sessions; pre-existing design [static/game/main.js:~733] — deferred, pre-existing
+
 ### Change Log
 
 - 2026-05-23: Story 5-2 implemented — ATDD scaffolding removed, 7/7 E2E variant tests pass green (Date: 2026-05-23)
+- 2026-05-23: Code review patch applied — renamed 3 test.describe blocks from "Epic 5 ATDD: ..." to "Epic 5: ..." to remove stale ATDD naming from CI output (Date: 2026-05-23)

@@ -74,3 +74,8 @@
 - `scales.py` octave guard accepts 1-4 but `_build_full_scale_notes` clamps to 3 — silent caller mismatch; callers passing `octaves=4` get silently clamped with no error.
 - `game_engine.py` refactors exceed declared "bug fix" scope — `scale_passes_completed`, `last_pass_direction`, `_build_full_scale_notes`, and variant direction redesign bundled into 5-1; process concern, no runtime defect.
 - `setVariant(null)` vs `timeoutVariant.then` `timerExpired` write race — theoretical; JS single-threaded but fetch `.then` can queue after `cleanup()` resets the object, leaving `timerExpired: true` on an otherwise zeroed variant state.
+
+## Deferred from: code review of 5-2-remove-atdd-scaffolding-and-validate-e2e (2026-05-23)
+
+- Backend polling loop overwrites `__gameState.variant.id` set by `setVariant` hook every ~200ms — tests pass because Playwright's rapid waitForFunction resolves before the next poll clobbers the value, but could flake on heavily loaded CI; pre-existing test hook design limitation [static/game/main.js].
+- `setInterval` timer subject to browser throttling in hidden/backgrounded tabs — not applicable in active Playwright sessions; 3000ms waitForFunction timeout provides headroom; pre-existing design [static/game/main.js:~733].

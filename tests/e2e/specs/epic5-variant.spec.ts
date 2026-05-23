@@ -16,7 +16,7 @@ test.skip(({ browserName }) => browserName !== 'chromium',
 
 // ─── Variant activation ───────────────────────────────────────────────────────
 
-test.describe('Epic 5 ATDD: variant activation', () => {
+test.describe('Epic 5: variant activation', () => {
   test('_test.setVariant sets variant.id within 1000ms', async ({ gamePage }) => {
     await startGame(gamePage);
 
@@ -68,7 +68,7 @@ test.describe('Epic 5 ATDD: variant activation', () => {
 
 // ─── Decision window timer ────────────────────────────────────────────────────
 
-test.describe('Epic 5 ATDD: decision window timer', () => {
+test.describe('Epic 5: decision window timer', () => {
   test('variant.timerMs decreases over time (countdown running)', async ({ gamePage }) => {
     await startGame(gamePage);
 
@@ -108,7 +108,7 @@ test.describe('Epic 5 ATDD: decision window timer', () => {
 
 // ─── Variant reset after expiry ───────────────────────────────────────────────
 
-test.describe('Epic 5 ATDD: variant reset', () => {
+test.describe('Epic 5: variant reset', () => {
   test('variant.id returns to null after timer expires', async ({ gamePage }) => {
     await startGame(gamePage);
 
