@@ -67,5 +67,5 @@ development_status:
   5-1-wire-variant-observable-state-and-test-hook: done
   5-3-polling-integration-coverage-variant-lifecycle: review
   5-4-backend-variant-direction-logic: done
-  5-5-scenemanager-visual-refactor-single-lane-peel-transition: review
+  5-5-scenemanager-visual-refactor-single-lane-peel-transition: done
   5-2-remove-atdd-scaffolding-and-validate-e2e: review

@@ -101,14 +101,15 @@ export function createScene(canvas) {
 
   // Variant peel transition (feature 008-track-variants, story 5-5).
   // One bent piece scrolls in (propose) or out (dismiss); straight lane segs fill the gap.
-  let variantProposePiece = null;  // { mesh: Group, spawnTimeMs, speedPxMs, passed }
-  let variantDismissPiece = null;  // { mesh: Group, spawnTimeMs, speedPxMs }
-  let variantLaneSegs = [];        // persistent straight lane segment meshes
+  let variantProposePiece = null;   // { mesh: Group, spawnTimeMs, speedPxMs }
+  let variantDismissPiece = null;   // { mesh: Group, spawnTimeMs, speedPxMs }
+  let variantLaneSegs = [];         // persistent straight lane segment meshes
   let variantHighlightMesh = null;
   let variantHighlightMat = null;
-  let variantInfo = null;          // { side, variantX, speedPxMs }
-  let lastWaveSpeed = 0.05;        // captured from setWaves; used for piece scrolling
-  let variantAccentMat = null;     // shared accent material
+  let variantInfo = null;           // { side, variantX }
+  let variantAcceptState = null;    // { newPrimary, acceptX, characterMoved } — tracks accept animation
+  let lastWaveSpeed = 0.05;         // captured from setWaves; used for piece scrolling
+  let variantAccentMat = null;      // shared accent material
 
   let tween = null;
   let succeeded = false;
@@ -227,6 +228,7 @@ export function createScene(canvas) {
       variantAccentMat.dispose();
       variantAccentMat = null;
     }
+    variantAcceptState = null;
     variantInfo = null;
   }
 
@@ -257,12 +259,13 @@ export function createScene(canvas) {
       new THREE.BoxGeometry(LANE_W, PIECE_H * 3, STRAIGHT_LEN),
       variantHighlightMat
     );
-    variantHighlightMesh.position.set(vx, 0, -STRAIGHT_LEN / 2);
+    variantHighlightMesh.position.set(vx, 0, SPAWN_Z);
+    variantHighlightMesh.userData.spawnTimeMs = spawnTimeMs;
     scene.add(variantHighlightMesh);
   }
 
   function dismissVariantTracks() {
-    if (!variantInfo) return;
+    if (!variantInfo || variantDismissPiece) return;
     const spawnTimeMs = performance.now() - gameStartTime;
     const mesh = buildBendPiece(variantInfo.side, variantInfo.variantX);
     mesh.position.set(0, 0, SPAWN_Z);
@@ -277,15 +280,33 @@ export function createScene(canvas) {
   }
 
   function acceptVariantTracks(newPrimary) {
-    const acceptX = variantInfo ? variantInfo.variantX : 0;
-    clearVariantGeom();
-    clearScene();
-    baseFret = newPrimary.base_fret;
-    numLanes = newPrimary.num_lanes;
-    rebuildTracks();
-    character.position.x = acceptX;
-    targetCameraX = 0;
-    currentCameraX = 0;
+    if (!variantInfo) {
+      // Fallback: no active variant state, rebuild immediately.
+      clearScene();
+      baseFret = newPrimary.base_fret;
+      numLanes = newPrimary.num_lanes;
+      rebuildTracks();
+      return;
+    }
+    // Land character on-grid using NEW num_lanes (P6 fix).
+    const edgeLane = variantInfo.side === 'RIGHT' ? newPrimary.num_lanes - 1 : 0;
+    const acceptX = laneX(edgeLane, newPrimary.num_lanes);
+    // AC-6 §1: spawn dismiss piece so old track visually peels away.
+    if (!variantDismissPiece) {
+      const spawnTimeMs = performance.now() - gameStartTime;
+      const mesh = buildBendPiece(variantInfo.side, variantInfo.variantX);
+      mesh.position.set(0, 0, SPAWN_Z);
+      scene.add(mesh);
+      variantDismissPiece = { mesh, spawnTimeMs, speedPxMs: lastWaveSpeed };
+    }
+    if (variantHighlightMesh) {
+      scene.remove(variantHighlightMesh);
+      variantHighlightMesh.geometry?.dispose();
+      variantHighlightMesh = null;
+    }
+    if (variantHighlightMat) { variantHighlightMat.dispose(); variantHighlightMat = null; }
+    // AC-6 §2-4: defer character tween + track rebuild to render loop.
+    variantAcceptState = { newPrimary, acceptX, characterMoved: false };
   }
 
   function setInstrument(inst) {
@@ -420,16 +441,50 @@ export function createScene(canvas) {
       }
     }
 
-    // Variant dismiss piece — Z-scroll; when it clears, dispose all variant geometry (AC-5/AC-7)
-    if (variantDismissPiece) {
-      const elapsed = Math.max(0, nowMs - gameStartTime - variantDismissPiece.spawnTimeMs);
-      variantDismissPiece.mesh.position.z = SPAWN_Z + elapsed * variantDismissPiece.speedPxMs * 0.5;
-      if (variantDismissPiece.mesh.position.z > STRAIGHT_LEN) {
-        clearVariantGeom();
+    // Highlight mesh scrolls with propose piece; pulse emissive while visible (P2)
+    if (variantHighlightMesh) {
+      const elapsed = Math.max(0, nowMs - gameStartTime - variantHighlightMesh.userData.spawnTimeMs);
+      variantHighlightMesh.position.z = SPAWN_Z + elapsed * lastWaveSpeed * 0.5;
+      if (variantHighlightMesh.position.z > STRAIGHT_LEN) {
+        scene.remove(variantHighlightMesh);
+        variantHighlightMesh.geometry?.dispose();
+        variantHighlightMesh = null;
+      } else if (variantHighlightMat) {
+        variantHighlightMat.emissiveIntensity = 0.3 + 0.7 * (0.5 + 0.5 * Math.sin(nowMs * 0.005));
       }
     }
 
-    // Persistent variant lane segments (AC-3/AC-4)
+    // Dismiss piece — Z-scroll; trigger character tween at bend midpoint on accept (P1)
+    if (variantDismissPiece) {
+      const elapsed = Math.max(0, nowMs - gameStartTime - variantDismissPiece.spawnTimeMs);
+      variantDismissPiece.mesh.position.z = SPAWN_Z + elapsed * variantDismissPiece.speedPxMs * 0.5;
+      if (variantAcceptState && !variantAcceptState.characterMoved) {
+        const BEND_CENTER_OFFSET = STRAIGHT_LEN / 2 + DIAG_LEN / 2;
+        if (variantDismissPiece.mesh.position.z >= BEND_CENTER_OFFSET) {
+          tween = {
+            fromX: character.position.x,
+            toX: variantAcceptState.acceptX,
+            durMs: 200,
+            startMs: nowMs,
+          };
+          variantAcceptState.characterMoved = true;
+        }
+      }
+      if (variantDismissPiece.mesh.position.z > STRAIGHT_LEN) {
+        clearVariantGeom();
+        if (variantAcceptState) {
+          clearScene();
+          baseFret = variantAcceptState.newPrimary.base_fret;
+          numLanes = variantAcceptState.newPrimary.num_lanes;
+          rebuildTracks();
+          targetCameraX = 0;
+          currentCameraX = 0;
+          variantAcceptState = null;
+        }
+      }
+    }
+
+    // Persistent variant lane segments — speed snapshot per seg (P3), cull at SEG_LEN/2 (P5)
     if (variantInfo && !variantDismissPiece) {
       const nowRel = nowMs - gameStartTime;
       const segTravelTime = SEG_LEN / Math.max(0.001, lastWaveSpeed * 0.5);
@@ -440,25 +495,21 @@ export function createScene(canvas) {
         const seg = new THREE.Mesh(new THREE.BoxGeometry(LANE_W, PIECE_H, SEG_LEN), mat);
         seg.position.set(variantInfo.variantX, 0, SPAWN_Z);
         seg.userData.spawnTimeMs = nowRel;
+        seg.userData.speedPxMs = lastWaveSpeed;
         scene.add(seg);
         variantLaneSegs.push(seg);
       }
       const toRemove = [];
       for (const seg of variantLaneSegs) {
         const elapsed = Math.max(0, nowRel - seg.userData.spawnTimeMs);
-        seg.position.z = SPAWN_Z + elapsed * lastWaveSpeed * 0.5;
-        if (seg.position.z > SEG_LEN) toRemove.push(seg);
+        seg.position.z = SPAWN_Z + elapsed * seg.userData.speedPxMs * 0.5;
+        if (seg.position.z > SEG_LEN / 2) toRemove.push(seg);
       }
       for (const seg of toRemove) {
         variantLaneSegs.splice(variantLaneSegs.indexOf(seg), 1);
         scene.remove(seg);
         seg.geometry?.dispose();
       }
-    }
-
-    // Pulsing emissive on highlight mesh (AC-4)
-    if (variantHighlightMesh && variantHighlightMat) {
-      variantHighlightMat.emissiveIntensity = 0.3 + 0.7 * (0.5 + 0.5 * Math.sin(nowMs * 0.005));
     }
 
     currentCameraX += (targetCameraX - currentCameraX) * 0.1;

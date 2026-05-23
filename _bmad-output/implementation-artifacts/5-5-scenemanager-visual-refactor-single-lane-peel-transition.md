@@ -1,6 +1,6 @@
 # Story 5-5: SceneManager Visual Refactor — Single-Lane Peel Transition
 
-**Status:** review
+**Status:** done
 
 **Epic:** 5 — Variant Track System
 **Story ID:** 5-5
@@ -433,6 +433,16 @@ None.
 
 ### Review Findings
 
+- [x] [Review][Patch] AC-6: `acceptVariantTracks` must spawn dismiss piece, animate character X via tween when bend passes player, and delay track rebuild until dismiss piece exits — current code snaps instantly and skips animation sequence [static/game/SceneManager.js:acceptVariantTracks]
+- [x] [Review][Dismiss] AC-1: `proposeVariantTracks` uses `_variantLaneX(side)` not `variant.base_lane` — single-lane design makes base_lane irrelevant for positioning; `_variantLaneX` is correct for this design
+- [x] [Review][Patch] `variantHighlightMesh` is static at fixed world Z (`-STRAIGHT_LEN/2`), never scrolled in render loop — all other variant geometry scrolls; highlight appears at fixed world position, visually disconnected from scrolling lane [static/game/SceneManager.js:~258,render]
+- [x] [Review][Patch] Lane segments use live `lastWaveSpeed` instead of per-seg snapshot — if `setWaves` updates speed mid-display, already-spawned segments change speed retroactively, diverging from propose/dismiss pieces which snapshot speed at spawn [static/game/SceneManager.js:~436]
+- [x] [Review][Patch] `dismissVariantTracks` called twice leaks first dismiss mesh — second call passes `if (!variantInfo) return` guard, builds another bend piece, overwrites `variantDismissPiece`; first dismiss mesh removed from neither `variantDismissPiece` reference nor `scene` [static/game/SceneManager.js:dismissVariantTracks]
+- [x] [Review][Patch] Segment cull threshold `> SEG_LEN` (25) — segments hang 25 units behind player (past `FRONT_Z = 0`) before disposal; SafeZoneRenderer culls at `z > 0`; inconsistency causes brief visual artifact behind camera [static/game/SceneManager.js:~450]
+- [x] [Review][Patch] Character X after accept uses `_variantLaneX` computed with old `numLanes` — if `newPrimary.num_lanes` differs from propose-time `numLanes`, character lands off-grid relative to rebuilt track layout [static/game/SceneManager.js:acceptVariantTracks]
+- [x] [Review][Defer] Variant geometry not cleaned up if game ends mid-dismiss animation — `cleanup()` does not call `clearVariantGeom()` directly; self-heals on next `reset()` call [static/game/SceneManager.js] — deferred, self-healing
+
 ### Change Log
 
 - 2026-05-23: Story 5-5 implemented — railway-switch peel transition, camera stays fixed (Date: 2026-05-23)
+- 2026-05-23: Code review patches applied — P1 accept deferred-state tween pattern, P2 highlight mesh scroll, P3 per-seg speed snapshot, P4 dismissVariantTracks double-call guard, P5 cull threshold SEG_LEN/2, P6 acceptX from newPrimary.num_lanes (Date: 2026-05-23)

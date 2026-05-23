@@ -60,6 +60,14 @@
 - W3 — `resumeGame()` does not call `overlayMgr.hide()` — by design (overlay self-hides via onResumeClick), but any future external caller would leave overlay visible while game runs. No current broken path.
 - W4 — `forceCollision` test hook sets `run.state = 'failed'` directly without `run.abandon()` — test-only hook, bypass is intentional.
 
+## Deferred from: code review of 5-4-backend-variant-direction-logic (2026-05-23)
+
+- Contract and integration tests import `engine` singleton directly via `from services.game_router import engine` — breaks test isolation if router is ever moved out-of-process; tests would silently always see `sess == None`.
+
+## Deferred from: code review of 5-5-scenemanager-visual-refactor-single-lane-peel-transition (2026-05-23)
+
+- Variant geometry not cleaned up if game ends mid-dismiss animation — `cleanup()` in `main.js` calls `dismissVariantTracks()` but not `clearVariantGeom()` directly; if the user quits before the dismiss piece scrolls past, proposal/lane/highlight meshes remain in the Three.js scene until the next `reset()` call. Self-healing, cosmetic only.
+
 ## Deferred from: code review of 5-1-wire-variant-observable-state-and-test-hook (2026-05-23)
 
 - DOWN-pass false positive on arbitrary index reset — depends on play_note error handling; likely harmless pending verification of how incorrect notes affect current_note_index.
