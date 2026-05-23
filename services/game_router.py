@@ -151,6 +151,7 @@ async def start_game(payload: dict):
         "num_lanes": session.num_lanes,
         "notes": session.notes,
         "root_note": session.notes[0] if session.notes else None,
+        "ascending_note_count": session.ascending_note_count,
         "timing_params": timing_params,
         "game_state": game_state
     }

@@ -16,6 +16,7 @@ const CAMERA_DISTANCE = 15; // Euclidean distance
 const TRACK_DEPTH = 120;
 const ROOF_COLOUR = 0x444444;
 const VARIANT_ACCENT = 0xFFB800;  // Accent colour for variant lane
+const VARIANT_SZ_DEPTH = 20;      // Safe zone depth for variant lane (matches SafeZoneRenderer)
 const LANE_W = 1.4;               // Lane box width (matches BoxGeometry in rebuildTracks)
 const PIECE_H = 0.06;             // Track piece height
 const STRAIGHT_LEN = 20;          // Z length of straight section in bend piece
@@ -107,6 +108,7 @@ export function createScene(canvas) {
   let variantHighlightMesh = null;
   let variantHighlightMat = null;
   let variantInfo = null;           // { side, variantX }
+  let variantSafeZoneMesh = null;   // safe zone mesh on variant lane (story 5-7)
   let variantAcceptState = null;    // { newPrimary, acceptX, characterMoved } — tracks accept animation
   let lastWaveSpeed = 0.05;         // captured from setWaves; used for piece scrolling
   let variantAccentMat = null;      // shared accent material
@@ -228,6 +230,12 @@ export function createScene(canvas) {
       variantAccentMat.dispose();
       variantAccentMat = null;
     }
+    if (variantSafeZoneMesh) {
+      scene.remove(variantSafeZoneMesh);
+      variantSafeZoneMesh.geometry?.dispose();
+      variantSafeZoneMesh.material?.dispose();
+      variantSafeZoneMesh = null;
+    }
     variantAcceptState = null;
     variantInfo = null;
   }
@@ -238,7 +246,7 @@ export function createScene(canvas) {
     return laneX(edgeLane, numLanes) + sign * LANE_X_SCALE;
   }
 
-  function proposeVariantTracks(variant) {
+  function proposeVariantTracks(variant, transitionWave = null) {
     clearVariantGeom();
     const vx = _variantLaneX(variant.side);
     const spawnTimeMs = performance.now() - gameStartTime;
@@ -262,6 +270,32 @@ export function createScene(canvas) {
     variantHighlightMesh.position.set(vx, 0, SPAWN_Z);
     variantHighlightMesh.userData.spawnTimeMs = spawnTimeMs;
     scene.add(variantHighlightMesh);
+
+    // Safe zone on variant lane — colored by transition string (story 5-7, AC-2, AC-3)
+    const variantSzColor = STRING_COLORS[variant.base_string] ?? COLORS.ACCENT;
+    const szGeo = new THREE.PlaneGeometry(1.2, VARIANT_SZ_DEPTH);
+    const szMat = new THREE.MeshStandardMaterial({
+      color: variantSzColor,
+      transparent: true,
+      opacity: 0.5,
+      side: THREE.DoubleSide,
+    });
+    const szMesh = new THREE.Mesh(szGeo, szMat);
+    szMesh.rotation.x = -Math.PI / 2;
+    // Compute spawn time: when transitionWave is provided, back-calculate so the
+    // safe zone arrives at z=0 at the same moment as the wave deadline (AC-4).
+    let szSpawnMs;
+    if (transitionWave) {
+      const arrivalMs = transitionWave.spawn_time_ms + transitionWave.duration_ms;
+      const travelMs = Math.abs(SPAWN_Z) / (transitionWave.speed_px_per_ms * 0.5);
+      szSpawnMs = arrivalMs - travelMs;
+    } else {
+      szSpawnMs = performance.now() - gameStartTime;
+    }
+    szMesh.userData.spawnMs = szSpawnMs;
+    szMesh.position.set(vx, 0.05, SPAWN_Z + VARIANT_SZ_DEPTH / 2);
+    scene.add(szMesh);
+    variantSafeZoneMesh = szMesh;
   }
 
   function dismissVariantTracks() {
@@ -279,7 +313,7 @@ export function createScene(canvas) {
     if (variantHighlightMat) { variantHighlightMat.dispose(); variantHighlightMat = null; }
   }
 
-  function acceptVariantTracks(newPrimary) {
+  function acceptVariantTracks(newPrimary, notes = []) {
     if (!variantInfo) {
       // Fallback: no active variant state, rebuild immediately.
       clearScene();
@@ -306,7 +340,8 @@ export function createScene(canvas) {
     }
     if (variantHighlightMat) { variantHighlightMat.dispose(); variantHighlightMat = null; }
     // AC-6 §2-4: defer character tween + track rebuild to render loop.
-    variantAcceptState = { newPrimary, acceptX, characterMoved: false };
+    // Store notes for post-rebuild character alignment (story 5-7, AC-7).
+    variantAcceptState = { newPrimary, acceptX, characterMoved: false, notes };
   }
 
   function setInstrument(inst) {
@@ -454,6 +489,13 @@ export function createScene(canvas) {
       }
     }
 
+    // Variant safe zone — scroll with same formula as SafeZoneRenderer (AC-2)
+    if (variantSafeZoneMesh) {
+      const elapsed = Math.max(0, nowMs - gameStartTime - variantSafeZoneMesh.userData.spawnMs);
+      const z = SPAWN_Z + elapsed * lastWaveSpeed * 0.5 + VARIANT_SZ_DEPTH / 2;
+      variantSafeZoneMesh.position.z = z;
+    }
+
     // Dismiss piece — Z-scroll; trigger character tween at bend midpoint on accept (P1)
     if (variantDismissPiece) {
       const elapsed = Math.max(0, nowMs - gameStartTime - variantDismissPiece.spawnTimeMs);
@@ -477,6 +519,12 @@ export function createScene(canvas) {
           baseFret = variantAcceptState.newPrimary.base_fret;
           numLanes = variantAcceptState.newPrimary.num_lanes;
           rebuildTracks();
+          // Snap character to first post-accept note's lane (story 5-7, AC-7).
+          const firstNote = variantAcceptState.notes?.[0];
+          if (firstNote && firstNote.fret != null) {
+            const lane = Math.max(0, Math.min(numLanes - 1, firstNote.fret - baseFret));
+            character.position.x = laneX(lane, numLanes);
+          }
           targetCameraX = 0;
           currentCameraX = 0;
           variantAcceptState = null;

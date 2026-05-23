@@ -413,6 +413,25 @@ export async function bootstrap(root) {
         notesResp.num_lanes,
       );
 
+      // Transition-wave tracking for variant safe zone timing (story 5-7, AC-5).
+      const ascendingNoteCount = notesResp.ascending_note_count;
+      const apexMidi = ascendingNoteCount > 0
+        ? (notesResp.notes[ascendingNoteCount - 1]?.midi ?? null)
+        : null;
+      const rootMidi = notesResp.notes[0]?.midi ?? null;
+      function findTransitionWave(side) {
+        const targetMidi = side === 'RIGHT' ? apexMidi : rootMidi;
+        if (!targetMidi) return null;
+        const game_now = performance.now() - gameStartTime;
+        return waveScheduler.waves
+          .filter(w => w.safe_midi === targetMidi)
+          .sort((a, b) =>
+            (a.spawn_time_ms + a.duration_ms - game_now) -
+            (b.spawn_time_ms + b.duration_ms - game_now)
+          )
+          .find(w => w.spawn_time_ms + w.duration_ms >= game_now) ?? null;
+      }
+
       // Start the rendering loop so we can see the initial state
       let _pausedAt = null;
       let gameStartTime = 0; // set after audio setup so countdownStart is accurate
@@ -518,7 +537,7 @@ export async function bootstrap(root) {
         if (activeVariant && activeWindow && det && det.note && det.note.midi === activeWindow.trigger_midi) {
           const resp = await gameClient.acceptVariant(det.note.midi);
           if (resp && resp.success) {
-            scene.acceptVariantTracks({ num_lanes: resp.num_lanes, base_fret: resp.base_fret });
+            scene.acceptVariantTracks({ num_lanes: resp.num_lanes, base_fret: resp.base_fret }, resp.notes);
             if (run && resp.notes) {
               run.sequence = resp.notes;
               run.cursor = 1 % resp.notes.length;
@@ -600,7 +619,7 @@ export async function bootstrap(root) {
                 window.__gameState.variant.timerExpired = false;
               }
               if (shownVariantId !== resp.variant.variant_id) {
-                scene.proposeVariantTracks(resp.variant);
+                scene.proposeVariantTracks(resp.variant, findTransitionWave(resp.variant.side));
                 playVariantCue();
                 shownVariantId = resp.variant.variant_id;
               }
@@ -610,7 +629,7 @@ export async function bootstrap(root) {
 
         // Render variant if backend reports one we haven't shown yet.
         if (activeVariant && shownVariantId !== activeVariant.variant_id) {
-          scene.proposeVariantTracks(activeVariant);
+          scene.proposeVariantTracks(activeVariant, findTransitionWave(activeVariant.side));
           playVariantCue();
           shownVariantId = activeVariant.variant_id;
         }
