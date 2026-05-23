@@ -23,6 +23,10 @@ def test_game_start_contract(client):
     
     assert "notes" in data
     assert isinstance(data["notes"], list)
-    assert "waves" in data
-    assert len(data["waves"]) > 0
+    assert "timing_params" in data
+    tp = data["timing_params"]
+    assert tp["base_duration_ms"] == 4000  # easy difficulty
+    assert tp["wave_spacing_factor"] == 0.4
+    assert tp["wave_lookahead_ms"] == 10000
+    assert tp["speed_increment_per_note"] == 0.05
     assert "game_state" in data

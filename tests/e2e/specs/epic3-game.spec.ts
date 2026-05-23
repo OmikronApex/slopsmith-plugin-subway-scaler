@@ -53,7 +53,7 @@ test.describe('Epic 3: Three.js canvas (Story 3.1)', () => {
   });
 });
 
-// ─── Story 3.4 — GameLoop / phase management ──────────────────────────────────
+// ─── Story 3.4 — Phase management ────────────────────────────────────────────
 
 test.describe('Epic 3: phase transitions (Story 3.4)', () => {
   test('phase transitions from idle to playing on START', async ({ gamePage }) => {

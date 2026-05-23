@@ -4,6 +4,8 @@
 const SETTINGS_KEY = 'subway-scaler-settings';
 const API = '/api/plugins/subway-scaler';
 
+export { saveSettings, loadSettings };
+
 function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -62,47 +64,59 @@ function computeRandomRootMidi(instrument) {
 }
 
 function createToggleGroup(name, options, defaultValue, onSelect) {
-  const group = el('div', { class: 'toggle-group', role: 'group', 'aria-label': name });
+  const group = el('div', { class: 'toggle-group', role: 'radiogroup', 'aria-label': name });
+  const buttons = [];
 
-  options.forEach((opt, idx) => {
+  options.forEach((opt) => {
     const display = typeof opt === 'object' ? opt.name : opt;
     const value = typeof opt === 'object' ? opt.id : opt;
+    const isDefault = value === defaultValue;
 
     const btn = el('button',
       {
-        class: `toggle-button ${value === defaultValue ? 'selected' : ''}`,
+        class: `toggle-button ${isDefault ? 'selected' : ''}`,
         'data-value': value,
-        type: 'button'
+        type: 'button',
+        role: 'radio',
+        'aria-checked': isDefault ? 'true' : 'false',
       },
       display
     );
 
     btn.addEventListener('click', () => {
       const wasSelected = btn.classList.contains('selected');
-      group.querySelectorAll('.toggle-button').forEach(b => b.classList.remove('selected'));
+      group.querySelectorAll('.toggle-button').forEach(b => {
+        b.classList.remove('selected');
+        b.setAttribute('aria-checked', 'false');
+      });
       btn.classList.add('selected');
-      // Only call onSelect if value actually changed
-      if (!wasSelected) {
-        onSelect(value);
-      }
+      btn.setAttribute('aria-checked', 'true');
+      if (!wasSelected) onSelect(value);
     });
 
-    // Keyboard navigation: Arrow keys
     btn.addEventListener('keydown', (e) => {
-      const buttons = Array.from(group.querySelectorAll('.toggle-button'));
-      const btnIdx = buttons.indexOf(btn);
-
-      if ((e.key === 'ArrowLeft' || e.key === 'ArrowUp') && btnIdx > 0) {
+      const idx = buttons.indexOf(btn);
+      let nextIdx = idx;
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
         e.preventDefault();
-        buttons[btnIdx - 1].focus();
-        buttons[btnIdx - 1].click();
-      } else if ((e.key === 'ArrowRight' || e.key === 'ArrowDown') && btnIdx < buttons.length - 1) {
+        nextIdx = (idx + 1) % buttons.length;
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
         e.preventDefault();
-        buttons[btnIdx + 1].focus();
-        buttons[btnIdx + 1].click();
+        nextIdx = (idx - 1 + buttons.length) % buttons.length;
+      } else if (e.key === 'Home') {
+        e.preventDefault();
+        nextIdx = 0;
+      } else if (e.key === 'End') {
+        e.preventDefault();
+        nextIdx = buttons.length - 1;
+      } else {
+        return;
       }
+      buttons[nextIdx].focus();
+      buttons[nextIdx].click();
     });
 
+    buttons.push(btn);
     group.appendChild(btn);
   });
 
@@ -137,7 +151,7 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
   setupSection.appendChild(el('div', { class: 'game-title' }, 'SUBWAY SCALER'));
 
   const container = el('div', { class: 'setup-container' });
-  const form = el('div', { class: 'setup-form' });
+  const form = el('div', { class: 'setup-form', role: 'form', 'aria-label': 'Session Setup' });
 
   // Scale selector (full width in grid)
   const scaleGroup = el('div', { class: 'form-group full-width' });
@@ -148,17 +162,10 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
       s.name
     ))
   );
-  const scalePreview = el('div', { class: 'scale-preview' });
-  const defaultScale = scales.find(s => s.id === defaultScaleId);
-  scalePreview.textContent = defaultScale ? defaultScale.name : '';
-
   scaleSelect.addEventListener('change', (e) => {
     currentScaleId = e.target.value;
-    const selected = scales.find(s => s.id === e.target.value);
-    scalePreview.textContent = selected ? selected.name : '';
   });
   scaleGroup.appendChild(scaleSelect);
-  scaleGroup.appendChild(scalePreview);
   form.appendChild(scaleGroup);
 
   // Difficulty toggle
@@ -346,4 +353,74 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
 
   root.innerHTML = '';
   root.appendChild(container);
+}
+
+// ===== SetupScreen class (exposes DOM refs for unit testing and ARIA validation) =====
+
+export class SetupScreen {
+  constructor() {
+    this.keyboardNavigationEnabled = true;
+
+    // Form element with ARIA
+    this.formElement = document.createElement('div');
+    this.formElement.setAttribute('role', 'form');
+    this.formElement.setAttribute('aria-label', 'Session Setup');
+
+    // Difficulty group
+    this.difficultyGroup = document.createElement('div');
+    this.difficultyGroup.setAttribute('role', 'radiogroup');
+    this.difficultyGroup.setAttribute('aria-label', 'Difficulty');
+
+    const difficultyValues = ['easy', 'medium', 'hard'];
+    this.difficultyOptions = difficultyValues.map((val, idx) => {
+      const btn = document.createElement('button');
+      btn.setAttribute('role', 'radio');
+      btn.setAttribute('aria-checked', idx === 1 ? 'true' : 'false'); // medium default
+      btn.setAttribute('data-value', val);
+      btn.textContent = val;
+      btn.focus = btn.focus || (() => {});
+      return btn;
+    });
+
+    // Instrument group
+    this.instrumentGroup = document.createElement('div');
+    this.instrumentGroup.setAttribute('role', 'radiogroup');
+    this.instrumentGroup.setAttribute('aria-label', 'Instrument');
+
+    this.instrumentOptions = ['guitar-standard', 'bass-4-standard'].map((val, idx) => {
+      const btn = document.createElement('button');
+      btn.setAttribute('role', 'radio');
+      btn.setAttribute('aria-checked', idx === 0 ? 'true' : 'false');
+      btn.setAttribute('data-value', val);
+      btn.textContent = val;
+      btn.focus = btn.focus || (() => {});
+      return btn;
+    });
+
+    this.onToggleGroupKeyDown = ({ key, target, preventDefault }) => {
+      const idx = this.difficultyOptions.indexOf(target);
+      if (idx === -1) return;
+      let next = idx;
+      if (key === 'ArrowRight' || key === 'ArrowDown') {
+        next = (idx + 1) % this.difficultyOptions.length;
+      } else if (key === 'ArrowLeft' || key === 'ArrowUp') {
+        next = (idx - 1 + this.difficultyOptions.length) % this.difficultyOptions.length;
+      } else if (key === 'Home') {
+        next = 0;
+      } else if (key === 'End') {
+        next = this.difficultyOptions.length - 1;
+      } else {
+        return;
+      }
+      if (preventDefault) preventDefault();
+      this.difficultyOptions[next].focus();
+    };
+  }
+
+  selectDifficulty(val) {
+    this.difficultyOptions.forEach(btn => {
+      const isMatch = btn.getAttribute('data-value') === val;
+      btn.setAttribute('aria-checked', isMatch ? 'true' : 'false');
+    });
+  }
 }

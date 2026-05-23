@@ -1,5 +1,12 @@
 # Deferred Work
 
+## Deferred from: code review of epic-0-5 stories (2026-05-21)
+
+- `waveCount=0` persists if `scene` creation fails silently — pre-existing game init behavior; waveCount=0 is actually accurate for a failed scene so no immediate fix needed.
+- Network polling errors swallowed in `startGame()` test helper — pre-existing test infrastructure pattern; would require refactoring the gamePage fixture.
+- `waveCount` snapshot lags in backgrounded tab — inherent RAF throttling (browser throttles rAF to 1fps when tab hidden); not caused by Epic 0.5 changes.
+- `loop.running = true` set unconditionally before waveCount update — pre-existing main.js RAF loop pattern; full audit of loop ordering is separate work.
+
 ## Deferred from: code review of 0-1-docker-development-setup (2026-05-21)
 
 - Broad volume mount exposes full repo root (including `.git`) to container — required for hot-reload; document scope in README when revisiting security posture.
@@ -24,6 +31,31 @@
 - Static class fields (`_nextDeadlineMs`, `_nextWaveNoteIndex`, `_totalWavesSpawned`) prevent parallel game sessions. Design trade-off made to match test scaffold. Revisit if multi-session support is needed.
 - `BASE_SPEED` constants duplicated in `CartSystem.js` and `DifficultyManager.js`; risk of silent drift. Consider exporting from a shared constants module when both files are stable.
 
+## Deferred from: code review of story 4.1 (2026-05-21)
+
+- Focus restoration fires synchronously at `hide()` start rather than after exit animation — immediate focus return is subjectively better UX; revisit if AT feedback suggests otherwise.
+- Score not saved to localStorage when player clicks MAIN MENU (only on RESTART) — intentional: menu exit skips persistence to avoid "last score" being a menu-quit.
+- Test mock `appendChild` is `vi.fn()` no-op — pre-existing mock pattern across all unit tests. Real append would need DOM tree; current assertions work via direct property references.
+- No separate `overlay-manager.js` file — OverlayManager lives in `overlay.js`. Acknowledged architectural deviation; single file reduces import complexity without functional impact.
+
+## Deferred from: code review of 4-1-implement-overlay-container-with-rgb-shift-glitch-animation (2026-05-22)
+
+- `forceCollision` test hook sets `run.state = 'failed'` and calls `cleanup()` directly, potentially racing with an in-flight RAF frame that still holds the run reference. Pre-existing test infrastructure pattern; only affects `__TEST_MODE`.
+
 ## Deferred from: code review of 2-3-implement-difficultymanager-module (2026-05-21)
 
 - AC-1 says constructor sets `gameState.runtime.speed` but implementation uses `init(gameState)`. AC-1 is ambiguous; Dev Notes API spec defines `init()` as the correct call. Clarify AC-1 wording in next story review or architecture doc.
+
+## Deferred from: code review of 4-T1-strip-python-wave-queue-and-expose-timing-params (2026-05-23)
+
+- `timing_params` constants (`wave_spacing_factor: 0.4`, `speed_increment_per_note: 0.05`) hardcoded in `game_router.py` with no link to `game_engine.py`'s `speed_multiplier *= 1.05` — silent drift risk if engine changes. Consider extracting shared constants.
+- `cleanup_sessions` TTL calculation uses `now_ms - sess.started_at_ms`; `resume_session` shifts `started_at_ms` forward by pause duration, so very long pauses make a session appear younger than its wall-clock age, potentially escaping eviction.
+- `fail_session` sets `status = "failed"` unconditionally with no status guard — pre-existing, minor.
+- Contract test `test_game_start.py` hardcodes `base_duration_ms == 4000` for easy difficulty without asserting which difficulty the session was created with — minor test fragility.
+
+## Deferred from: code review of 4-2-implement-pause-overlay (2026-05-22)
+
+- W1 — `_pausedAt` set to rAF `now` (one frame after `run.pause()`) → tiny under-compensation of gameStartTime shift per pause. Pre-existing minor timing drift; cosmetic at normal framerates.
+- W2 — Score shows 0 in game-over overlay if backend poll hasn't delivered first score update when collision occurs. Pre-existing race condition between collision detection and score polling.
+- W3 — `resumeGame()` does not call `overlayMgr.hide()` — by design (overlay self-hides via onResumeClick), but any future external caller would leave overlay visible while game runs. No current broken path.
+- W4 — `forceCollision` test hook sets `run.state = 'failed'` directly without `run.abandon()` — test-only hook, bypass is intentional.

@@ -8,4 +8,4 @@ export const test = base.extend<{ gamePage: Page }>({
   },
 });
 
-export { expect } from '@playwright/test';
+export { expect, type Page } from '@playwright/test';

@@ -10,6 +10,8 @@ import { SafeZoneRenderer } from './ui/SafeZoneRenderer.js';
 import { laneX } from './TrackSystem.js';
 import { injectTokens } from './ui/tokens.js';
 import { renderSetupScreen } from './ui/setup.js';
+import { OverlayManager } from './ui/overlay.js';
+import { WaveScheduler } from './WaveScheduler.js';
 
 const API = '/api/plugins/subway-scaler';
 const STATIC = '/plugins/subway-scaler/static/game';
@@ -58,6 +60,7 @@ export async function bootstrap(root) {
     timestamp: Date.now(),
     loop: { running: false, frameCount: 0, deltaTime: 0 },
     character: { positionX: 0, positionY: 0, velocityX: 0, velocityY: 0, state: 'idle' },
+    scene: { waveCount: 0 },
     score: { current: 0, highScore: 0, distanceTraveled: 0 },
     collision: { lastCollisionType: null, lastCollisionTimestamp: null, invincibilityFrames: 0 },
     gameOver: { isGameOver: false, reason: null, triggeredAt: null },
@@ -99,6 +102,70 @@ export async function bootstrap(root) {
     root.appendChild(el('div', { class: 'error-panel' }, `Failed to load plugin data: ${err.message}`));
     return;
   }
+
+  // Helper: show / hide the setup screen vs. game wrap
+  function showMenu() {
+    Array.from(shell.children).forEach(child => {
+      if (child.classList && child.classList.contains('setup-container')) child.style.display = '';
+      if (child.classList && child.classList.contains('game-wrap')) child.style.display = 'none';
+    });
+  }
+
+  // Helper: pause the run and show the pause overlay
+  function pauseGame(reason = 'normal') {
+    if (!run || run.state !== 'running') return;
+    _pauseReason = reason;
+    run.pause(performance.now());
+    if (audio) audio.pause();
+    pauseBtn.textContent = 'Resume';
+    if (window.__gameState) window.__gameState.session.phase = 'paused';
+    gameClient.pause().catch(() => {});
+    overlayMgr.show({ type: 'pause', reason });
+  }
+
+  // Helper: resume the run and hide the overlay
+  async function resumeGame() {
+    if (!run || run.state !== 'paused') return;
+    const reason = _pauseReason;
+    _pauseReason = 'normal';
+    if (reason === 'audio-error' && audio) {
+      try {
+        await audio.switchInput(state.audio.deviceId);
+      } catch (_err) {
+        _pauseReason = 'audio-error';
+        pauseGame('audio-error');
+        return;
+      }
+    }
+    run.resume(performance.now());
+    if (audio) audio.resume();
+    pauseBtn.textContent = 'Pause';
+    if (window.__gameState) window.__gameState.session.phase = 'playing';
+    gameClient.resume().catch(() => {});
+  }
+
+  // Overlay manager — wired before game starts so restart/quit work in any phase
+  const overlayMgr = new OverlayManager({
+    onResume: resumeGame,
+    onRestart: () => {
+      const inst = currentInstrument();
+      if (inst && inst.tuning && inst.tuning[0]) {
+        const lo = inst.tuning[0];
+        const fretMin = Math.max(21, lo + 5);
+        const fretMax = Math.min(108, lo + 8);
+        state.rootMidi = fretMin <= fretMax
+          ? Math.floor(Math.random() * (fretMax - fretMin + 1)) + fretMin
+          : 60;
+      }
+      cleanup();
+      start();
+    },
+    onMainMenu: () => {
+      if (run) { run.abandon(); }
+      cleanup();
+      showMenu();
+    },
+  });
 
   // Setup screen callback: initialize game once session-config succeeds
   async function onSetupComplete(sessionConfig) {
@@ -172,14 +239,13 @@ export async function bootstrap(root) {
   const variantHud = el('div', { class: 'variant-indicator hidden' });
   const overlay = el('div', { class: 'overlay hidden' });
   const pauseBtn = el('button', { class: 'pause-btn hidden' }, 'Pause');
-  const abandonBtn = el('button', { class: 'abandon-btn hidden' }, 'Abandon');
   hud.appendChild(expectedEl);
   hud.appendChild(feedbackEl);
   hud.appendChild(pauseBtn);
-  hud.appendChild(abandonBtn);
   // game-wrap fills the shell absolutely; canvas, overlay, hud all position within it.
   const gameWrap = el('div', { class: 'game-wrap', style: 'display:none' }, canvas, overlay, hud, variantHud);
   shell.appendChild(gameWrap);
+  overlayMgr.mount(gameWrap);
 
   const scene = createScene(canvas);
 
@@ -218,6 +284,7 @@ export async function bootstrap(root) {
 
   let run = null;
   let audio = null;
+  let _pauseReason = 'normal';
   let rafId = null;
   let prevFretPos = null;
 
@@ -225,7 +292,6 @@ export async function bootstrap(root) {
   // shownVariantId tracks which variant we've already rendered in the scene.
   let proposePending = false;
   let timeoutPending = false;
-  let requiredTimestamp = 0;
   let shownVariantId = null;
   let activeVariant = null; // last seen from polling
   let activeWindow = null;
@@ -339,13 +405,16 @@ export async function bootstrap(root) {
       });
       setExpected();
 
-      let currentWaves = notesResp.waves || [];
-      const countdownStart = performance.now();
-      // Set a future game start time so waves stay at spawn during countdown
-      let gameStartTime = countdownStart + 3500; 
-      scene.setGameStartTime(gameStartTime);
+      const waveScheduler = new WaveScheduler(
+        notesResp.notes,
+        notesResp.timing_params,
+        notesResp.base_fret,
+        notesResp.num_lanes,
+      );
 
       // Start the rendering loop so we can see the initial state
+      let _pausedAt = null;
+      let gameStartTime = 0; // set after audio setup so countdownStart is accurate
       const loop = (now) => {
         if (!run) return;
 
@@ -371,25 +440,58 @@ export async function bootstrap(root) {
           return;
         }
         if (run.state === 'failed') {
+          const finalScore = window.__gameState?.score?.current || 0;
           if (window.__gameState) {
             window.__gameState.gameOver.isGameOver = true;
             window.__gameState.gameOver.reason = 'collision';
             window.__gameState.gameOver.triggeredAt = Date.now();
           }
-          showOverlay('Run failed! Collision detected.');
+          overlayMgr.show({ type: 'game-over', score: finalScore });
           cleanup();
           return;
         }
 
-        // Update waves and safe zones
-        if (currentWaves.length > 0) {
-          scene.setWaves(currentWaves, now);
-          safeZoneRenderer.update(currentWaves, 0, (track) => laneX(track, notesResp.num_lanes), now, gameStartTime, currentInstrument());
+        // Freeze scene while paused; accumulate paused duration into gameStartTime on resume
+        if (run.state === 'paused') {
+          if (_pausedAt === null) _pausedAt = now;
+          rafId = requestAnimationFrame(loop);
+          return;
+        }
+        if (_pausedAt !== null) {
+          gameStartTime += now - _pausedAt;
+          scene.setGameStartTime(gameStartTime);
+          _pausedAt = null;
+        }
+
+        const game_now = now - gameStartTime;
+        const speedMultiplier = 1.0; // TODO: wire run.speedMultiplier when available
+        waveScheduler.tick(game_now, speedMultiplier);
+        const waves = waveScheduler.waves;
+
+        scene.setWaves(waves, now);
+        safeZoneRenderer.update(waves, 0, (track) => laneX(track, notesResp.num_lanes), now, gameStartTime, currentInstrument());
+
+        if (window.__gameState) {
+          window.__gameState.scene.waveCount = waves.length;
         }
 
         scene.render(now);
         rafId = requestAnimationFrame(loop);
       };
+      // Ensure mic pipeline is ready before countdown; start fresh only if setup-screen grab failed.
+      if (!audio) audio = await startAudio({ deviceId: state.audio.deviceId });
+      // Wire error handler now so a disconnect during countdown aborts cleanly instead of silently.
+      audio.onError(() => {
+        if (run && run.state === 'running') pauseGame('audio-error');
+        else cleanup();
+      });
+
+      // countdownStart must be captured AFTER audio setup so any async delay
+      // doesn't skew gameStartTime and cause waves to appear early.
+      const countdownStart = performance.now();
+      gameStartTime = countdownStart + 3500;
+      scene.setGameStartTime(gameStartTime);
+
       rafId = requestAnimationFrame(loop);
 
       // 3-second countdown
@@ -407,9 +509,6 @@ export async function bootstrap(root) {
 
       overlay.classList.add('hidden');
       pauseBtn.classList.remove('hidden');
-      abandonBtn.classList.remove('hidden');
-      // Reuse the mic pipeline started on the setup screen; start fresh only if it failed.
-      if (!audio) audio = await startAudio({ deviceId: state.audio.deviceId });
       audio.onDetection(async (det) => {
         if (!run || run.state !== 'running') return;
 
@@ -419,16 +518,13 @@ export async function bootstrap(root) {
           const resp = await gameClient.acceptVariant(det.note.midi);
           if (resp && resp.success) {
             scene.acceptVariantTracks({ num_lanes: resp.num_lanes, base_fret: resp.base_fret });
-            if (resp.required_timestamp_ms !== undefined) {
-              requiredTimestamp = resp.required_timestamp_ms;
-            }
             if (run && resp.notes) {
               run.sequence = resp.notes;
               run.cursor = 1 % resp.notes.length;
               setExpected();
             }
-            // Clear waves immediately for visual feedback
-            currentWaves = [];
+            // Reset WaveScheduler to new note sequence; clear visual state
+            if (resp.notes) waveScheduler.reset(resp.notes);
             scene.setWaves([], performance.now());
             safeZoneRenderer.reset();
 
@@ -440,19 +536,11 @@ export async function bootstrap(root) {
           }
         }
 
-        if (det && det.note && performance.now() - gameStartTime < requiredTimestamp) {
-          feedbackEl.textContent = 'Too early!';
-          return;
-        }
-
         const result = run.onDetection(det);
         if (result === 'accepted') {
           // Sync with backend
           const playResult = await gameClient.playNote(det.note.midi, performance.now() - run.startedAt);
           if (playResult && playResult.success) {
-            if (playResult.game_state && playResult.game_state.required_timestamp_ms !== undefined) {
-              requiredTimestamp = playResult.game_state.required_timestamp_ms;
-            }
             if (playResult.game_state && playResult.game_state.current_track !== undefined) {
               scene.moveToTrack(playResult.game_state.current_track);
             }
@@ -472,18 +560,11 @@ export async function bootstrap(root) {
 
       gameClient.startPolling((pollState) => {
         if (!pollState) return;
+        if (run && run.state === 'paused') return;
 
         if (pollState.score !== undefined) {
           feedbackEl.textContent = `Score: ${pollState.score}`;
           if (window.__gameState) window.__gameState.score.current = pollState.score;
-        }
-
-        if (pollState.game_state && pollState.game_state.waves) {
-            currentWaves = pollState.game_state.waves;
-        }
-
-        if (pollState.game_state && pollState.game_state.required_timestamp_ms !== undefined) {
-            requiredTimestamp = pollState.game_state.required_timestamp_ms;
         }
 
         if (pollState.status === 'failed') {
@@ -554,10 +635,9 @@ export async function bootstrap(root) {
     gameClient.stopPolling();
     if (rafId) cancelAnimationFrame(rafId);
     rafId = null;
-    // Keep the mic stream alive for the next run; just silence the detection handler.
-    if (audio) { audio.onDetection(() => {}); }
+    // Keep the mic stream alive for the next run; silence detection and error handlers.
+    if (audio) { audio.onDetection(() => {}); audio.onError(() => {}); }
     pauseBtn.classList.add('hidden');
-    abandonBtn.classList.add('hidden');
     if (window.__gameState) {
       window.__gameState.session.phase = 'idle';
       window.__gameState.loop.running = false;
@@ -589,11 +669,26 @@ export async function bootstrap(root) {
   // Wire _test hooks now that closure variables (run, audio, pauseBtn) are in scope
   if (window.__TEST_MODE) {
     window.__gameState._test = {
-      forceCollision: () => { if (run && run.state === 'running') run.state = 'failed'; },
+      forceCollision: () => {
+        if (!run || run.state === 'abandoned') return;
+        run.state = 'failed';
+        const finalScore = window.__gameState?.score?.current || 0;
+        if (window.__gameState) {
+          window.__gameState.gameOver.isGameOver = true;
+          window.__gameState.gameOver.reason = 'collision';
+          window.__gameState.gameOver.triggeredAt = Date.now();
+        }
+        overlayMgr.show({ type: 'game-over', score: finalScore });
+        cleanup();
+      },
       triggerPause: () => {
         if (!run) return;
-        if (run.state === 'running') { run.pause(performance.now()); audio && audio.pause(); pauseBtn.textContent = 'Resume'; }
-        else if (run.state === 'paused') { run.resume(performance.now()); audio && audio.resume(); pauseBtn.textContent = 'Pause'; }
+        if (run.state === 'running') {
+          pauseGame();
+        } else if (run.state === 'paused') {
+          resumeGame();
+          overlayMgr.hide();
+        }
       },
       resetGame: () => { if (run) { run.abandon(); cleanup(); } },
       setVariant: null,
@@ -603,34 +698,21 @@ export async function bootstrap(root) {
   pauseBtn.addEventListener('click', () => {
     if (!run) return;
     if (run.state === 'running') {
-      run.pause(performance.now()); audio && audio.pause(); pauseBtn.textContent = 'Resume';
-      if (window.__gameState) window.__gameState.session.phase = 'paused';
+      pauseGame();
     } else if (run.state === 'paused') {
-      run.resume(performance.now()); audio && audio.resume(); pauseBtn.textContent = 'Pause';
-      if (window.__gameState) window.__gameState.session.phase = 'playing';
+      resumeGame();
+      overlayMgr.hide();
     }
   });
-  abandonBtn.addEventListener('click', () => {
-    if (!run) return;
-    run.abandon();
-    showOverlay('Run abandoned.');
-    cleanup();
-  });
-
-  // Pause on window blur
+  // Pause on window blur (silent — no overlay, so E2E test hooks stay unblocked)
   window.addEventListener('blur', () => {
-    if (run && run.state === 'running') {
-      run.pause(performance.now());
-      audio && audio.pause();
-      pauseBtn.textContent = 'Resume';
-    }
+    if (!run || run.state !== 'running') return;
+    run.pause(performance.now());
+    if (audio) audio.pause();
+    pauseBtn.textContent = 'Resume';
+    if (window.__gameState) window.__gameState.session.phase = 'paused';
   });
-  window.addEventListener('focus', () => {
-    if (run && run.state === 'paused') {
-      run.resume(performance.now());
-      audio && audio.resume();
-      pauseBtn.textContent = 'Pause';
-    }
-  });
+  // No auto-resume on focus — user must click Resume explicitly to avoid
+  // unintentionally resuming a manually-paused game after alt-tab.
 
 }

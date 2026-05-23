@@ -1,0 +1,225 @@
+/* ===== OVERLAY DIALOG BASE ===== */
+
+/* Full-viewport dialog overlay — stacks above game and canvas */
+/* Backdrop: semi-opaque var(--color-bg-void) so game is faintly visible beneath */
+.subway-scaler .overlay--dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  background: color-mix(in srgb, var(--color-bg-void, #0D0D1A) 96%, transparent);
+  font-family: 'Space Mono', monospace;
+  font-size: 1rem;
+  font-weight: 400;
+  border-radius: 0;
+  z-index: 2000;
+}
+
+/* Animation timing per overlay type */
+.subway-scaler .overlay--dialog.overlay--game-over {
+  --overlay-entry-duration: 200ms;
+  --overlay-exit-duration: 100ms;
+}
+
+.subway-scaler .overlay--dialog.overlay--pause {
+  --overlay-entry-duration: 250ms;
+  --overlay-exit-duration: 150ms;
+}
+
+/* ===== ENTRY / EXIT ANIMATION CLASSES ===== */
+
+.subway-scaler .overlay--entering {
+  animation: rgb-glitch-enter var(--overlay-entry-duration, 200ms) ease-out both;
+}
+
+.subway-scaler .overlay--exiting {
+  animation: rgb-glitch-exit var(--overlay-exit-duration, 100ms) ease-in both;
+}
+
+/* ===== RGB-SHIFT GLITCH KEYFRAMES ===== */
+
+@keyframes rgb-glitch-enter {
+  0% {
+    opacity: 0;
+    filter: drop-shadow(-3px 0 0 rgba(255, 0, 0, 0.65)) drop-shadow(3px 0 0 rgba(0, 60, 255, 0.65));
+    transform: scale(0.98);
+  }
+  40% {
+    opacity: 0.85;
+    filter: drop-shadow(-1px 0 0 rgba(255, 0, 0, 0.35)) drop-shadow(1px 0 0 rgba(0, 60, 255, 0.35));
+    transform: scale(1.004);
+  }
+  100% {
+    opacity: 1;
+    filter: none;
+    transform: scale(1);
+  }
+}
+
+@keyframes rgb-glitch-exit {
+  0% {
+    opacity: 1;
+    filter: none;
+    transform: scale(1);
+  }
+  60% {
+    opacity: 0.6;
+    filter: drop-shadow(-1px 0 0 rgba(255, 0, 0, 0.35)) drop-shadow(1px 0 0 rgba(0, 60, 255, 0.35));
+    transform: scale(0.997);
+  }
+  100% {
+    opacity: 0;
+    filter: drop-shadow(-3px 0 0 rgba(255, 0, 0, 0.65)) drop-shadow(3px 0 0 rgba(0, 60, 255, 0.65));
+    transform: scale(0.98);
+  }
+}
+
+/* ===== REDUCED MOTION OVERRIDES ===== */
+
+@media (prefers-reduced-motion: reduce) {
+  .subway-scaler .overlay--entering {
+    animation: fade-enter 200ms ease-out both;
+  }
+
+  .subway-scaler .overlay--exiting {
+    animation: fade-exit 100ms ease-in both;
+  }
+}
+
+@keyframes fade-enter {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes fade-exit {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+/* ===== OVERLAY CONTENT TYPOGRAPHY ===== */
+
+.subway-scaler .overlay-heading {
+  font-family: 'Space Mono', monospace;
+  font-size: clamp(1.5rem, 3vw, 2.5rem);
+  font-weight: 700;
+  color: var(--color-accent, #FFB800);
+  text-transform: uppercase;
+  letter-spacing: 4px;
+  text-align: center;
+  margin: 0;
+}
+
+.subway-scaler .overlay-score {
+  font-family: 'Space Mono', monospace;
+  font-size: clamp(2.5rem, 6vw, 4.5rem);
+  font-weight: 700;
+  color: var(--color-accent, #FFB800);
+  text-align: center;
+  margin: 0;
+  line-height: 1;
+}
+
+.subway-scaler .overlay-score-context {
+  font-family: 'Space Mono', monospace;
+  font-size: 0.875rem;
+  color: var(--color-text-primary, #E8E8F0);
+  text-align: center;
+  margin: 0;
+  opacity: 0.8;
+}
+
+/* ===== OVERLAY BUTTON CONTAINER ===== */
+
+.subway-scaler .overlay-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  align-items: center;
+  width: 100%;
+  max-width: 300px;
+}
+
+/* ===== PRIMARY BUTTON (RESUME, RESTART) ===== */
+
+.subway-scaler .overlay-btn-primary {
+  background: var(--color-accent, #FFB800);
+  color: var(--color-bg-void, #0D0D1A);
+  border: 2px solid var(--color-accent, #FFB800);
+  padding: 0.875rem 2rem;
+  font-family: 'Space Mono', monospace;
+  font-size: 1rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  border-radius: 0.25rem;
+  width: 100%;
+  min-height: 44px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.subway-scaler .overlay-btn-primary:hover {
+  background: transparent;
+  color: var(--color-accent, #FFB800);
+}
+
+.subway-scaler .overlay-btn-primary:focus-visible {
+  outline: 2px solid var(--color-accent, #FFB800);
+  outline-offset: 3px;
+}
+
+/* ===== SECONDARY BUTTON (MAIN MENU) ===== */
+
+.subway-scaler .overlay-btn-secondary {
+  background: transparent;
+  color: var(--color-text-primary, #E8E8F0);
+  border: 1px solid var(--color-edge, #404040);
+  padding: 0.75rem 2rem;
+  font-family: 'Space Mono', monospace;
+  font-size: 0.875rem;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  border-radius: 0.25rem;
+  width: 100%;
+  min-height: 44px;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.subway-scaler .overlay-btn-secondary:hover {
+  border-color: var(--color-accent, #FFB800);
+  color: var(--color-accent, #FFB800);
+}
+
+.subway-scaler .overlay-btn-secondary:focus-visible {
+  outline: 2px solid var(--color-accent, #FFB800);
+  outline-offset: 3px;
+}
+
+/* ===== TEXT LINK BUTTON (QUIT TO MENU) ===== */
+
+.subway-scaler .overlay-link {
+  background: none;
+  border: none;
+  color: var(--color-text-primary, #E8E8F0);
+  font-family: 'Space Mono', monospace;
+  font-size: 0.75rem;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0.75rem 1rem;
+  min-height: 44px;
+  min-width: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.25rem;
+}
+
+.subway-scaler .overlay-link:hover {
+  color: var(--color-accent, #FFB800);
+}
+
+.subway-scaler .overlay-link:focus-visible {
+  outline: 2px solid var(--color-accent, #FFB800);
+  outline-offset: 3px;
+}

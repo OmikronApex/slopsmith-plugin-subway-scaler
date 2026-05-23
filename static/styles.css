@@ -1,4 +1,5 @@
 @import url('game/ui/setup.css');
+@import url('game/ui/overlays.css');
 
 /* Root: normal block inside Slopsmith's .screen div.
    padding-top clears the fixed navbar (h-16 = 4rem = 64px).
@@ -20,10 +21,11 @@
   max-width: 100%;
   overflow: hidden;
   background: #0D0D1A;
+  border-radius: 0.5rem;
 }
 
 /* Game view: fills the shell */
-.subway-scaler .game-wrap { position: absolute; inset: 0; }
+.subway-scaler .game-wrap { position: absolute; inset: 0; border: 1px solid var(--color-edge, #404040); overflow: hidden; }
 
 /* Canvas: fills game-wrap (and therefore the shell) */
 .subway-scaler .game-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
@@ -35,7 +37,7 @@
 .subway-scaler .hud button:disabled { opacity: 0.5; cursor: not-allowed; }
 .subway-scaler .expected { font-size: 1.25rem; font-weight: 600; }
 .subway-scaler .feedback { font-size: 1.5rem; min-width: 1.5rem; }
-.subway-scaler .overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.5); color: white; display: flex; align-items: center; justify-content: center; font-size: 4rem; font-weight: bold; border-radius: 8px; padding: 1rem; text-align: center; z-index: 1000; }
+.subway-scaler .overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.5); color: white; display: flex; align-items: center; justify-content: center; font-size: 4rem; font-weight: bold; padding: 1rem; text-align: center; z-index: 1000; }
 .subway-scaler .overlay.message { font-size: 1.3rem; font-weight: normal; }
 .subway-scaler .overlay.hidden { display: none; }
 .subway-scaler .error-panel { background: #7f1d1d; color: white; padding: 0.75rem 1rem; border-radius: 8px; }
