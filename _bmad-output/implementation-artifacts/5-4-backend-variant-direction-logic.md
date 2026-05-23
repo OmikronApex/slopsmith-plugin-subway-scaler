@@ -1,6 +1,6 @@
 # Story 5-4: Backend Variant Direction Logic
 
-**Status:** review
+**Status:** done
 
 **Epic:** 5 — Variant Track System
 **Story ID:** 5-4
@@ -284,6 +284,15 @@ claude-sonnet-4-6
 
 ### Review Findings
 
+- [x] [Review][Patch] `_find_root_for_highest`: `asc_count == 0` → `notes[asc_count - 1]` reads `notes[-1]` — silent wrong element, candidate may be accepted incorrectly [services/game_engine.py:_find_root_for_highest] — **fixed**: guard `asc_count > 0 and asc_count < len(notes)` (also rejects degenerate 2-note scales, ensuring descending portion exists)
+- [x] [Review][Patch] RIGHT fallback uses `variant.root_midi` (apex) as scale root → musically wrong scale; AC-5 requires fall back to LEFT path, not degraded RIGHT [services/game_engine.py:accept_variant] — **fixed**: fallback rebuilds from `session.root_midi`, sets `current_note_index = 0`, `total_notes_played = 0`
+- [x] [Review][Patch] `current_note_index = new_asc_count % len(new_notes)` — spec requires direct `new_asc_count` with degenerate guard, not modulo everywhere [services/game_engine.py:accept_variant] — **fixed**: `new_asc_count if new_notes and new_asc_count < len(new_notes) else 0`
+- [x] [Review][Patch] All 3 test layers assert `ascending_note_count % len(notes)` instead of `== ascending_note_count` — weakened assertion cannot catch wrong-index regression [tests/unit/test_game_engine.py, tests/contract/test_variant.py, tests/integration/test_variant_flow.py] — **fixed**: direct `== ascending_note_count` in all 3 layers; degenerate-scale false hits eliminated by `_find_root_for_highest` non-degenerate guard
+- [x] [Review][Patch] Unit test missing AC-4 apex assertion: `session.notes[ascending_note_count - 1].midi == target_apex` [tests/unit/test_game_engine.py:test_right_accept_starts_descending_from_apex] — dismissed: assertion already present at line 70 (pre-existing)
+- [x] [Review][Patch] `_force_milestone` hardcodes `3` instead of importing `SCALES_PER_VARIANT` constant [tests/unit/test_game_engine.py:_force_milestone] — **fixed**: import `SCALES_PER_VARIANT` added in all 3 test files; literal `3` replaced with constant
+- [x] [Review][Defer] Contract and integration tests import `engine` singleton directly — breaks isolation if router moves out-of-process [tests/contract/test_variant.py, tests/integration/test_variant_flow.py] — deferred, pre-existing
+
 ### Change Log
 
 - 2026-05-23: Story 5-4 implemented — direction-aware accept_variant + _find_root_for_highest (Date: 2026-05-23)
+- 2026-05-23: Code review patches applied — P1 non-degenerate guard in _find_root_for_highest, P2 LEFT-path fallback, P3 direct index assignment, P4 strong assertions in all 3 test layers, P6 SCALES_PER_VARIANT constant (Date: 2026-05-23)

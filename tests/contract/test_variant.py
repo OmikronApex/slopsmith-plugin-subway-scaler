@@ -10,6 +10,7 @@ Covers:
 from __future__ import annotations
 
 import pytest
+from services.game_engine import SCALES_PER_VARIANT
 
 
 BASE = "/api/plugins/subway-scaler/game"
@@ -32,7 +33,7 @@ def _force_milestone(client, session_id, direction="UP"):
     """
     from services.game_router import engine
     sess = engine.get_session(session_id)
-    sess.scale_passes_completed = 3
+    sess.scale_passes_completed = SCALES_PER_VARIANT
     sess.last_pass_direction = direction
 
 
@@ -128,9 +129,8 @@ def test_accept_switches_root_and_regenerates_notes(client):
         assert r["root_midi"] == sess_after.root_midi
         # Apex of new scale = trigger note
         assert sess_after.notes[sess_after.ascending_note_count - 1].midi == new_root
-        # Start descending (or wrapped to 0 for degenerate scales where asc_count == len(notes))
-        expected_idx = sess_after.ascending_note_count % len(sess_after.notes)
-        assert sess_after.current_note_index == expected_idx
+        # Start descending: first note is first step below apex
+        assert sess_after.current_note_index == sess_after.ascending_note_count
 
 
 def test_timeout_clears_variant_and_records_history(client):

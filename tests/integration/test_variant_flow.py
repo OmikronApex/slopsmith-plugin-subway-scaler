@@ -3,6 +3,7 @@
 Exercises the HTTP API: start → drive to milestone → propose → accept/timeout.
 """
 from __future__ import annotations
+from services.game_engine import SCALES_PER_VARIANT
 
 
 BASE = "/api/plugins/subway-scaler/game"
@@ -85,11 +86,10 @@ def test_full_variant_accept_flow_via_http(client):
         assert sess.current_note_index == 0
         assert state3["next_expected_note"]["midi"] == accept["notes"][0]["midi"]
     else:
-        # RIGHT: root_midi is computed candidate root; start descending (or wrap for degenerate)
+        # RIGHT: root_midi is computed candidate root; start descending
         assert accept["root_midi"] != new_root
-        expected_idx = sess.ascending_note_count % len(sess.notes)
-        assert sess.current_note_index == expected_idx
-        assert state3["next_expected_note"]["midi"] == accept["notes"][expected_idx]["midi"]
+        assert sess.current_note_index == sess.ascending_note_count
+        assert state3["next_expected_note"]["midi"] == accept["notes"][sess.ascending_note_count]["midi"]
 
 
 def test_full_variant_timeout_flow_via_http(client):
@@ -125,7 +125,7 @@ def test_consecutive_variants_alternate_sides_via_http(client):
 
     # Force second milestone with direction opposite to first.
     sess = engine.get_session(sid)
-    sess.scale_passes_completed = 3
+    sess.scale_passes_completed = SCALES_PER_VARIANT
     sess.last_pass_direction = "DOWN" if side1 == "RIGHT" else "UP"
 
     p2 = client.post(f"{BASE}/{sid}/variant/propose", json={"now_ms": 10000}).json()

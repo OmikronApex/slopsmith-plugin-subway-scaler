@@ -1,5 +1,5 @@
 import pytest
-from services.game_engine import GameEngine
+from services.game_engine import GameEngine, SCALES_PER_VARIANT
 
 
 def test_create_session():
@@ -25,7 +25,7 @@ def test_no_duplicate_root_at_loop_boundary():
 
 
 def _force_milestone(engine, session, direction="UP"):
-    session.scale_passes_completed = 3
+    session.scale_passes_completed = SCALES_PER_VARIANT
     session.last_pass_direction = direction
 
 
@@ -68,9 +68,8 @@ def test_right_accept_starts_descending_from_apex():
     session = engine.get_session(session.session_id)
     # Apex of new scale must equal the trigger (target_apex)
     assert session.notes[session.ascending_note_count - 1].midi == target_apex
-    # First note to play is the first descending step (or wrapped to 0 for degenerate scales)
-    expected_idx = session.ascending_note_count % len(session.notes)
-    assert session.current_note_index == expected_idx
+    # First note to play is the first descending step
+    assert session.current_note_index == session.ascending_note_count
     # Returned root_midi is the computed root, not the trigger apex
     assert result["root_midi"] != target_apex
     assert result["root_midi"] == session.root_midi

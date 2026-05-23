@@ -348,7 +348,7 @@ class GameEngine:
             if not self._is_playable_root(candidate, instrument):
                 continue
             notes, asc_count = self._build_full_scale_notes(scale_id, candidate, instrument)
-            if notes and notes[asc_count - 1].midi == target_highest:
+            if notes and asc_count > 0 and asc_count < len(notes) and notes[asc_count - 1].midi == target_highest:
                 return candidate, notes, asc_count
         return None, None, None
 
@@ -469,15 +469,15 @@ class GameEngine:
             )
             if candidate is not None:
                 session.root_midi = candidate
+                session.current_note_index = new_asc_count if new_notes and new_asc_count < len(new_notes) else 0
+                session.total_notes_played = 1
             else:
-                # Fallback: degenerate case; use variant.root_midi as root.
+                # Fallback to LEFT path: keep current root, rebuild, start ascending from index 0.
                 new_notes, new_asc_count = self._build_full_scale_notes(
-                    session.scale_id_for_variant, variant.root_midi, instrument
+                    session.scale_id_for_variant, session.root_midi, instrument
                 )
-                session.root_midi = variant.root_midi
-            # Guard: for degenerate scales (asc_count == len(notes)), wrap to 0
-            session.current_note_index = new_asc_count % len(new_notes) if new_notes else 0
-            session.total_notes_played = 1
+                session.current_note_index = 0
+                session.total_notes_played = 0
 
         session.notes = new_notes
         session.ascending_note_count = new_asc_count
