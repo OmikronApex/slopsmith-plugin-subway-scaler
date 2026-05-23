@@ -1,6 +1,6 @@
 # Story 5-6: Full String Range — Wave Spawning Across All Strings
 
-**Status:** review
+**Status:** done
 
 **Epic:** 5 — Variant Track System
 **Story ID:** 5-6
@@ -219,3 +219,26 @@ N/A
 ### Change Log
 
 - 2026-05-23: Story 5-6 implementation — full string range wave spawning
+
+---
+
+## Senior Developer Review (AI)
+
+**Review Date:** 2026-05-23
+**Review Outcome:** Changes Requested
+
+### Action Items
+
+- [x] [Review][Patch] **VariantTrackSet schema caps num_lanes/base_lane at 12** [`services/schemas.py:175-176`] — HIGH. Fixed: raised `le` to 24/23.
+
+- [x] [Review][Patch] **`_find_root_for_highest` search range insufficient for 4-octave** [`services/game_engine.py:~346`] — MEDIUM. Fixed: extended `range(2, 37)` to `range(2, 49)`.
+
+- [x] [Review][Patch] **AC-3 contract test assertion weak (>=3 instead of >=5)** [`tests/contract/test_variant.py:60,118`] — LOW. Dismissed by user.
+
+- [x] [Review][Defer] **game_router.py hardcodes min(12,...) for track_count** [`services/game_router.py:80`] — deferred, pre-existing. Preview endpoint uses different cap than game engine. Separate code path, not part of this story scope.
+
+- [x] [Review][Defer] **High roots produce empty notes list (IndexError)** [`services/game_engine.py:72,112`] — deferred, pre-existing. MIDI 108 on guitar-standard produces empty asc_midis, causing IndexError on `notes[0]`. Existed before this change.
+
+- [x] [Review][Defer] **Small span produces degenerate minimal scale** [`services/game_engine.py:107`] — deferred, pre-existing. Root near max_midi yields only 1-3 ascending notes. Pre-existing behavior, not introduced by this change.
+
+- [x] [Review][Defer] **Bass-4-standard note dropping amplified by 4 octaves** [`services/game_engine.py:107-108`] — deferred, pre-existing. Low root on 4-string bass generates many scale notes dropped by position playing limits. Amplified by 4-octave cap but pre-existing pattern.

@@ -343,7 +343,7 @@ class GameEngine:
         Used by RIGHT accept: variant.root_midi is the target apex, not the actual root.
         Returns (candidate_root, notes, asc_count) or (None, None, None) if no match found.
         """
-        for semitone_offset in range(2, 37):
+        for semitone_offset in range(2, 49):
             candidate = target_highest - semitone_offset
             if not self._is_playable_root(candidate, instrument):
                 continue
