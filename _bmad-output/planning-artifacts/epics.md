@@ -1,5 +1,5 @@
 ---
-stepsCompleted: [1, 2, 3]
+stepsCompleted: [1, 2, 3, "5-6", "5-7"]
 inputDocuments:
   - prds/prd-subway-scaler.md
   - architecture.md
@@ -264,4 +264,31 @@ Stories 4-T1 through 4-T4 eliminate the dual-clock instability between Python's 
 JS's `performance.now()`. Pause/resume timing, wave delivery lag, and cart pop-in are all symptoms
 of this split. Story 4-2 (pause overlay) depends on reliable pause/resume; without the timing
 refactor it would ship on top of a broken foundation. See `architecture.md` amendment (2026-05-22).
+
+---
+
+## Epic 5: Variant Track System
+
+Players can experience mid-session scale changes (variants) that feel like a real railway
+switch: visually distinct, correctly timed, and seamlessly animated.
+
+**User Outcomes:**
+- Variant proposals appear at the right moment in the wave sequence (transition note timing)
+- Full-fretboard traversal replaces the narrow octave-band visual — waves sweep from the
+  lowest string to the highest string and back
+- Track lanes are color-coded by string so the player can orient spatially without reading labels
+- Accepting a variant produces a smooth continuous animation: character follows the bend,
+  old tracks scroll away, new scale arrives from the horizon
+
+**Stories:**
+
+| Story | Title | Status | Depends on |
+|---|---|---|---|
+| 5-1 | Wire Variant Observable State and Test Hook | done | — |
+| 5-2 | Remove ATDD Scaffolding and Validate E2E | done | 5-1 |
+| 5-3 | Polling Integration Coverage — Variant Lifecycle | done | 5-1 |
+| 5-4 | Backend Variant Direction Logic | done | 5-3 |
+| 5-5 | SceneManager Visual Refactor — Single-Lane Peel Transition | done | 5-4 |
+| 5-6 | Full String Range — Wave Spawning Across All Strings | todo | 5-5 |
+| 5-7 | Variant Visual Spec — Track Coloring, Spawn Timing, Transition Animation | todo | 5-6 |
 
