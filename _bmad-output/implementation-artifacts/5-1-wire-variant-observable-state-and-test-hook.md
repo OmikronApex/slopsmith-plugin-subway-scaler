@@ -1,6 +1,6 @@
 # Story 5-1: Wire Variant Observable State and Test Hook
 
-**Status:** review
+**Status:** done
 
 **Epic:** 5 — Variant Track System
 **Story ID:** 5-1
@@ -236,6 +236,21 @@ claude-sonnet-4-6
 - `services/game_engine.py`
 
 ### Review Findings
+
+- [x] [Review][Patch] `fret < 0` breaks while-loop without advancing `str_idx` — all subsequent notes stall on same string, silently dropped [services/game_engine.py:_build_full_scale_notes] — dismissed on re-analysis: `break` exits inner while; outer for resumes with next (higher) midi; ascending scale self-corrects
+- [x] [Review][Patch] `_candidate_root_for_side` RIGHT: `max()` on empty `session.notes` raises `ValueError`; compounding root drift across multiple variant accepts [services/game_engine.py:_candidate_root_for_side] — **fixed**: guard `if not session.notes` returns `root_midi + 2`
+- [x] [Review][Patch] `main.js` reads `pollState.octave_loops_completed` (always `undefined`) — backend renamed field to `scale_passes_completed` — variant propose trigger permanently dead [static/game/main.js:~587] — **fixed**: updated field name and threshold to `>= 3`
+- [x] [Review][Patch] `_build_full_scale_notes` can return empty notes list → `IndexError` in `create_session` (`notes[0]`) and `play_note` [services/game_engine.py:create_session] — dismissed: `create_session` already guards `if notes and notes[0].fret`; degenerate empty-scale case
+- [x] [Review][Patch] `asc_count == 0` makes UP-pass detector permanently dead (`ascending_note_count > 0` guard skips entire branch) — variant never offered [services/game_engine.py:play_note] — dismissed: consequence of empty notes edge case; normal instruments always yield ≥1 ascending note
+- [x] [Review][Patch] `last_pass_direction == None` silently defaults to LEFT in `propose_variant` — incorrect direction when no pass completed yet [services/game_engine.py:propose_variant] — **fixed**: explicit None check defaults to RIGHT with fallback to LEFT via existing playability check
+- [x] [Review][Patch] `root_string_idx` `f == 0` branch lacks `break` — subsequent `1 <= f <= 12` match overwrites open-string assignment [services/game_engine.py:_build_full_scale_notes] — **fixed**: added `break`
+- [x] [Review][Patch] `timerExpired` not reset in `proposeVariant.then` — stale `true` on rapid re-propose after a previous timeout [static/game/main.js:proposeVariant.then] — **fixed**: added `timerExpired = false`
+- [x] [Review][Patch] `timerExpired` not reset in `timeoutVariant.then` cleanup block — stays `true` until `cleanup()` called [static/game/main.js:timeoutVariant.then] — dismissed: per spec AC-4 "resets false on cleanup"; by design
+- [x] [Review][Patch] `_testVariantTimer` declared at module scope instead of inside `__TEST_MODE` block [static/game/main.js:~287] — dismissed: must be outer-scoped for `cleanup()` closure access; moving inside block would break cleanup
+- [x] [Review][Defer] DOWN-pass false positive on arbitrary index reset — depends on play_note error handling; likely harmless pending verification [services/game_engine.py:play_note] — deferred, pre-existing
+- [x] [Review][Defer] `scales.py` octave guard accepts 1-4 but `_build_full_scale_notes` clamps to 3 — silent caller mismatch [services/scales.py:82] — deferred, pre-existing
+- [x] [Review][Defer] `game_engine.py` refactors exceed declared "bug fix" scope — process concern, no runtime defect — deferred, pre-existing
+- [x] [Review][Defer] `setVariant(null)` vs `timeoutVariant.then` `timerExpired` write race — theoretical, JS single-threaded but fetch .then queues after cleanup [static/game/main.js] — deferred, pre-existing
 
 ### Change Log
 

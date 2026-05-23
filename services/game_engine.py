@@ -120,6 +120,7 @@ class GameEngine:
                 break
             if f == 0:
                 root_string_idx = i
+                break
 
         # Assign string/fret using position playing (max 3 fret span, max 3 notes per string)
         ascending = []
@@ -285,6 +286,8 @@ class GameEngine:
         # RIGHT: 2 frets above the highest scale note the player just played.
         # LEFT: 2 frets below the current root.
         if side == "RIGHT":
+            if not session.notes:
+                return session.root_midi + 2
             return max(note.midi for note in session.notes) + 2
         else:
             return session.root_midi - VARIANT_SHIFT_DOWN
@@ -379,7 +382,11 @@ class GameEngine:
             stringCount=6, tuning=[40, 45, 50, 55, 59, 64], maxFret=24,
         )
         # Direction follows the last half-cycle: ascending → RIGHT, descending → LEFT.
-        side = "RIGHT" if session.last_pass_direction == "UP" else "LEFT"
+        # None means no pass recorded yet (e.g. tests that bump the counter directly); try RIGHT first.
+        if session.last_pass_direction is None:
+            side = "RIGHT"
+        else:
+            side = "RIGHT" if session.last_pass_direction == "UP" else "LEFT"
         new_root = self._candidate_root_for_side(session, side)
         if not self._is_playable_root(new_root, instrument):
             side = "LEFT" if side == "RIGHT" else "RIGHT"

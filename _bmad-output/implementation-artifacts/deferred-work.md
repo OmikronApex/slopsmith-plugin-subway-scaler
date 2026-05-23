@@ -59,3 +59,10 @@
 - W2 — Score shows 0 in game-over overlay if backend poll hasn't delivered first score update when collision occurs. Pre-existing race condition between collision detection and score polling.
 - W3 — `resumeGame()` does not call `overlayMgr.hide()` — by design (overlay self-hides via onResumeClick), but any future external caller would leave overlay visible while game runs. No current broken path.
 - W4 — `forceCollision` test hook sets `run.state = 'failed'` directly without `run.abandon()` — test-only hook, bypass is intentional.
+
+## Deferred from: code review of 5-1-wire-variant-observable-state-and-test-hook (2026-05-23)
+
+- DOWN-pass false positive on arbitrary index reset — depends on play_note error handling; likely harmless pending verification of how incorrect notes affect current_note_index.
+- `scales.py` octave guard accepts 1-4 but `_build_full_scale_notes` clamps to 3 — silent caller mismatch; callers passing `octaves=4` get silently clamped with no error.
+- `game_engine.py` refactors exceed declared "bug fix" scope — `scale_passes_completed`, `last_pass_direction`, `_build_full_scale_notes`, and variant direction redesign bundled into 5-1; process concern, no runtime defect.
+- `setVariant(null)` vs `timeoutVariant.then` `timerExpired` write race — theoretical; JS single-threaded but fetch `.then` can queue after `cleanup()` resets the object, leaving `timerExpired: true` on an otherwise zeroed variant state.

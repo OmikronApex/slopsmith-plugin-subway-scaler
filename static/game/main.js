@@ -584,8 +584,8 @@ export async function bootstrap(root) {
         }
 
         // Milestone trigger: ask backend to propose a variant if eligible.
-        const loops = pollState.octave_loops_completed || 0;
-        if (!activeVariant && !proposePending && loops >= 2) {
+        const loops = pollState.scale_passes_completed || 0;
+        if (!activeVariant && !proposePending && loops >= 3) {
           proposePending = true;
           gameClient.proposeVariant().then((resp) => {
             proposePending = false;
@@ -597,6 +597,7 @@ export async function bootstrap(root) {
                 window.__gameState.variant.id = resp.variant.variant_id;
                 window.__gameState.variant.timerRunning = true;
                 window.__gameState.variant.timerMs = Math.max(0, resp.window.deadline_ms - Date.now());
+                window.__gameState.variant.timerExpired = false;
               }
               if (shownVariantId !== resp.variant.variant_id) {
                 scene.proposeVariantTracks(resp.variant);
