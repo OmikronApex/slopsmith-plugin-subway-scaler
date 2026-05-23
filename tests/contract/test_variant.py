@@ -113,12 +113,24 @@ def test_accept_switches_root_and_regenerates_notes(client):
         json={"midi": new_root, "now_ms": 1500},
     ).json()
     assert r["success"] is True
-    assert r["root_midi"] == new_root
     assert r["base_fret"] >= 0
     assert r["num_lanes"] >= 3
     assert len(r["notes"]) > 0
-    # First note should be the new root MIDI.
-    assert r["notes"][0]["midi"] == new_root
+    sess_after = engine.get_session(s["session_id"])
+    if side == "LEFT":
+        # LEFT: root_midi = variant.root_midi; start ascending from index 0
+        assert r["root_midi"] == new_root
+        assert r["notes"][0]["midi"] == new_root
+        assert sess_after.current_note_index == 0
+    else:
+        # RIGHT: root_midi is the computed actual root (not the trigger apex)
+        assert r["root_midi"] != new_root
+        assert r["root_midi"] == sess_after.root_midi
+        # Apex of new scale = trigger note
+        assert sess_after.notes[sess_after.ascending_note_count - 1].midi == new_root
+        # Start descending (or wrapped to 0 for degenerate scales where asc_count == len(notes))
+        expected_idx = sess_after.ascending_note_count % len(sess_after.notes)
+        assert sess_after.current_note_index == expected_idx
 
 
 def test_timeout_clears_variant_and_records_history(client):

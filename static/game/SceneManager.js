@@ -5,8 +5,7 @@
 // Character slides X-only between strings.
 
 import * as THREE from './vendor/three.module.js';
-import { laneX, cameraForPitch, SPAWN_Z } from './TrackSystem.js';
-import { colourForString } from './stringPalette.js';
+import { laneX, cameraForPitch, SPAWN_Z, LANE_X_SCALE } from './TrackSystem.js';
 import { COLORS, STRING_COLORS } from './ui/tokens.js';
 
 const CHAR_Y = 1.1;
@@ -14,11 +13,14 @@ const FRONT_Z = 0;
 const LATERAL_MS = 120;
 const CAMERA_PITCH = 30; // Shallower angle (deg) to see more upcoming track
 const CAMERA_DISTANCE = 15; // Euclidean distance
-const CAMERA_DISTANCE_VARIANT = 32; // Euclidean distance pulled back
 const TRACK_DEPTH = 120;
 const ROOF_COLOUR = 0x444444;
-const VARIANT_GAP = 3.5; // Lateral gap (world units) between primary and variant track set
-const VARIANT_TINT = 0x3a5a3a; // Greenish tint to mark variant tracks
+const VARIANT_ACCENT = 0xFFB800;  // Accent colour for variant lane
+const LANE_W = 1.4;               // Lane box width (matches BoxGeometry in rebuildTracks)
+const PIECE_H = 0.06;             // Track piece height
+const STRAIGHT_LEN = 20;          // Z length of straight section in bend piece
+const DIAG_LEN = 15;              // Z length of diagonal section in bend piece
+const SEG_LEN = 25;               // Z length of a persistent lane segment
 
 export function createScene(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -97,14 +99,16 @@ export function createScene(canvas) {
   let tracks = []; // { mesh, label }
   let activeWaves = new Map(); // wave_id -> { mesh, data }
 
-  // Variant tracks (feature 008-track-variants): a second track group offered
-  // at milestones. Positioned at +X (RIGHT) or -X (LEFT) of the primary set.
-  let variantTracks = []; // { mesh, label }
-  let variantOffsetX = 0; // 0 when no variant active
-  let variantTintMat = new THREE.MeshStandardMaterial({ color: VARIANT_TINT, transparent: true, opacity: 0 });
-  let variantBaseHighlight = null; // glowing marker on the variant base note lane
-  let variantBaseHighlightMat = null; // built per-variant with the correct string colour
-  let variantFade = null; // { from, to, startMs, durMs }
+  // Variant peel transition (feature 008-track-variants, story 5-5).
+  // One bent piece scrolls in (propose) or out (dismiss); straight lane segs fill the gap.
+  let variantProposePiece = null;  // { mesh: Group, spawnTimeMs, speedPxMs, passed }
+  let variantDismissPiece = null;  // { mesh: Group, spawnTimeMs, speedPxMs }
+  let variantLaneSegs = [];        // persistent straight lane segment meshes
+  let variantHighlightMesh = null;
+  let variantHighlightMat = null;
+  let variantInfo = null;          // { side, variantX, speedPxMs }
+  let lastWaveSpeed = 0.05;        // captured from setWaves; used for piece scrolling
+  let variantAccentMat = null;     // shared accent material
 
   let tween = null;
   let succeeded = false;
@@ -112,9 +116,6 @@ export function createScene(canvas) {
   let gameStartTime = 0;
   let baseFret = 0;
   let numLanes = 6;
-  // Camera framing for variant overlay.
-  let targetCameraDistance = CAMERA_DISTANCE;
-  let currentCameraDistance = CAMERA_DISTANCE;
 
   function clearWaves() {
     for (const w of activeWaves.values()) {
@@ -151,118 +152,140 @@ export function createScene(canvas) {
     }
     targetCameraX = 0;
     currentCameraX = 0;
-    targetCameraDistance = CAMERA_DISTANCE;
-    currentCameraDistance = CAMERA_DISTANCE;
   }
 
   function reset() {
     clearWaves();
+    clearVariantGeom();
     tween = null;
     succeeded = false;
     character.position.set(laneX(0, numLanes), CHAR_Y, FRONT_Z + 0.1);
     character.rotation.set(0, 0, 0);
     targetCameraX = 0;
     currentCameraX = 0;
-    targetCameraDistance = CAMERA_DISTANCE;
-    currentCameraDistance = CAMERA_DISTANCE;
-    variantFade = null;
-    variantTintMat.opacity = 0;
-    if (variantBaseHighlightMat) variantBaseHighlightMat.opacity = 0;
   }
 
-  function clearVariantTracks() {
-    for (const t of variantTracks) {
-      scene.remove(t.mesh);
-      scene.remove(t.label);
+  // ─── Variant geometry helpers (story 5-5) ─────────────────────────────────
+
+  function getOrCreateAccentMat() {
+    if (!variantAccentMat) {
+      variantAccentMat = new THREE.MeshStandardMaterial({
+        color: VARIANT_ACCENT,
+        emissive: VARIANT_ACCENT,
+        emissiveIntensity: 0.15,
+      });
     }
-    variantTracks = [];
-    if (variantBaseHighlight) {
-      scene.remove(variantBaseHighlight);
-      variantBaseHighlight = null;
-    }
+    return variantAccentMat;
   }
 
-  function buildTrackGroup(numLanesV, baseFretV, originX, mat) {
-    const out = [];
-    for (let i = 0; i < numLanesV; i++) {
-      const x = originX + laneX(i, numLanesV);
-      const mesh = new THREE.Mesh(
-        new THREE.BoxGeometry(1.4, 0.06, TRACK_DEPTH),
-        mat
-      );
-      mesh.position.set(x, -0.05, -TRACK_DEPTH / 2 + 5);
-      scene.add(mesh);
-      const label = makeTextSprite((baseFretV + i).toString());
-      label.position.set(x, 0.1, 1.8);
-      scene.add(label);
-      out.push({ mesh, label });
+  // Returns a Three.js Group whose geometry bakes in a 45° railway-switch bend.
+  // The group translates only in Z at runtime (AC-8). No runtime rotation.
+  // side: "LEFT"|"RIGHT" — which side the diagonal exits toward.
+  // variantX: world X of the straight section centre.
+  function buildBendPiece(side, variantX) {
+    const mat = getOrCreateAccentMat();
+    const group = new THREE.Group();
+    const sign = side === 'RIGHT' ? 1 : -1;
+    // Straight section: player-facing end at highest local Z (first to reach player).
+    const straight = new THREE.Mesh(new THREE.BoxGeometry(LANE_W, PIECE_H, STRAIGHT_LEN), mat);
+    straight.position.set(variantX, 0, 0);
+    group.add(straight);
+    // Diagonal section: baked ±45° corner connecting straight to off-screen on side.
+    const diag = new THREE.Mesh(new THREE.BoxGeometry(LANE_W, PIECE_H, DIAG_LEN * 1.414), mat);
+    diag.rotation.set(0, sign * -Math.PI / 4, 0);
+    diag.position.set(variantX + sign * DIAG_LEN * 0.5, 0, -(STRAIGHT_LEN / 2 + DIAG_LEN * 0.5));
+    group.add(diag);
+    return group;
+  }
+
+  function clearVariantGeom() {
+    if (variantProposePiece) {
+      scene.remove(variantProposePiece.mesh);
+      variantProposePiece.mesh.traverse(c => { if (c.isMesh) c.geometry?.dispose(); });
+      variantProposePiece = null;
     }
-    return out;
+    if (variantDismissPiece) {
+      scene.remove(variantDismissPiece.mesh);
+      variantDismissPiece.mesh.traverse(c => { if (c.isMesh) c.geometry?.dispose(); });
+      variantDismissPiece = null;
+    }
+    for (const seg of variantLaneSegs) {
+      scene.remove(seg);
+      seg.geometry?.dispose();
+    }
+    variantLaneSegs = [];
+    if (variantHighlightMesh) {
+      scene.remove(variantHighlightMesh);
+      variantHighlightMesh.geometry?.dispose();
+      variantHighlightMesh = null;
+    }
+    if (variantHighlightMat) {
+      variantHighlightMat.dispose();
+      variantHighlightMat = null;
+    }
+    if (variantAccentMat) {
+      variantAccentMat.dispose();
+      variantAccentMat = null;
+    }
+    variantInfo = null;
+  }
+
+  function _variantLaneX(side) {
+    const sign = side === 'RIGHT' ? 1 : -1;
+    const edgeLane = side === 'RIGHT' ? numLanes - 1 : 0;
+    return laneX(edgeLane, numLanes) + sign * LANE_X_SCALE;
   }
 
   function proposeVariantTracks(variant) {
-    // variant: { side: "LEFT"|"RIGHT", num_lanes, base_fret, base_lane, root_midi, ... }
-    if (variantTracks.length > 0) return; // already shown
-    const sign = variant.side === "RIGHT" ? 1 : -1;
-    const primaryHalf = numLanes * 0.8;
-    const variantHalf = variant.num_lanes * 0.8;
-    variantOffsetX = sign * (primaryHalf + VARIANT_GAP + variantHalf);
-    // Reset shared material to transparent before building so fade-in is visible.
-    variantTintMat.opacity = 0;
-    variantTracks = buildTrackGroup(variant.num_lanes, variant.base_fret, variantOffsetX, variantTintMat);
-    // Target highlight: a glowing marker coloured to match the string the
-    // variant's root note is actually played on. variant.base_string is
-    // 1-based from HIGH; colourForString expects 0-based LOW→HIGH.
-    const baseLane = typeof variant.base_lane === 'number' ? variant.base_lane : 0;
-    const baseLaneX = variantOffsetX + laneX(baseLane, variant.num_lanes);
-    const stringHigh1 = typeof variant.base_string === 'number' ? variant.base_string : 1;
-    const strCount = (instrument && instrument.stringCount) || 6;
-    const stringLow0 = strCount - stringHigh1;
-    const highlightColour = colourForString(stringLow0, instrument);
-    variantBaseHighlightMat = new THREE.MeshStandardMaterial({
-      color: highlightColour,
-      emissive: highlightColour,
-      emissiveIntensity: 0.4,
+    clearVariantGeom();
+    const vx = _variantLaneX(variant.side);
+    const spawnTimeMs = performance.now() - gameStartTime;
+    const mesh = buildBendPiece(variant.side, vx);
+    mesh.position.set(0, 0, SPAWN_Z);
+    scene.add(mesh);
+    variantProposePiece = { mesh, spawnTimeMs, speedPxMs: lastWaveSpeed };
+    variantInfo = { side: variant.side, variantX: vx, speedPxMs: lastWaveSpeed };
+    // Pulsing highlight shows WHERE to play the trigger note
+    variantHighlightMat = new THREE.MeshStandardMaterial({
+      color: VARIANT_ACCENT,
+      emissive: VARIANT_ACCENT,
+      emissiveIntensity: 0.5,
       transparent: true,
-      opacity: 0,
+      opacity: 0.55,
     });
-    variantBaseHighlight = new THREE.Mesh(
-      new THREE.BoxGeometry(1.4, 0.18, TRACK_DEPTH * 0.5),
-      variantBaseHighlightMat,
+    variantHighlightMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(LANE_W, PIECE_H * 3, STRAIGHT_LEN),
+      variantHighlightMat
     );
-    variantBaseHighlight.position.set(baseLaneX, 0.04, -TRACK_DEPTH * 0.25 + 2);
-    scene.add(variantBaseHighlight);
-    variantFade = { from: 0, to: 1, startMs: performance.now(), durMs: 500 };
-    // Reframe: zoom out and pan to midpoint.
-    targetCameraDistance = CAMERA_DISTANCE_VARIANT;
-    targetCameraX = variantOffsetX / 2;
+    variantHighlightMesh.position.set(vx, 0, -STRAIGHT_LEN / 2);
+    scene.add(variantHighlightMesh);
   }
 
   function dismissVariantTracks() {
-    // Trigger a fade-out; defer actual removal until opacity reaches 0.
-    if (variantTracks.length === 0) return;
-    variantFade = { from: variantTintMat.opacity, to: 0, startMs: performance.now(), durMs: 500, removeOnEnd: true };
-    targetCameraDistance = CAMERA_DISTANCE;
-    targetCameraX = 0;
+    if (!variantInfo) return;
+    const spawnTimeMs = performance.now() - gameStartTime;
+    const mesh = buildBendPiece(variantInfo.side, variantInfo.variantX);
+    mesh.position.set(0, 0, SPAWN_Z);
+    scene.add(mesh);
+    variantDismissPiece = { mesh, spawnTimeMs, speedPxMs: lastWaveSpeed };
+    if (variantHighlightMesh) {
+      scene.remove(variantHighlightMesh);
+      variantHighlightMesh.geometry?.dispose();
+      variantHighlightMesh = null;
+    }
+    if (variantHighlightMat) { variantHighlightMat.dispose(); variantHighlightMat = null; }
   }
 
   function acceptVariantTracks(newPrimary) {
-    // newPrimary: { num_lanes, base_fret } from /variant/accept response.
-    // Remove primary tracks and promote variant geometry to primary by rebuilding.
-    for (const t of tracks) {
-      scene.remove(t.mesh);
-      scene.remove(t.label);
-    }
-    tracks = [];
-    clearVariantTracks();
+    const acceptX = variantInfo ? variantInfo.variantX : 0;
+    clearVariantGeom();
+    clearScene();
     baseFret = newPrimary.base_fret;
     numLanes = newPrimary.num_lanes;
     rebuildTracks();
-    variantOffsetX = 0;
-    targetCameraDistance = CAMERA_DISTANCE;
+    character.position.x = acceptX;
     targetCameraX = 0;
-    // Snap character to its (new) starting lane; runState will drive subsequent moves.
-    character.position.x = laneX(0, numLanes);
+    currentCameraX = 0;
   }
 
   function setInstrument(inst) {
@@ -274,6 +297,9 @@ export function createScene(canvas) {
   }
 
   function setWaves(waves, nowMs) {
+    if (waves.length > 0 && waves[0].speed_px_per_ms) {
+      lastWaveSpeed = waves[0].speed_px_per_ms;
+    }
     const currentIds = new Set(waves.map(w => w.wave_id));
     for (const [id, w] of activeWaves.entries()) {
       if (!currentIds.has(id)) {
@@ -383,29 +409,63 @@ export function createScene(canvas) {
 
     if (succeeded) character.rotation.y += dt * 2;
 
-    // Variant fade tween (transparent material opacity). Drives both the
-    // track-set tint and the base-lane highlight in lockstep.
-    if (variantFade) {
-      const t = Math.min(1, (nowMs - variantFade.startMs) / variantFade.durMs);
-      const eased = 1 - (1 - t) * (1 - t); // ease-out
-      const v = variantFade.from + (variantFade.to - variantFade.from) * eased;
-      variantTintMat.opacity = v;
-      if (variantBaseHighlightMat) variantBaseHighlightMat.opacity = v * 0.8;
-      if (t >= 1) {
-        if (variantFade.removeOnEnd) {
-          clearVariantTracks();
-          variantOffsetX = 0;
-        }
-        variantFade = null;
+    // Variant propose piece — Z-scroll only (AC-8)
+    if (variantProposePiece) {
+      const elapsed = Math.max(0, nowMs - gameStartTime - variantProposePiece.spawnTimeMs);
+      variantProposePiece.mesh.position.z = SPAWN_Z + elapsed * variantProposePiece.speedPxMs * 0.5;
+      if (variantProposePiece.mesh.position.z > STRAIGHT_LEN) {
+        scene.remove(variantProposePiece.mesh);
+        variantProposePiece.mesh.traverse(c => { if (c.isMesh) c.geometry?.dispose(); });
+        variantProposePiece = null;
       }
     }
 
+    // Variant dismiss piece — Z-scroll; when it clears, dispose all variant geometry (AC-5/AC-7)
+    if (variantDismissPiece) {
+      const elapsed = Math.max(0, nowMs - gameStartTime - variantDismissPiece.spawnTimeMs);
+      variantDismissPiece.mesh.position.z = SPAWN_Z + elapsed * variantDismissPiece.speedPxMs * 0.5;
+      if (variantDismissPiece.mesh.position.z > STRAIGHT_LEN) {
+        clearVariantGeom();
+      }
+    }
+
+    // Persistent variant lane segments (AC-3/AC-4)
+    if (variantInfo && !variantDismissPiece) {
+      const nowRel = nowMs - gameStartTime;
+      const segTravelTime = SEG_LEN / Math.max(0.001, lastWaveSpeed * 0.5);
+      const needNewSeg = variantLaneSegs.length === 0 ||
+        nowRel - variantLaneSegs[variantLaneSegs.length - 1].userData.spawnTimeMs >= segTravelTime;
+      if (needNewSeg) {
+        const mat = getOrCreateAccentMat();
+        const seg = new THREE.Mesh(new THREE.BoxGeometry(LANE_W, PIECE_H, SEG_LEN), mat);
+        seg.position.set(variantInfo.variantX, 0, SPAWN_Z);
+        seg.userData.spawnTimeMs = nowRel;
+        scene.add(seg);
+        variantLaneSegs.push(seg);
+      }
+      const toRemove = [];
+      for (const seg of variantLaneSegs) {
+        const elapsed = Math.max(0, nowRel - seg.userData.spawnTimeMs);
+        seg.position.z = SPAWN_Z + elapsed * lastWaveSpeed * 0.5;
+        if (seg.position.z > SEG_LEN) toRemove.push(seg);
+      }
+      for (const seg of toRemove) {
+        variantLaneSegs.splice(variantLaneSegs.indexOf(seg), 1);
+        scene.remove(seg);
+        seg.geometry?.dispose();
+      }
+    }
+
+    // Pulsing emissive on highlight mesh (AC-4)
+    if (variantHighlightMesh && variantHighlightMat) {
+      variantHighlightMat.emissiveIntensity = 0.3 + 0.7 * (0.5 + 0.5 * Math.sin(nowMs * 0.005));
+    }
+
     currentCameraX += (targetCameraX - currentCameraX) * 0.1;
-    currentCameraDistance += (targetCameraDistance - currentCameraDistance) * 0.08;
     const rad = (CAMERA_PITCH * Math.PI) / 180;
     camera.position.x = currentCameraX;
-    camera.position.y = currentCameraDistance * Math.sin(rad);
-    camera.position.z = currentCameraDistance * Math.cos(rad) + camBase.lookAt[2];
+    camera.position.y = CAMERA_DISTANCE * Math.sin(rad);
+    camera.position.z = CAMERA_DISTANCE * Math.cos(rad) + camBase.lookAt[2];
     camera.lookAt(currentCameraX, 0, camBase.lookAt[2]);
 
     renderer.render(scene, camera);

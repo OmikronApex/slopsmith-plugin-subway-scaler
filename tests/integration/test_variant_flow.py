@@ -66,21 +66,30 @@ def test_full_variant_accept_flow_via_http(client):
     assert state2["active_variant"]["variant_id"] == propose["variant"]["variant_id"]
     assert state2["active_window"]["state"] == "OPEN"
 
-    # Accept by playing the new root.
+    # Accept by playing the trigger note.
     accept = client.post(
         f"{BASE}/{sid}/variant/accept", json={"midi": new_root, "now_ms": 1500}
     ).json()
     assert accept["success"] is True
-    assert accept["root_midi"] == new_root
 
-    # Variant cleared; new notes are anchored at new root.
+    # Variant cleared; session reseated on new scale.
     state3 = client.get(f"{BASE}/{sid}").json()
     assert state3["active_variant"] is None
     assert state3["active_window"] is None
-    # We now expect the second note (index 1) of the new scale
-    # Because index 0 (the root) was already "played" to accept the variant.
-    assert state3["current_note_index"] == 1
-    assert state3["next_expected_note"]["midi"] == accept["notes"][1]["midi"]
+
+    from services.game_router import engine
+    sess = engine.get_session(sid)
+    if side == "LEFT":
+        # LEFT: root_midi == trigger; start ascending from index 0
+        assert accept["root_midi"] == new_root
+        assert sess.current_note_index == 0
+        assert state3["next_expected_note"]["midi"] == accept["notes"][0]["midi"]
+    else:
+        # RIGHT: root_midi is computed candidate root; start descending (or wrap for degenerate)
+        assert accept["root_midi"] != new_root
+        expected_idx = sess.ascending_note_count % len(sess.notes)
+        assert sess.current_note_index == expected_idx
+        assert state3["next_expected_note"]["midi"] == accept["notes"][expected_idx]["midi"]
 
 
 def test_full_variant_timeout_flow_via_http(client):
@@ -122,3 +131,123 @@ def test_consecutive_variants_alternate_sides_via_http(client):
     p2 = client.post(f"{BASE}/{sid}/variant/propose", json={"now_ms": 10000}).json()
     assert p2["success"] is True
     assert p2["variant"]["side"] != side1
+
+
+# ---------------------------------------------------------------------------
+# Story 5-3: Polling integration coverage — variant lifecycle (AC-1 through AC-7)
+# ---------------------------------------------------------------------------
+
+def test_poll_baseline_no_variant(client):
+    """AC-1: Fresh session poll returns active_variant and active_window as null."""
+    s = _start(client)
+    sid = s["session_id"]
+    state = client.get(f"{BASE}/{sid}").json()
+    assert state["active_variant"] is None
+    assert state["active_window"] is None
+    assert state["status"] == "running"
+
+
+def test_poll_after_propose_shows_active_variant(client):
+    """AC-2: Poll after propose returns active_variant with all required fields and OPEN window."""
+    import time
+    s = _start(client)
+    sid = s["session_id"]
+    _play_passes(client, sid, passes=3)
+
+    now_ms = int(time.time() * 1000)
+    propose = client.post(f"{BASE}/{sid}/variant/propose", json={"now_ms": now_ms}).json()
+    assert propose["success"] is True
+    variant_id = propose["variant"]["variant_id"]
+
+    state = client.get(f"{BASE}/{sid}").json()
+    av = state["active_variant"]
+    aw = state["active_window"]
+    assert av is not None
+    assert av["variant_id"] == variant_id
+    assert av["root_midi"] is not None
+    assert av["base_fret"] >= 0
+    assert av["num_lanes"] >= 3
+    assert av["base_lane"] >= 0
+    assert av["side"] in ("LEFT", "RIGHT")
+    assert aw is not None
+    assert aw["state"] == "OPEN"
+    assert aw["deadline_ms"] > now_ms
+
+
+def test_poll_after_accept_clears_variant(client):
+    """AC-3: Poll after accept returns active_variant: null; root updated per direction."""
+    s = _start(client)
+    sid = s["session_id"]
+    _play_passes(client, sid, passes=3)
+
+    propose = client.post(f"{BASE}/{sid}/variant/propose", json={"now_ms": 1000}).json()
+    assert propose["success"] is True
+    new_root = propose["variant"]["root_midi"]
+    side = propose["variant"]["side"]
+    trigger = propose["window"]["trigger_midi"]
+
+    accept = client.post(f"{BASE}/{sid}/variant/accept", json={"midi": trigger, "now_ms": 1500}).json()
+    assert accept["success"] is True
+    if side == "LEFT":
+        assert accept["root_midi"] == new_root
+    else:
+        # RIGHT: returned root_midi is the candidate root, not the trigger apex
+        assert accept["root_midi"] != new_root
+
+    state = client.get(f"{BASE}/{sid}").json()
+    assert state["active_variant"] is None
+    assert state["active_window"] is None
+    assert state["status"] == "running"
+
+
+def test_poll_after_timeout_clears_variant(client):
+    """AC-4: Poll after timeout returns active_variant: null; session remains running."""
+    s = _start(client)
+    sid = s["session_id"]
+    _play_passes(client, sid, passes=3)
+
+    propose = client.post(f"{BASE}/{sid}/variant/propose", json={"now_ms": 0}).json()
+    deadline = propose["window"]["deadline_ms"]
+
+    timeout = client.post(f"{BASE}/{sid}/variant/timeout", json={"now_ms": deadline + 1}).json()
+    assert timeout["success"] is True
+
+    state = client.get(f"{BASE}/{sid}").json()
+    assert state["active_variant"] is None
+    assert state["active_window"] is None
+    assert state["status"] == "running"
+
+
+def test_propose_gate_before_and_after_threshold(client):
+    """AC-5 + AC-6: Propose rejected before threshold; succeeds after 3 completed passes."""
+    s = _start(client)
+    sid = s["session_id"]
+
+    # AC-5: before milestone
+    r = client.post(f"{BASE}/{sid}/variant/propose", json={}).json()
+    assert r["success"] is False
+    assert r["error"] == "milestone_not_reached"
+
+    # AC-6: after milestone — drive full note sequence to earn 3 passes
+    _play_passes(client, sid, passes=3)
+    r2 = client.post(f"{BASE}/{sid}/variant/propose", json={"now_ms": 1000}).json()
+    assert r2["success"] is True
+
+    state = client.get(f"{BASE}/{sid}").json()
+    assert state["active_variant"] is not None
+    assert state["active_variant"]["variant_id"] == r2["variant"]["variant_id"]
+
+
+def test_rapid_poll_idempotency(client):
+    """AC-7: Two consecutive polls between state transitions return identical variant state."""
+    s = _start(client)
+    sid = s["session_id"]
+    _play_passes(client, sid, passes=3)
+    client.post(f"{BASE}/{sid}/variant/propose", json={"now_ms": 1000})
+
+    state_a = client.get(f"{BASE}/{sid}").json()
+    state_b = client.get(f"{BASE}/{sid}").json()
+
+    assert state_a["active_variant"]["variant_id"] == state_b["active_variant"]["variant_id"]
+    assert state_a["active_window"]["state"] == state_b["active_window"]["state"]
+    assert state_a["active_window"]["deadline_ms"] == state_b["active_window"]["deadline_ms"]

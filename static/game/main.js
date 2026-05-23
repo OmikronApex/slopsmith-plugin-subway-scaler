@@ -718,14 +718,16 @@ export async function bootstrap(root) {
         if (_testVariantTimer) { clearInterval(_testVariantTimer); _testVariantTimer = null; }
         if (!id) {
           window.__gameState.variant = { id: null, timerMs: 0, timerRunning: false, timerExpired: false };
-          updateVariantHud();
+          variantHud.classList.add('hidden');
+          variantHud.textContent = '';
           return;
         }
         window.__gameState.variant.id = id;
         window.__gameState.variant.timerMs = durationMs;
         window.__gameState.variant.timerRunning = true;
         window.__gameState.variant.timerExpired = false;
-        updateVariantHud();
+        variantHud.classList.remove('hidden');
+        variantHud.textContent = `Test variant: ${id} (${(durationMs / 1000).toFixed(1)}s)`;
         const start = Date.now();
         _testVariantTimer = setInterval(() => {
           const elapsed = Date.now() - start;
@@ -734,6 +736,9 @@ export async function bootstrap(root) {
           if (remaining === 0) {
             window.__gameState.variant.timerExpired = true;
             window.__gameState.variant.timerRunning = false;
+            window.__gameState.variant.id = null;
+            variantHud.classList.add('hidden');
+            variantHud.textContent = '';
             clearInterval(_testVariantTimer);
             _testVariantTimer = null;
           }

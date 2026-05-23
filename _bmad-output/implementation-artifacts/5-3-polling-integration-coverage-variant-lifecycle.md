@@ -1,6 +1,6 @@
 # Story 5-3: Polling Integration Coverage — Variant Lifecycle
 
-**Status:** backlog
+**Status:** review
 
 **Epic:** 5 — Variant Track System
 **Story ID:** 5-3
@@ -83,33 +83,33 @@ a bug the test exposes — not a reason to add a sleep.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — Baseline shape test (AC-1)
+- [x] Task 1 — Baseline shape test (AC-1)
   - Add test to `tests/integration/test_variant_flow.py`
   - Create session, call `GET /game/{id}`, assert `active_variant is None`, `active_window is None`
 
-- [ ] Task 2 — Post-propose poll test (AC-2)
+- [x] Task 2 — Post-propose poll test (AC-2)
   - Drive session to `octave_loops_completed >= 2` via play-note calls
   - Call `POST /game/{id}/variant/propose`
   - Call `GET /game/{id}`, assert `active_variant` fields present and correct shape
   - Assert `active_window.state == "OPEN"` and `deadline_ms > current_time_ms`
 
-- [ ] Task 3 — Post-accept poll test (AC-3)
+- [x] Task 3 — Post-accept poll test (AC-3)
   - Continue from Task 2 state
   - Call `POST /game/{id}/variant/accept` with the variant's `trigger_midi`
   - Call `GET /game/{id}`, assert `active_variant is None`
   - Assert session `root_midi` updated to variant's `root_midi`
 
-- [ ] Task 4 — Post-timeout poll test (AC-4)
+- [x] Task 4 — Post-timeout poll test (AC-4)
   - Continue from Task 2 state (fresh session)
   - Call `POST /game/{id}/variant/timeout`
   - Call `GET /game/{id}`, assert `active_variant is None`, `active_window is None`
   - Assert session `status == "running"` (not failed)
 
-- [ ] Task 5 — Precondition gate tests (AC-5, AC-6)
+- [x] Task 5 — Precondition gate tests (AC-5, AC-6)
   - Test propose-before-threshold: fresh session, call propose, assert `milestone_not_reached`
   - Test propose-after-threshold: drive to 2 loops, call propose, assert `success: true`
 
-- [ ] Task 6 — Rapid-poll idempotency test (AC-7)
+- [x] Task 6 — Rapid-poll idempotency test (AC-7)
   - After proposing a variant, call `GET /game/{id}` twice in succession
   - Assert both responses have identical `active_variant.variant_id` and `active_window.state`
 
@@ -150,16 +150,27 @@ This is expected and intentional — the break is the signal that 5-4 landed cor
 
 ## Dev Agent Record
 
-_(filled in by dev agent after implementation)_
-
 ### Agent Model Used
+
+claude-sonnet-4-6
 
 ### Debug Log References
 
+None.
+
 ### Completion Notes List
 
+- Added 6 integration tests to `tests/integration/test_variant_flow.py` covering AC-1 through AC-7
+- All 9 integration tests pass (3 existing + 6 new)
+- Tests exercise real HTTP API path without any engine shortcuts (no _force_milestone)
+- `_play_passes` helper reused for driving scale_passes_completed to threshold
+
 ### File List
+
+- `tests/integration/test_variant_flow.py`
 
 ### Review Findings
 
 ### Change Log
+
+- 2026-05-23: Story 5-3 implemented — 6 new polling integration tests added (Date: 2026-05-23)

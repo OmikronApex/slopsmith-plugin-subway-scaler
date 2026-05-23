@@ -334,6 +334,21 @@ class GameEngine:
                 return 0, target_num_lanes, 0, base_string
         return None
 
+    def _find_root_for_highest(self, scale_id: str, target_highest: int, instrument: Instrument):
+        """Search for a root such that _build_full_scale_notes yields apex == target_highest.
+
+        Used by RIGHT accept: variant.root_midi is the target apex, not the actual root.
+        Returns (candidate_root, notes, asc_count) or (None, None, None) if no match found.
+        """
+        for semitone_offset in range(2, 37):
+            candidate = target_highest - semitone_offset
+            if not self._is_playable_root(candidate, instrument):
+                continue
+            notes, asc_count = self._build_full_scale_notes(scale_id, candidate, instrument)
+            if notes and notes[asc_count - 1].midi == target_highest:
+                return candidate, notes, asc_count
+        return None, None, None
+
     def _fret_in_window(self, midi: int, instrument: Instrument, base_fret: int, num_lanes: int):
         """Find any (string, fret) playing `midi` inside the variant fret window.
 
@@ -427,15 +442,36 @@ class GameEngine:
         variant.state = "SWITCH_TRIGGERED"
         session.active_window.state = "SWITCHED"
 
-        # Reseat session on the new root, rebuilding the full multi-string scale.
-        session.root_midi = variant.root_midi
         instrument = get_instrument(session.instrument_id) or Instrument(
             id="default", name="Default", kind="guitar",
             stringCount=6, tuning=[40, 45, 50, 55, 59, 64], maxFret=24,
         )
-        new_notes, new_asc_count = self._build_full_scale_notes(
-            session.scale_id_for_variant, variant.root_midi, instrument
-        )
+
+        if variant.side == "LEFT":
+            # variant.root_midi IS the new scale's root; start ascending from root (AC-3).
+            new_notes, new_asc_count = self._build_full_scale_notes(
+                session.scale_id_for_variant, variant.root_midi, instrument
+            )
+            session.root_midi = variant.root_midi
+            session.current_note_index = 0
+            session.total_notes_played = 0
+        else:  # RIGHT
+            # variant.root_midi = old_highest + 2 = target apex; find actual root (AC-4).
+            candidate, new_notes, new_asc_count = self._find_root_for_highest(
+                session.scale_id_for_variant, variant.root_midi, instrument
+            )
+            if candidate is not None:
+                session.root_midi = candidate
+            else:
+                # Fallback: degenerate case; use variant.root_midi as root.
+                new_notes, new_asc_count = self._build_full_scale_notes(
+                    session.scale_id_for_variant, variant.root_midi, instrument
+                )
+                session.root_midi = variant.root_midi
+            # Guard: for degenerate scales (asc_count == len(notes)), wrap to 0
+            session.current_note_index = new_asc_count % len(new_notes) if new_notes else 0
+            session.total_notes_played = 1
+
         session.notes = new_notes
         session.ascending_note_count = new_asc_count
         # Recompute lane geometry from the new note set.
@@ -443,12 +479,10 @@ class GameEngine:
         session.base_fret = min(scale_frets) if scale_frets else variant.base_fret
         new_max_fret = max(scale_frets) if scale_frets else session.base_fret
         session.num_lanes = max(3, min(12, (new_max_fret - session.base_fret) + 1))
-        session.current_note_index = 1 % len(new_notes) if new_notes else 0
-        session.total_notes_played = 1
         session.current_track = variant.base_lane
         session.scale_passes_completed = 0
         session.last_pass_direction = None
-        
+
         # Reset speed to difficulty base (multiplier 1.0) to give the player a breather.
         session.speed_multiplier = 1.0
 

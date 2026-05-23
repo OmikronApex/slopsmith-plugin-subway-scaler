@@ -1,6 +1,6 @@
 # Story 5-4: Backend Variant Direction Logic
 
-**Status:** backlog
+**Status:** review
 
 **Epic:** 5 — Variant Track System
 **Story ID:** 5-4
@@ -122,7 +122,7 @@ All assertions in `tests/integration/test_variant_flow.py` pass with the new acc
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 — Pre-flight audit
+- [x] Task 1 — Pre-flight audit
   - Run before touching any code:
     ```bash
     grep -n "current_note_index" services/game_engine.py
@@ -131,7 +131,7 @@ All assertions in `tests/integration/test_variant_flow.py` pass with the new acc
   - Document every hit. The expected delta: one block in `accept_variant` and N test
     assertion lines.
 
-- [ ] Task 2 — Fix LEFT accept: `current_note_index = 0`
+- [x] Task 2 — Fix LEFT accept: `current_note_index = 0`
   - In `accept_variant`, locate:
     ```python
     session.current_note_index = 1 % len(new_notes) if new_notes else 0
@@ -145,7 +145,7 @@ All assertions in `tests/integration/test_variant_flow.py` pass with the new acc
         ...
     ```
 
-- [ ] Task 3 — Implement RIGHT accept: find root for target highest note
+- [x] Task 3 — Implement RIGHT accept: find root for target highest note
   - In `accept_variant`, RIGHT branch:
     1. `target_highest_midi = variant.root_midi`
     2. Search for a `candidate_root` (scan from `target_highest_midi` downward, e.g. try
@@ -158,17 +158,17 @@ All assertions in `tests/integration/test_variant_flow.py` pass with the new acc
     6. Set `session.current_note_index = new_asc_count`.
   - Store `total_notes_played = 0` and `current_track = variant.base_lane` as before.
 
-- [ ] Task 4 — Update unit tests for LEFT and RIGHT accept (AC-3, AC-4)
+- [x] Task 4 — Update unit tests for LEFT and RIGHT accept (AC-3, AC-4)
   - Add or update tests asserting:
     - LEFT: `session.current_note_index == 0` and `session.root_midi == variant_root`
     - RIGHT: `session.notes[session.ascending_note_count - 1].midi == target_highest` and
       `session.current_note_index == session.ascending_note_count`
 
-- [ ] Task 5 — Update contract and integration tests (AC-6, AC-7)
+- [x] Task 5 — Update contract and integration tests (AC-6, AC-7)
   - In `tests/contract/test_variant.py` and `tests/integration/test_variant_flow.py`, update
     `current_note_index` and `root_midi` assertions to match the new behavior.
 
-- [ ] Task 6 — Run full suite (AC-8)
+- [x] Task 6 — Run full suite (AC-8)
   - `.venv/Scripts/python.exe -m pytest tests/ -v`
   - All tests green. Fix any remaining assertion mismatches before marking done.
 
@@ -257,16 +257,33 @@ Use `.venv/Scripts/python.exe -m pytest tests/` — plain `pytest` is not on PAT
 
 ## Dev Agent Record
 
-_(filled in by dev agent after implementation)_
-
 ### Agent Model Used
+
+claude-sonnet-4-6
 
 ### Debug Log References
 
+- RIGHT accept with degenerate 2-note scale (asc_count=2, len=2) caused IndexError at game_router line 205 (`notes[current_note_index]`). Fixed by using modulo guard: `new_asc_count % len(new_notes)`.
+
 ### Completion Notes List
 
+- Added `_find_root_for_highest` helper to search for root producing target apex MIDI
+- Refactored `accept_variant` to branch on `variant.side`:
+  - LEFT: `root_midi = variant.root_midi`, `current_note_index = 0`, `total_notes_played = 0`
+  - RIGHT: root found via `_find_root_for_highest`, `current_note_index = new_asc_count % len(new_notes)`
+- Added unit tests `test_left_accept_starts_ascending_from_root` and `test_right_accept_starts_descending_from_apex`
+- Updated `test_accept_switches_root_and_regenerates_notes` in contract tests to be direction-aware
+- Updated `test_full_variant_accept_flow_via_http` and `test_poll_after_accept_clears_variant` in integration tests
+
 ### File List
+
+- `services/game_engine.py`
+- `tests/unit/test_game_engine.py`
+- `tests/contract/test_variant.py`
+- `tests/integration/test_variant_flow.py`
 
 ### Review Findings
 
 ### Change Log
+
+- 2026-05-23: Story 5-4 implemented — direction-aware accept_variant + _find_root_for_highest (Date: 2026-05-23)
