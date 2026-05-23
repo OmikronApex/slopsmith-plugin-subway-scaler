@@ -157,6 +157,7 @@ logging.
     the eager propose path.
 
 - [x] Task 2 — Add variant safe zone to `proposeVariantTracks` (AC-2, AC-3, AC-4)
+  - Parallel track length (`STRAIGHT_LEN`) increased from 20→60 to span 3 wave spacings (60 Z-units). Wave gap = 20 Z-units; 3 gaps = 60. Track start aligns with transition safe zone back edge, end with wave N+2 safe zone front edge.
   - After the propose-piece scroll-past (when persistent lane segments begin spawning),
     also spawn a safe-zone mesh on the variant lane:
     ```js

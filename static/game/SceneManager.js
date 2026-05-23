@@ -19,7 +19,7 @@ const VARIANT_ACCENT = 0xFFB800;  // Accent colour for variant lane
 const VARIANT_SZ_DEPTH = 20;      // Safe zone depth for variant lane (matches SafeZoneRenderer)
 const LANE_W = 1.4;               // Lane box width (matches BoxGeometry in rebuildTracks)
 const PIECE_H = 0.06;             // Track piece height
-const STRAIGHT_LEN = 20;          // Z length of straight section in bend piece
+const STRAIGHT_LEN = 60;          // Z length of variant parallel track = 3 wave spacings (story 5-7 adjustment)
 const DIAG_LEN = 15;              // Z length of diagonal section in bend piece
 const SEG_LEN = 25;               // Z length of a persistent lane segment
 
