@@ -19,7 +19,7 @@ const VARIANT_SZ_DEPTH = 20;      // Safe zone depth for variant lane (matches S
 const LANE_W = 1.4;               // Lane box width (matches BoxGeometry in rebuildTracks)
 const PIECE_H = 0.06;             // Track piece height
 const STRAIGHT_LEN = 60;          // Z length of variant parallel track = 3 wave spacings (story 5-7 adjustment)
-const DIAG_LEN = 15;              // Z length of diagonal section in bend piece
+const DIAG_LEN = 45;              // Z length of diagonal section in bend piece (~3× to reach frame edge)
 // SEG_LEN = 25 removed — variant track uses fixed 3-piece group (story 5-7)
 
 export function createScene(canvas) {
@@ -185,7 +185,7 @@ export function createScene(canvas) {
     group.add(straight);
     // Incoming diagonal (front — arrives first): 45° peel from main-track area to variant lane.
     const incoming = new THREE.Mesh(new THREE.BoxGeometry(LANE_W, PIECE_H, DIAG_LEN * 1.414), mat);
-    incoming.rotation.set(0, sign * -Math.PI / 4, 0);
+    incoming.rotation.set(0, sign * -1 * -Math.PI / 4, 0);
     incoming.position.set(variantX + sign * DIAG_LEN * 0.5, 0, STRAIGHT_LEN / 2 + DIAG_LEN * 0.5);
     group.add(incoming);
     return group;
@@ -414,7 +414,7 @@ export function createScene(canvas) {
     if (variantProposePiece) {
       const elapsed = Math.max(0, nowMs - gameStartTime - variantProposePiece.spawnTimeMs);
       variantProposePiece.mesh.position.z = SPAWN_Z + elapsed * variantProposePiece.speedPxMs * 0.5;
-      if (variantProposePiece.mesh.position.z > STRAIGHT_LEN) {
+      if (variantProposePiece.mesh.position.z > STRAIGHT_LEN / 2 + DIAG_LEN) {
         scene.remove(variantProposePiece.mesh);
         variantProposePiece.mesh.traverse(c => { if (c.isMesh) c.geometry?.dispose(); });
         variantProposePiece = null;
@@ -444,7 +444,7 @@ export function createScene(canvas) {
           variantAcceptState.characterMoved = true;
         }
       }
-      if (variantDismissPiece.mesh.position.z > STRAIGHT_LEN) {
+      if (variantDismissPiece.mesh.position.z > STRAIGHT_LEN / 2 + DIAG_LEN) {
         clearVariantGeom();
         if (variantAcceptState) {
           clearScene();
