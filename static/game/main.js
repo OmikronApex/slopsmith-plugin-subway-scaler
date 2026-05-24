@@ -65,7 +65,7 @@ export async function bootstrap(root) {
     collision: { lastCollisionType: null, lastCollisionTimestamp: null, invincibilityFrames: 0 },
     gameOver: { isGameOver: false, reason: null, triggeredAt: null },
     session: { phase: 'idle', pauseCount: 0, totalPausedMs: 0 },
-    variant: { id: null, timerMs: 0, timerRunning: false, timerExpired: false },
+    variant: { id: null, timerMs: 0, timerRunning: false, timerExpired: false, safeZoneZ: null },
     lastDetectedNote: null,
     _test: { forceCollision: null, triggerPause: null, resetGame: null, setVariant: null },
   };
@@ -287,15 +287,14 @@ export async function bootstrap(root) {
   let _pauseReason = 'normal';
   let rafId = null;
   let prevFretPos = null;
-  let _testVariantTimer = null;
 
   // Variant state mirrors backend (feature 008-track-variants).
   // shownVariantId tracks which variant we've already rendered in the scene.
   let proposePending = false;
-  let timeoutPending = false;
   let shownVariantId = null;
   let activeVariant = null; // last seen from polling
   let activeWindow = null;
+  let pendingVariantPropose = null; // AC-6: deferred safe zone when findTransitionWave returned null
 
   // Lightweight oscillator cue (no asset). Plays a 3-note arpeggio when a
   // variant appears so the player gets an audible "switch available" signal.
@@ -327,11 +326,14 @@ export async function bootstrap(root) {
       variantHud.textContent = '';
       return;
     }
-    const remain = Math.max(0, activeWindow.deadline_ms - Date.now());
-    const secs = (remain / 1000).toFixed(1);
     const name = midiToName(activeVariant.root_midi);
+    const side = activeVariant.side.toLowerCase();
+    if (scene.isVariantSafeZoneAdjacent()) {
+      variantHud.textContent = `SWITCH → ${name} ← NOW`;
+    } else {
+      variantHud.textContent = `Switch → ${name} (${side})`;
+    }
     variantHud.classList.remove('hidden');
-    variantHud.textContent = `Switch → ${name} (${activeVariant.side.toLowerCase()}) ${secs}s`;
   }
 
   function rangeWarning(notes) {
@@ -496,6 +498,7 @@ export async function bootstrap(root) {
         }
 
         scene.render(now);
+        updateVariantHud(); // AC-4: update each frame to catch brief adjacency window
         rafId = requestAnimationFrame(loop);
       };
       // Ensure mic pipeline is ready before countdown; start fresh only if setup-screen grab failed.
@@ -529,12 +532,30 @@ export async function bootstrap(root) {
 
       overlay.classList.add('hidden');
       pauseBtn.classList.remove('hidden');
+
+      // Proximity dismiss: SceneManager fires this when safe zone passes player (AC-2, AC-3)
+      scene.setOnVariantMissed(() => {
+        if (activeVariant) {
+          gameClient.timeoutVariant().catch(() => {});
+          shownVariantId = null;
+          activeVariant = null;
+          activeWindow = null;
+          pendingVariantPropose = null;
+          if (window.__gameState) {
+            window.__gameState.variant.id = null;
+            window.__gameState.variant.timerRunning = false;
+            window.__gameState.variant.timerMs = 0;
+          }
+          updateVariantHud();
+        }
+      });
+
       audio.onDetection(async (det) => {
         if (!run || run.state !== 'running') return;
 
-        // Variant accept: if a switch window is open and the detected midi
-        // matches the variant's trigger, ask backend to finalize the switch.
-        if (activeVariant && activeWindow && det && det.note && det.note.midi === activeWindow.trigger_midi) {
+        // Variant accept: gate on adjacency — safe zone must be at player position (AC-1).
+        if (activeVariant && activeWindow && det && det.note && det.note.midi === activeWindow.trigger_midi
+            && scene.isVariantSafeZoneAdjacent()) {
           const resp = await gameClient.acceptVariant(det.note.midi);
           if (resp && resp.success) {
             scene.acceptVariantTracks({ num_lanes: resp.num_lanes, base_fret: resp.base_fret }, resp.notes);
@@ -551,6 +572,7 @@ export async function bootstrap(root) {
             shownVariantId = null;
             activeVariant = null;
             activeWindow = null;
+            pendingVariantPropose = null;
             updateVariantHud();
             return; // Don't treat as a normal expected-note input.
           }
@@ -619,7 +641,9 @@ export async function bootstrap(root) {
                 window.__gameState.variant.timerExpired = false;
               }
               if (shownVariantId !== resp.variant.variant_id) {
-                scene.proposeVariantTracks(resp.variant, findTransitionWave(resp.variant.side));
+                const tw = findTransitionWave(resp.variant.side);
+                scene.proposeVariantTracks(resp.variant, tw);
+                if (!tw) pendingVariantPropose = { variant: resp.variant, side: resp.variant.side };
                 playVariantCue();
                 shownVariantId = resp.variant.variant_id;
               }
@@ -629,29 +653,20 @@ export async function bootstrap(root) {
 
         // Render variant if backend reports one we haven't shown yet.
         if (activeVariant && shownVariantId !== activeVariant.variant_id) {
-          scene.proposeVariantTracks(activeVariant, findTransitionWave(activeVariant.side));
+          const tw = findTransitionWave(activeVariant.side);
+          scene.proposeVariantTracks(activeVariant, tw);
+          if (!tw) pendingVariantPropose = { variant: activeVariant, side: activeVariant.side };
           playVariantCue();
           shownVariantId = activeVariant.variant_id;
         }
 
-        // Timeout: deadline reached, ask backend to finalize.
-        if (activeVariant && activeWindow && !timeoutPending && Date.now() > activeWindow.deadline_ms) {
-          timeoutPending = true;
-          gameClient.timeoutVariant().then((resp) => {
-            timeoutPending = false;
-            if (resp && resp.success) {
-              if (window.__gameState) window.__gameState.variant.timerExpired = true;
-              scene.dismissVariantTracks();
-              shownVariantId = null;
-              activeVariant = null;
-              activeWindow = null;
-              if (window.__gameState) {
-                window.__gameState.variant.id = null;
-                window.__gameState.variant.timerRunning = false;
-                window.__gameState.variant.timerMs = 0;
-              }
-            }
-          }).catch(() => { timeoutPending = false; });
+        // Pending safe zone: retry findTransitionWave each poll (AC-6)
+        if (pendingVariantPropose) {
+          const w = findTransitionWave(pendingVariantPropose.side);
+          if (w) {
+            scene.updateVariantSafeZoneWave(w);
+            pendingVariantPropose = null;
+          }
         }
 
         updateVariantHud();
@@ -686,7 +701,6 @@ export async function bootstrap(root) {
       window.__gameState.gameOver.triggeredAt = null;
     }
     // Variant cleanup.
-    if (_testVariantTimer) { clearInterval(_testVariantTimer); _testVariantTimer = null; }
     if (window.__gameState) {
       window.__gameState.variant = { id: null, timerMs: 0, timerRunning: false, timerExpired: false };
     }
@@ -695,7 +709,7 @@ export async function bootstrap(root) {
     activeVariant = null;
     activeWindow = null;
     proposePending = false;
-    timeoutPending = false;
+    pendingVariantPropose = null;
     updateVariantHud();
   }
 
@@ -734,36 +748,39 @@ export async function bootstrap(root) {
         }
       },
       resetGame: () => { if (run) { run.abandon(); cleanup(); } },
-      setVariant: (id, durationMs = 10000) => {
-        if (_testVariantTimer) { clearInterval(_testVariantTimer); _testVariantTimer = null; }
-        if (!id) {
-          window.__gameState.variant = { id: null, timerMs: 0, timerRunning: false, timerExpired: false };
-          variantHud.classList.add('hidden');
-          variantHud.textContent = '';
-          return;
-        }
-        window.__gameState.variant.id = id;
-        window.__gameState.variant.timerMs = durationMs;
-        window.__gameState.variant.timerRunning = true;
-        window.__gameState.variant.timerExpired = false;
-        variantHud.classList.remove('hidden');
-        variantHud.textContent = `Test variant: ${id} (${(durationMs / 1000).toFixed(1)}s)`;
-        const start = Date.now();
-        _testVariantTimer = setInterval(() => {
-          const elapsed = Date.now() - start;
-          const remaining = Math.max(0, durationMs - elapsed);
-          window.__gameState.variant.timerMs = remaining;
-          if (remaining === 0) {
-            window.__gameState.variant.timerExpired = true;
-            window.__gameState.variant.timerRunning = false;
-            window.__gameState.variant.id = null;
+      setVariant: (() => {
+        let _timer = null;
+        return (id, durationMs = 10000) => {
+          if (_timer) { clearInterval(_timer); _timer = null; }
+          if (!id) {
+            window.__gameState.variant = { id: null, timerMs: 0, timerRunning: false, timerExpired: false };
             variantHud.classList.add('hidden');
             variantHud.textContent = '';
-            clearInterval(_testVariantTimer);
-            _testVariantTimer = null;
+            return;
           }
-        }, 50);
-      },
+          window.__gameState.variant.id = id;
+          window.__gameState.variant.timerMs = durationMs;
+          window.__gameState.variant.timerRunning = true;
+          window.__gameState.variant.timerExpired = false;
+          variantHud.classList.remove('hidden');
+          variantHud.textContent = `Test variant: ${id} (${(durationMs / 1000).toFixed(1)}s)`;
+          const start = Date.now();
+          _timer = setInterval(() => {
+            const elapsed = Date.now() - start;
+            const remaining = Math.max(0, durationMs - elapsed);
+            window.__gameState.variant.timerMs = remaining;
+            if (remaining === 0) {
+              window.__gameState.variant.timerExpired = true;
+              window.__gameState.variant.timerRunning = false;
+              window.__gameState.variant.id = null;
+              variantHud.classList.add('hidden');
+              variantHud.textContent = '';
+              clearInterval(_timer);
+              _timer = null;
+            }
+          }, 50);
+        };
+      })(),
     };
   }
 

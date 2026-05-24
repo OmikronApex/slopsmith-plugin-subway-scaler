@@ -19,7 +19,7 @@ from services.instruments import get as get_instrument
 # Pattern: Up, Down, Up → RIGHT; Down, Up, Down → LEFT.
 SCALES_PER_VARIANT = 3
 # Default switch window duration.
-DEFAULT_WINDOW_MS = 10000
+DEFAULT_WINDOW_MS = 120_000  # 2-minute safety net; frontend proximity logic drives dismiss timing
 # Variant root offset: 2 frets above highest scale note (RIGHT) or below root (LEFT).
 VARIANT_SHIFT_DOWN = 2
 

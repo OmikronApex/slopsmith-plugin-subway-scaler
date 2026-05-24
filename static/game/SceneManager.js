@@ -107,6 +107,7 @@ export function createScene(canvas) {
   let variantSafeZoneMesh = null;   // safe zone mesh on variant lane (story 5-7)
   let variantAcceptState = null;    // { newPrimary, acceptX, characterMoved } — tracks accept animation
   let lastWaveSpeed = 0.05;         // captured from setWaves; used for piece scrolling
+  let onVariantMissedCb = null;     // registered from main.js (story 5-8, AC-2)
 
   let tween = null;
   let succeeded = false;
@@ -239,17 +240,16 @@ export function createScene(canvas) {
     });
     const szMesh = new THREE.Mesh(szGeo, szMat);
     szMesh.rotation.x = -Math.PI / 2;
-    // Compute spawn time: when transitionWave is provided, back-calculate so the
-    // safe zone arrives at z=0 at the same moment as the wave deadline (AC-4).
+    // szSpawnMs: use wave.spawn_time_ms directly (AC-5, canonical anchor).
+    // Falls back to current time when no wave is provided (AC-6: safe zone deferred).
     let szSpawnMs;
     if (transitionWave) {
-      const arrivalMs = transitionWave.spawn_time_ms + transitionWave.duration_ms;
-      const travelMs = Math.abs(SPAWN_Z) / (transitionWave.speed_px_per_ms * 0.5);
-      szSpawnMs = arrivalMs - travelMs;
+      szSpawnMs = transitionWave.spawn_time_ms;
     } else {
       szSpawnMs = performance.now() - gameStartTime;
     }
     szMesh.userData.spawnMs = szSpawnMs;
+    szMesh.userData.waveSet = !!transitionWave;
     szMesh.position.set(vx, 0.05, SPAWN_Z + VARIANT_SZ_DEPTH / 2);
     scene.add(szMesh);
     variantSafeZoneMesh = szMesh;
@@ -421,11 +421,22 @@ export function createScene(canvas) {
       }
     }
 
-    // Variant safe zone — scroll with same formula as SafeZoneRenderer (AC-2)
+    // Variant safe zone — scroll with same formula as SafeZoneRenderer (AC-2, AC-8)
     if (variantSafeZoneMesh) {
       const elapsed = Math.max(0, nowMs - gameStartTime - variantSafeZoneMesh.userData.spawnMs);
       const z = SPAWN_Z + elapsed * lastWaveSpeed * 0.5 + VARIANT_SZ_DEPTH / 2;
       variantSafeZoneMesh.position.z = z;
+      if (window.__gameState) {
+        window.__gameState.variant.safeZoneZ = z;
+      }
+      // Miss: front edge has passed player (AC-2)
+      if (z > VARIANT_SZ_DEPTH / 2) {
+        const cb = onVariantMissedCb;
+        clearVariantGeom();
+        if (cb) cb();
+      }
+    } else if (window.__gameState) {
+      window.__gameState.variant.safeZoneZ = null;
     }
 
     // Dismiss piece — Z-scroll; trigger character tween at bend midpoint on accept (P1)
@@ -474,6 +485,22 @@ export function createScene(canvas) {
     renderer.render(scene, camera);
   }
 
+  function isVariantSafeZoneAdjacent() {
+    if (!variantSafeZoneMesh) return false;
+    return Math.abs(variantSafeZoneMesh.position.z) <= VARIANT_SZ_DEPTH / 2;
+  }
+
+  function setOnVariantMissed(cb) {
+    onVariantMissedCb = cb;
+  }
+
+  function updateVariantSafeZoneWave(wave) {
+    if (variantSafeZoneMesh && !variantSafeZoneMesh.userData.waveSet) {
+      variantSafeZoneMesh.userData.spawnMs = wave.spawn_time_ms;
+      variantSafeZoneMesh.userData.waveSet = true;
+    }
+  }
+
   return {
     threeScene: scene,
     setInstrument,
@@ -489,6 +516,9 @@ export function createScene(canvas) {
     proposeVariantTracks,
     dismissVariantTracks,
     acceptVariantTracks,
+    isVariantSafeZoneAdjacent,
+    setOnVariantMissed,
+    updateVariantSafeZoneWave,
     resize(w, h) {
       if (w <= 0 || h <= 0) return;
       renderer.setSize(w, h, false);

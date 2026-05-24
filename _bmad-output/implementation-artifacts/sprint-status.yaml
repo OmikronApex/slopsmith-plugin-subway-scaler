@@ -1,5 +1,5 @@
 generated: "2026-05-21"
-last_updated: "2026-05-23"  # Stories 5-1, 5-3, 5-4, 5-5, 5-2, 5-6, 5-7 done
+last_updated: "2026-05-24"  # Stories 5-1, 5-3, 5-4, 5-5, 5-2, 5-6, 5-7 done; 5-8 review
 project: "slopsmith-plugin-subway-scaler"
 project_key: "SS"
 tracking_system: "local"
@@ -71,3 +71,4 @@ development_status:
   5-2-remove-atdd-scaffolding-and-validate-e2e: done
   5-6-full-string-range-wave-spawning: done
   5-7-variant-visual-spec-track-coloring-spawn-timing-transition-animation: review
+  5-8-safe-zone-gated-track-switching: review
