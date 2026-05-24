@@ -15,7 +15,6 @@ const CAMERA_PITCH = 30; // Shallower angle (deg) to see more upcoming track
 const CAMERA_DISTANCE = 15; // Euclidean distance
 const TRACK_DEPTH = 120;
 const ROOF_COLOUR = 0x444444;
-const VARIANT_ACCENT = 0xFFB800;  // Accent colour for variant lane
 const VARIANT_SZ_DEPTH = 20;      // Safe zone depth for variant lane (matches SafeZoneRenderer)
 const LANE_W = 1.4;               // Lane box width (matches BoxGeometry in rebuildTracks)
 const PIECE_H = 0.06;             // Track piece height
@@ -105,13 +104,10 @@ export function createScene(canvas) {
   let variantProposePiece = null;   // { mesh: Group, spawnTimeMs, speedPxMs }
   let variantDismissPiece = null;   // { mesh: Group, spawnTimeMs, speedPxMs }
   let variantLaneSegs = [];         // persistent straight lane segment meshes
-  let variantHighlightMesh = null;
-  let variantHighlightMat = null;
   let variantInfo = null;           // { side, variantX }
   let variantSafeZoneMesh = null;   // safe zone mesh on variant lane (story 5-7)
   let variantAcceptState = null;    // { newPrimary, acceptX, characterMoved } — tracks accept animation
   let lastWaveSpeed = 0.05;         // captured from setWaves; used for piece scrolling
-  let variantAccentMat = null;      // shared accent material
 
   let tween = null;
   let succeeded = false;
@@ -170,23 +166,12 @@ export function createScene(canvas) {
 
   // ─── Variant geometry helpers (story 5-5) ─────────────────────────────────
 
-  function getOrCreateAccentMat() {
-    if (!variantAccentMat) {
-      variantAccentMat = new THREE.MeshStandardMaterial({
-        color: VARIANT_ACCENT,
-        emissive: VARIANT_ACCENT,
-        emissiveIntensity: 0.15,
-      });
-    }
-    return variantAccentMat;
-  }
-
   // Returns a Three.js Group whose geometry bakes in a 45° railway-switch bend.
   // The group translates only in Z at runtime (AC-8). No runtime rotation.
   // side: "LEFT"|"RIGHT" — which side the diagonal exits toward.
   // variantX: world X of the straight section centre.
   function buildBendPiece(side, variantX) {
-    const mat = getOrCreateAccentMat();
+    const mat = trackMat;
     const group = new THREE.Group();
     const sign = side === 'RIGHT' ? 1 : -1;
     // Straight section: player-facing end at highest local Z (first to reach player).
@@ -217,19 +202,6 @@ export function createScene(canvas) {
       seg.geometry?.dispose();
     }
     variantLaneSegs = [];
-    if (variantHighlightMesh) {
-      scene.remove(variantHighlightMesh);
-      variantHighlightMesh.geometry?.dispose();
-      variantHighlightMesh = null;
-    }
-    if (variantHighlightMat) {
-      variantHighlightMat.dispose();
-      variantHighlightMat = null;
-    }
-    if (variantAccentMat) {
-      variantAccentMat.dispose();
-      variantAccentMat = null;
-    }
     if (variantSafeZoneMesh) {
       scene.remove(variantSafeZoneMesh);
       variantSafeZoneMesh.geometry?.dispose();
@@ -255,21 +227,6 @@ export function createScene(canvas) {
     scene.add(mesh);
     variantProposePiece = { mesh, spawnTimeMs, speedPxMs: lastWaveSpeed };
     variantInfo = { side: variant.side, variantX: vx, speedPxMs: lastWaveSpeed };
-    // Pulsing highlight shows WHERE to play the trigger note
-    variantHighlightMat = new THREE.MeshStandardMaterial({
-      color: VARIANT_ACCENT,
-      emissive: VARIANT_ACCENT,
-      emissiveIntensity: 0.5,
-      transparent: true,
-      opacity: 0.55,
-    });
-    variantHighlightMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(LANE_W, PIECE_H * 3, STRAIGHT_LEN),
-      variantHighlightMat
-    );
-    variantHighlightMesh.position.set(vx, 0, SPAWN_Z);
-    variantHighlightMesh.userData.spawnTimeMs = spawnTimeMs;
-    scene.add(variantHighlightMesh);
 
     // Safe zone on variant lane — colored by transition string (story 5-7, AC-2, AC-3)
     const variantSzColor = STRING_COLORS[variant.base_string] ?? COLORS.ACCENT;
@@ -305,12 +262,6 @@ export function createScene(canvas) {
     mesh.position.set(0, 0, SPAWN_Z);
     scene.add(mesh);
     variantDismissPiece = { mesh, spawnTimeMs, speedPxMs: lastWaveSpeed };
-    if (variantHighlightMesh) {
-      scene.remove(variantHighlightMesh);
-      variantHighlightMesh.geometry?.dispose();
-      variantHighlightMesh = null;
-    }
-    if (variantHighlightMat) { variantHighlightMat.dispose(); variantHighlightMat = null; }
   }
 
   function acceptVariantTracks(newPrimary, notes = []) {
@@ -333,12 +284,6 @@ export function createScene(canvas) {
       scene.add(mesh);
       variantDismissPiece = { mesh, spawnTimeMs, speedPxMs: lastWaveSpeed };
     }
-    if (variantHighlightMesh) {
-      scene.remove(variantHighlightMesh);
-      variantHighlightMesh.geometry?.dispose();
-      variantHighlightMesh = null;
-    }
-    if (variantHighlightMat) { variantHighlightMat.dispose(); variantHighlightMat = null; }
     // AC-6 §2-4: defer character tween + track rebuild to render loop.
     // Store notes for post-rebuild character alignment (story 5-7, AC-7).
     variantAcceptState = { newPrimary, acceptX, characterMoved: false, notes };
@@ -476,19 +421,6 @@ export function createScene(canvas) {
       }
     }
 
-    // Highlight mesh scrolls with propose piece; pulse emissive while visible (P2)
-    if (variantHighlightMesh) {
-      const elapsed = Math.max(0, nowMs - gameStartTime - variantHighlightMesh.userData.spawnTimeMs);
-      variantHighlightMesh.position.z = SPAWN_Z + elapsed * lastWaveSpeed * 0.5;
-      if (variantHighlightMesh.position.z > STRAIGHT_LEN) {
-        scene.remove(variantHighlightMesh);
-        variantHighlightMesh.geometry?.dispose();
-        variantHighlightMesh = null;
-      } else if (variantHighlightMat) {
-        variantHighlightMat.emissiveIntensity = 0.3 + 0.7 * (0.5 + 0.5 * Math.sin(nowMs * 0.005));
-      }
-    }
-
     // Variant safe zone — scroll with same formula as SafeZoneRenderer (AC-2)
     if (variantSafeZoneMesh) {
       const elapsed = Math.max(0, nowMs - gameStartTime - variantSafeZoneMesh.userData.spawnMs);
@@ -539,8 +471,7 @@ export function createScene(canvas) {
       const needNewSeg = variantLaneSegs.length === 0 ||
         nowRel - variantLaneSegs[variantLaneSegs.length - 1].userData.spawnTimeMs >= segTravelTime;
       if (needNewSeg) {
-        const mat = getOrCreateAccentMat();
-        const seg = new THREE.Mesh(new THREE.BoxGeometry(LANE_W, PIECE_H, SEG_LEN), mat);
+        const seg = new THREE.Mesh(new THREE.BoxGeometry(LANE_W, PIECE_H, SEG_LEN), trackMat);
         seg.position.set(variantInfo.variantX, 0, SPAWN_Z);
         seg.userData.spawnTimeMs = nowRel;
         seg.userData.speedPxMs = lastWaveSpeed;
