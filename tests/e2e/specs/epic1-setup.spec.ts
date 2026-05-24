@@ -107,28 +107,6 @@ test.describe('Epic 1: UX polish (Story 1.8)', () => {
     await expect(title).toHaveText('SUBWAY SCALER');
   });
 
-  test('scale preview element is present and updates on selection change', async ({ gamePage }) => {
-    await navigateToPlugin(gamePage);
-
-    const preview = gamePage.locator(`${ROOT} .scale-preview`);
-    await expect(preview).toBeVisible();
-
-    // Change scale selection and check preview updates
-    const select = gamePage.locator(`${ROOT} #scale-select`);
-    const options = await select.locator('option').allTextContents();
-    expect(options.length).toBeGreaterThanOrEqual(2);
-
-    await select.selectOption({ index: 0 });
-    const text0 = await preview.textContent();
-
-    await select.selectOption({ index: 1 });
-    const text1 = await preview.textContent();
-
-    // At minimum the preview should have non-empty content
-    expect(text0?.trim().length).toBeGreaterThan(0);
-    // And it should differ between selections (unless names happen to be the same)
-    if (options[0] !== options[1]) {
-      expect(text1).not.toBe(text0);
-    }
-  });
+  // Scale preview test removed 2026-05-25 — `.scale-preview` was a mockup-only
+  // element that never shipped; feature retired by UX decision.
 });

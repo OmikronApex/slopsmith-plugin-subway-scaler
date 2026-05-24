@@ -107,6 +107,7 @@ export function createScene(canvas) {
   let variantAcceptState = null;    // { newPrimary, acceptX, characterMoved } — tracks accept animation
   let lastWaveSpeed = 0.05;         // captured from setWaves; used for piece scrolling
   let onVariantMissedCb = null;     // registered from main.js (story 5-8, AC-2)
+  let lastVariantTickMs = 0;        // last render tick that saw a variant SZ — for tab-resume guard
 
   let tween = null;
   let succeeded = false;
@@ -449,7 +450,18 @@ export function createScene(canvas) {
       const spawnMs = variantSafeZoneMesh.userData.spawnMs;
       const speedPxMs = variantSafeZoneMesh.userData.speedPxMs;
       if (spawnMs != null && speedPxMs != null) {
-        const elapsed = Math.max(0, nowMs - gameStartTime - spawnMs);
+        // Tab-resume guard: if RAF was throttled (tab hidden, sleep, etc.) the next
+        // frame may jump huge — instantly firing onVariantMissed. Detect a large
+        // gap and shift spawnMs forward so the safe zone resumes at its pre-gap Z.
+        if (lastVariantTickMs > 0) {
+          const dt = nowMs - lastVariantTickMs;
+          if (dt > 500) {
+            variantSafeZoneMesh.userData.spawnMs += (dt - 16);
+          }
+        }
+        lastVariantTickMs = nowMs;
+        const adjSpawnMs = variantSafeZoneMesh.userData.spawnMs;
+        const elapsed = Math.max(0, nowMs - gameStartTime - adjSpawnMs);
         const z = SPAWN_Z + elapsed * speedPxMs * 0.5 + VARIANT_SZ_DEPTH / 2;
         variantSafeZoneMesh.position.z = z;
         if (window.__gameState?.variant) {
@@ -459,11 +471,15 @@ export function createScene(canvas) {
         if (z > VARIANT_SZ_DEPTH / 2) {
           const cb = onVariantMissedCb;
           clearVariantGeom();
+          lastVariantTickMs = 0;
           if (cb) cb();
         }
       }
-    } else if (window.__gameState?.variant) {
-      window.__gameState.variant.safeZoneZ = null;
+    } else {
+      lastVariantTickMs = 0;
+      if (window.__gameState?.variant) {
+        window.__gameState.variant.safeZoneZ = null;
+      }
     }
 
     // Dismiss piece — Z-scroll; trigger character tween at bend midpoint on accept (P1)

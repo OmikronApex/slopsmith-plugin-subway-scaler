@@ -1,6 +1,6 @@
 # Story 5-7: Variant Visual Spec — Safe Zone on Variant Lane, Spawn Timing, Transition Animation
 
-**Status:** review
+**Status:** done
 
 **Epic:** 5 — Variant Track System
 **Story ID:** 5-7

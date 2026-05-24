@@ -448,7 +448,12 @@ export async function bootstrap(root) {
           const targetWave = waves
             .filter(w => w.note_index === targetIdx && w.spawn_time_ms + w.duration_ms >= game_now)
             .sort((a, b) => a.spawn_time_ms - b.spawn_time_ms)[0] ?? null;
-          if (targetWave && targetWave.wave_id !== variantSpawnedForWave) {
+          // Defensive timeout: if no matching wave appears within 30s, give up so a
+          // tiny-sequence / scheduler-edge case can't strand the variant forever.
+          if (!targetWave && variantPendingSpawn.queuedAtMs != null
+              && performance.now() - variantPendingSpawn.queuedAtMs > 30000) {
+            variantPendingSpawn = null;
+          } else if (targetWave && targetWave.wave_id !== variantSpawnedForWave) {
             // Anchor note = note at wave.note_index - 1 (apex for RIGHT, root for LEFT).
             const anchorIdx = targetWave.note_index - 1;
             const anchorNote = (anchorIdx >= 0 && run.sequence[anchorIdx]) ? run.sequence[anchorIdx] : null;
@@ -573,9 +578,21 @@ export async function bootstrap(root) {
             updateVariantHud();
             return;
           }
+          // Accept attempted but backend rejected (success:false). Clear stale variant
+          // state and consume the trigger note — do NOT also process as a regular note.
+          shownVariantId = null;
+          activeVariant = null;
+          activeWindow = null;
+          variantPendingSpawn = null;
+          variantSpawnedForWave = null;
+          updateVariantHud();
+          return;
         }
 
-        if (!safeZoneRenderer.isAnyPrimarySafeZoneAdjacent(det.note.midi)) return;
+        if (!safeZoneRenderer.isAnyPrimarySafeZoneAdjacent(det.note.midi)) {
+          run.onMissOutsideWindow?.(det);
+          return;
+        }
 
         const prevIdx = run.cursor;
         const result = run.onDetection(det);
@@ -633,8 +650,14 @@ export async function bootstrap(root) {
       // matching wave (note after apex for RIGHT, note after root for LEFT).
       function _queueVariantSpawn(variant) {
         if (variantPendingSpawn) return; // already queued
-        const targetNoteIndex = variant.side === 'RIGHT' ? ascendingNoteCount : 1;
-        variantPendingSpawn = { variant, targetNoteIndex };
+        const seqLen = run?.sequence?.length ?? 0;
+        let targetNoteIndex = variant.side === 'RIGHT' ? ascendingNoteCount : 1;
+        // Defensive: clamp into a valid range for tiny/degenerate sequences so the
+        // render-loop watcher can actually find a matching wave.
+        if (seqLen > 0 && (targetNoteIndex < 0 || targetNoteIndex >= seqLen)) {
+          targetNoteIndex = 0;
+        }
+        variantPendingSpawn = { variant, targetNoteIndex, queuedAtMs: performance.now() };
         variantSpawnedForWave = null;
       }
 

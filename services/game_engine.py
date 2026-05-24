@@ -531,25 +531,32 @@ class GameEngine:
         session = self.get_session(session_id)
         if not session:
             return {"success": False, "error": "session_not_found"}
-        if not session.active_variant or not session.active_window:
+        # Half-state recovery: if either field exists but not both, still clean up.
+        if not session.active_variant and not session.active_window:
             return {"success": True}  # idempotent
         variant = session.active_variant
-        variant.state = "DISMISSED"
-        session.active_window.state = "CLOSED"
-        session.variant_history.append({
-            "variant_id": variant.variant_id,
-            "root_midi": variant.root_midi,
-            "side": variant.side,
-            "decision": "DISMISSED",
-            "at_ms": int(time.time() * 1000),
-        })
+        if variant:
+            variant.state = "DISMISSED"
+        if session.active_window:
+            session.active_window.state = "CLOSED"
+        if variant:
+            session.variant_history.append({
+                "variant_id": variant.variant_id,
+                "root_midi": variant.root_midi,
+                "side": variant.side,
+                "decision": "DISMISSED",
+                "at_ms": int(time.time() * 1000),
+            })
         session.active_variant = None
         session.active_window = None
         session.scale_passes_completed = 0
-        session.last_pass_direction = None
+        # Preserve last_pass_direction — drives RIGHT/LEFT alternation on next propose.
+        # Only accept_variant resets it (player committed to a new scale).
         logger.info(
             "variant.dismiss session=%s variant=%s side=%s",
-            session.session_id, variant.variant_id, variant.side,
+            session.session_id,
+            variant.variant_id if variant else None,
+            variant.side if variant else None,
         )
         return {"success": True}
 

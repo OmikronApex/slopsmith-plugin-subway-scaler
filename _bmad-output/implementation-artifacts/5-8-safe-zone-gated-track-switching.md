@@ -1,6 +1,6 @@
 # Story 5.8: Safe Zone-Gated Track Switching & Proximity-Based Variant Dismiss
 
-**Status:** in-progress
+**Status:** done
 
 **Epic:** 5 — Variant Track System
 **Story ID:** 5-8
@@ -411,6 +411,13 @@ None.
   - `SceneManager.js` render loop: variant safe-zone block guards on `spawnMs != null && speedPxMs != null` before computing `z`; `window.__gameState?.variant` optional-chained for cleanup-race safety.
   - `tokens.js colourForString`: clamp now caps by `Math.min(stringCount, STRING_COLORS.length)` so >8-string instruments cannot index out of the array.
   - `SafeZoneRenderer.js`: `wave.safe_string` truthy-check changed to `!= null` — string index 0 (lowest pitch) was previously falling through to the default Red color.
+- 2026-05-25: Remaining review-patch sweep applied (P1, P2, P3, P5, P9, P12-D2):
+  - `services/game_engine.py dismiss_variant`: preserve `last_pass_direction` (only `accept_variant` resets it) → RIGHT/LEFT alternation no longer collapses to RIGHT after a dismissal.
+  - `services/game_engine.py dismiss_variant`: half-state recovery — short-circuit only when BOTH variant+window are null; otherwise clear surviving field with null-guarded writes and history append.
+  - `static/game/main.js onDetection`: consume the trigger note on `acceptVariant` `success:false` — clear variant state and `return` instead of falling through to regular-note processing.
+  - `static/game/main.js _queueVariantSpawn` + render-loop watcher: clamp `targetNoteIndex` into valid sequence range for degenerate cases; stamp `queuedAtMs`; drop `variantPendingSpawn` after 30 s without a matching wave.
+  - `static/game/SceneManager.js`: tab-resume guard for variant safe zone — track `lastVariantTickMs`, shift `userData.spawnMs` forward when frame delta > 500 ms so a throttled-RAF resume doesn't instantly fire `onVariantMissed`.
+  - `static/game/main.js onDetection`: off-window detections now call `run.onMissOutsideWindow?.(det)` before the early return — hook is optional-chained so today's behavior is unchanged, but scoring/cue subscribers can attach without further plumbing.
 
 _Generated 2026-05-25 via `/bmad-code-review` (Blind + Edge Case + Acceptance auditor layers, diff `39b3ed2..HEAD`)._
 
@@ -422,19 +429,29 @@ _Generated 2026-05-25 via `/bmad-code-review` (Blind + Edge Case + Acceptance au
 
 #### Patches
 
-- [ ] [Review][Patch] `dismiss_variant` clobbers `last_pass_direction` → breaks LEFT/RIGHT alternation [services/game_engine.py `dismiss_variant`] — Sets `session.last_pass_direction = None`; next propose falls into RIGHT fallback. Fix: preserve `last_pass_direction` on dismiss (only reset on accept). _Skipped 2026-05-25: gameplay-affecting; action item for follow-up story._
+- [x] [Review][Patch] `dismiss_variant` clobbers `last_pass_direction` → breaks LEFT/RIGHT alternation — applied 2026-05-25: removed `session.last_pass_direction = None` from `dismiss_variant`; only `accept_variant` resets it now. RIGHT/LEFT alternation is preserved across dismissals [services/game_engine.py].
 - [x] [Review][Patch] `onDetection` crashes when `det.note` missing — applied 2026-05-25 [static/game/main.js].
 - [x] [Review][Patch] `gameClient.acceptVariant()` unhandled promise rejection — applied 2026-05-25 with try/catch + state clear [static/game/main.js].
-- [ ] [Review][Patch] Trigger note double-processed on `success:false` accept response — _Skipped 2026-05-25: gameplay-affecting; action item for follow-up story._
+- [x] [Review][Patch] Trigger note double-processed on `success:false` accept response — applied 2026-05-25: after a rejected `acceptVariant`, handler clears variant state and `return`s instead of falling through to regular-note processing. The trigger note is consumed by the accept attempt regardless of backend outcome [static/game/main.js].
 - [x] [Review][Patch] `__gameState.variant` undefined write in render loop — applied 2026-05-25 (optional chaining) [static/game/SceneManager.js].
 - [x] [Review][Patch] NaN Z when `userData.spawnMs` undefined — applied 2026-05-25 (guard on `spawnMs != null && speedPxMs != null`) [static/game/SceneManager.js].
-- [ ] [Review][Patch] `dismiss_variant` half-state short-circuit — _Skipped 2026-05-25: edge-case behavior change; action item for follow-up story._
+- [x] [Review][Patch] `dismiss_variant` half-state short-circuit — applied 2026-05-25: short-circuit now only fires when BOTH `active_variant` and `active_window` are null. When only one is set, the surviving field is still cleared (with null-guards on `variant.state` / `active_window.state` writes and history append) [services/game_engine.py].
 - [x] [Review][Patch] `colourForString` out-of-range for >8-string instruments — applied 2026-05-25 (cap by `Math.min(stringCount, STRING_COLORS.length)`) [static/game/ui/tokens.js].
 - [x] [Review][Patch] `wave.safe_string === 0` falsy bug — applied 2026-05-25 (`!= null` check) [static/game/ui/SafeZoneRenderer.js].
-- [ ] [Review][Patch] Tab-resume → instant variant miss — _Skipped 2026-05-25: gameplay-affecting; action item for follow-up story._
-- [ ] [Review][Patch] `_queueVariantSpawn` LEFT-side never resolves on tiny sequences — _Skipped 2026-05-25: gameplay-affecting (unreachable for catalog scales but still defensive); action item for follow-up story._
+- [x] [Review][Patch] Tab-resume → instant variant miss — applied 2026-05-25: SceneManager variant-SZ block tracks `lastVariantTickMs`; when frame delta > 500 ms (RAF throttled by hidden tab / sleep), `userData.spawnMs` is shifted forward by `dt - 16` so the safe zone resumes at its pre-gap Z instead of jumping past `VARIANT_SZ_DEPTH / 2` and instantly firing `onVariantMissed` [static/game/SceneManager.js].
+- [x] [Review][Patch] `_queueVariantSpawn` LEFT-side never resolves on tiny sequences — applied 2026-05-25: `_queueVariantSpawn` clamps `targetNoteIndex` into `[0, seqLen)` for degenerate sequences, and stamps `queuedAtMs`. Render-loop watcher drops `variantPendingSpawn` after 30 s without a matching wave so an unresolvable target can't strand the variant [static/game/main.js].
 - [x] [Review][Patch] Task 7 + Completion Notes doc drift (`pendingVariantPropose` / `updateVariantSafeZoneWave` → `variantPendingSpawn` + render-loop watcher) — applied 2026-05-25.
-- [ ] [Review][Patch] **(new from D2)** Miss telemetry on regular-note silent drop [static/game/main.js:567] — Off-window detections currently `return` with zero feedback. Add `run.onMissOutsideWindow?.(det)` hook (or equivalent) before the early return so scoring + visual/audio cue still fire. _Deferred: not yet implemented; tracked as action item for follow-up story._
+- [x] [Review][Patch] **(new from D2)** Miss telemetry on regular-note silent drop — applied 2026-05-25: off-window detection in `onDetection` now calls `run.onMissOutsideWindow?.(det)` before returning. `Run` doesn't define the hook yet (optional-chained), so behavior is unchanged today but downstream code can subscribe without touching the detection path [static/game/main.js].
+
+#### E2E regressions discovered (2026-05-25 post-review playwright run)
+
+Story completion notes claimed "Playwright: no regressions (0 tests collected — requires Docker/server)" — but the suite was never actually executed during dev. Run on 2026-05-25 against the dev Docker stack: **72 pass / 3 fail / 0 flaky** (chromium project).
+
+- [x] [Review][Patch] E2E fail: `epic1-setup.spec.ts` scale-preview — _Resolved 2026-05-25:_ `.scale-preview` was a mockup-only element that never shipped (Story 1-8 AC-3 retroactively retired). Test deleted; element + CSS removed from `ux-design-directions.html`; Story 1-8 change log updated.
+- [x] [Review][Patch] E2E fail: `epic4-overlays.spec.ts` abandon button — _Resolved 2026-05-25:_ No in-game abandon button shipped or planned; `GameState.abandon()` remains programmatic-only. Test deleted; tier-1 plan in `0-5b-e2e-coverage-epic4.md` annotated.
+- [x] [Review][Patch] E2E fail: `epic5-variant.spec.ts` variant-track DOM selector — _Resolved 2026-05-25:_ Test rewritten to assert via `window.__gameState.variant.id === 'pentatonic-shift'` + `timerRunning === true`, consistent with AC-8 and sibling tests. No production change.
+
+E2E re-run 2026-05-25: **73 pass / 0 fail / 0 flaky** (chromium project).
 
 #### Deferred (pre-existing or out-of-scope robustness)
 

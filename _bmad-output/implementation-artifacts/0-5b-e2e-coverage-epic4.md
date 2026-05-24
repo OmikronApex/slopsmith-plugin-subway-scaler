@@ -28,7 +28,7 @@ so that regressions in session UX and accessibility are caught automatically.
   - [x] Restructured 0.5b as Tier 1 (currently works) + Tier 2 (ATDD test.fail() scaffolds)
 
 - [x] Task 2 — Write pause overlay tests (AC: 1, 2, 6, 7)
-  - [x] Tier 1: Pause button click → phase = 'paused'; Resume → phase = 'playing'; Abandon → overlay visible
+  - [x] Tier 1: Pause button click → phase = 'paused'; Resume → phase = 'playing'. (Abandon-button test retired 2026-05-25 — no in-game abandon UI shipped; `GameState.abandon()` remains as programmatic API only.)
   - [x] Tier 2 (test.fail): ARIA role/aria-modal; RESUME button in overlay; Escape key; focus trap
 
 - [x] Task 3 — Write game-over overlay tests (AC: 3, 4, 5)

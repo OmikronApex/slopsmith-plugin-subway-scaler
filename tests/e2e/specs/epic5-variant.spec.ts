@@ -49,7 +49,10 @@ test.describe('Epic 5: variant activation', () => {
     expect(running).toBe(true);
   });
 
-  test('variant track DOM element appears when variant is active', async ({ gamePage }) => {
+  test('variant becomes active in game state when setVariant is called', async ({ gamePage }) => {
+    // Variant renders inside the WebGL canvas (Three.js mesh) and has no DOM
+    // marker by design — `window.__gameState.variant` is the canonical contract
+    // per AC-8 of story 5-8. Earlier DOM-selector check was rewritten 2026-05-25.
     await startGame(gamePage);
 
     await gamePage.evaluate(() =>
@@ -57,12 +60,13 @@ test.describe('Epic 5: variant activation', () => {
     );
 
     await gamePage.waitForFunction(
-      () => (window as any).__gameState?.variant?.id != null,
-      { timeout: 1000 }
+      () => (window as any).__gameState?.variant?.id === 'pentatonic-shift',
+      { timeout: 2000 }
     );
 
-    const variantTrack = gamePage.locator(`${ROOT} .variant-track, ${ROOT} [data-variant-track]`);
-    await expect(variantTrack).toBeVisible({ timeout: 2000 });
+    const variant = await gamePage.evaluate(() => (window as any).__gameState.variant);
+    expect(variant.id).toBe('pentatonic-shift');
+    expect(variant.timerRunning).toBe(true);
   });
 });
 
