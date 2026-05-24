@@ -16,20 +16,31 @@ export const COLORS = {
   EDGE:          0x08080F,
 };
 
-// ===== STRING COLORS EXPORT (1-indexed, for Rocksmith convention) =====
-export const STRING_COLORS = {
-  1: 0xFF3333,  // string 1 (high E), red
-  2: 0xFFDD00,  // string 2 (B), yellow
-  3: 0x3366FF,  // string 3 (G), blue
-  4: 0xFF8800,  // string 4 (D), orange
-  5: 0x33AA33,  // string 5 (A), green
-  6: 0x9933CC,  // string 6 (low E), purple
-  7: 0xFF66AA,  // string 7 (7-string low), pink
-};
+// ===== STRING COLORS (Slopsmith / Rocksmith standard palette) =====
+// Indexed low→high pitch. Index 0 = lowest pitch string of the instrument.
+// Note: backend Note.string is 1-based from HIGH (tabulator convention);
+// convert with `stringCount - note.string` before indexing this array,
+// or use `colourForString` which expects the low→high index directly.
+export const STRING_COLORS = [
+  0xCC0000, // 0 — Red    (lowest pitch)
+  0xCCA800, // 1 — Yellow
+  0x0066CC, // 2 — Blue
+  0xCC6600, // 3 — Orange
+  0x00CC66, // 4 — Green
+  0x9900CC, // 5 — Purple
+  0xCC00AA, // 6 — Magenta
+  0x00CCCC, // 7 — Teal
+];
+
+// Look up a string color by low→high index, clamping to instrument.stringCount.
+export function colourForString(stringIdx, instrument) {
+  const max = instrument?.stringCount ?? STRING_COLORS.length;
+  const i = Math.max(0, Math.min(stringIdx, max - 1));
+  return STRING_COLORS[i];
+}
 
 // ===== CSS CUSTOM PROPERTY INJECTION =====
 export function injectTokens() {
-  // Convert COLORS to CSS custom properties
   const root = document.documentElement;
 
   // Night City palette
@@ -41,8 +52,8 @@ export function injectTokens() {
   root.style.setProperty('--color-text-disabled', hexToCss(COLORS.TEXT_DISABLED));
   root.style.setProperty('--color-edge', hexToCss(COLORS.EDGE));
 
-  // Rocksmith string colors (1-indexed)
-  for (let i = 1; i <= 7; i++) {
+  // String colors, low→high pitch (0..N-1).
+  for (let i = 0; i < STRING_COLORS.length; i++) {
     root.style.setProperty(`--color-string-${i}`, hexToCss(STRING_COLORS[i]));
   }
 }

@@ -379,6 +379,11 @@ export async function bootstrap(root) {
       // Mutable — updated after each variant accept when the new scale may differ.
       let ascendingNoteCount = notesResp.ascending_note_count;
 
+      // Root and apex notes for variant safe zone positioning (same string, 2-fret shift).
+      let rootNote = notesResp.notes?.[0] ?? null;
+      let apexNote = (ascendingNoteCount > 0 && notesResp.notes)
+        ? notesResp.notes[ascendingNoteCount - 1] : null;
+
       // Start the rendering loop so we can see the initial state
       let _pausedAt = null;
       let gameStartTime = 0; // set after audio setup so countdownStart is accurate
@@ -444,7 +449,15 @@ export async function bootstrap(root) {
             .filter(w => w.note_index === targetIdx && w.spawn_time_ms + w.duration_ms >= game_now)
             .sort((a, b) => a.spawn_time_ms - b.spawn_time_ms)[0] ?? null;
           if (targetWave && targetWave.wave_id !== variantSpawnedForWave) {
-            scene.proposeVariantTracks(variantPendingSpawn.variant, targetWave);
+            // Anchor note = note at wave.note_index - 1 (apex for RIGHT, root for LEFT).
+            const anchorIdx = targetWave.note_index - 1;
+            const anchorNote = (anchorIdx >= 0 && run.sequence[anchorIdx]) ? run.sequence[anchorIdx] : null;
+            // Anchor wave: the wave carrying the anchor note. Used to align variant Z
+            // with the anchor note (root/apex), not the target wave one step behind.
+            const anchorWave = waves
+              .filter(w => w.note_index === anchorIdx && w.spawn_time_ms <= targetWave.spawn_time_ms)
+              .sort((a, b) => b.spawn_time_ms - a.spawn_time_ms)[0] ?? null;
+            scene.proposeVariantTracks(variantPendingSpawn.variant, targetWave, anchorNote, anchorWave);
             variantSpawnedForWave = targetWave.wave_id;
             variantPendingSpawn = null;
           }
@@ -533,7 +546,11 @@ export async function bootstrap(root) {
             if (resp.ascending_note_count != null) {
               ascendingNoteCount = resp.ascending_note_count;
             }
-            if (resp.notes) waveScheduler.reset(resp.notes, startIdx);
+            if (resp.notes) {
+              rootNote = resp.notes[0] ?? null;
+              apexNote = ascendingNoteCount > 0 ? resp.notes[ascendingNoteCount - 1] : null;
+              waveScheduler.reset(resp.notes, startIdx);
+            }
             scene.setWaves([], performance.now());
             safeZoneRenderer.reset();
 
@@ -549,6 +566,7 @@ export async function bootstrap(root) {
 
         if (!safeZoneRenderer.isAnyPrimarySafeZoneAdjacent(det.note.midi)) return;
 
+        const prevIdx = run.cursor;
         const result = run.onDetection(det);
         if (result === 'accepted') {
           // Sync with backend
@@ -559,6 +577,35 @@ export async function bootstrap(root) {
             }
             if (playResult.next_wave) {
               currentWaves.push(playResult.next_wave);
+            }
+
+            // Note-triggered variant proposal: root → RIGHT, apex → LEFT.
+            // Either trigger fires at the milestone (passes >= 2). Backend picks side
+            // from last_pass_direction, which alternates RIGHT/LEFT across cycles.
+            const passes = playResult.scale_passes_completed ?? 0;
+            if (!activeVariant && !proposePending && passes >= 2) {
+              const isRoot = prevIdx === 0;
+              const isApex = ascendingNoteCount > 0 && prevIdx === ascendingNoteCount - 1;
+              if (isRoot || isApex) {
+                proposePending = true;
+                try {
+                  const resp = await gameClient.proposeVariant();
+                  if (resp && resp.success) {
+                    activeVariant = resp.variant;
+                    activeWindow = resp.window;
+                    shownVariantId = resp.variant.variant_id;
+                    if (window.__gameState) {
+                      window.__gameState.variant.id = resp.variant.variant_id;
+                      window.__gameState.variant.timerRunning = true;
+                      window.__gameState.variant.timerMs = Math.max(0, resp.window.deadline_ms - Date.now());
+                      window.__gameState.variant.timerExpired = false;
+                    }
+                    _queueVariantSpawn(resp.variant);
+                  }
+                } finally {
+                  proposePending = false;
+                }
+              }
             }
           }
 
@@ -604,30 +651,8 @@ export async function bootstrap(root) {
             ? Math.max(0, activeWindow.deadline_ms - Date.now()) : 0;
         }
 
-        // Milestone trigger: ask backend to propose a variant if eligible.
-        const loops = pollState.scale_passes_completed || 0;
-        if (!activeVariant && !proposePending && loops >= 3) {
-          proposePending = true;
-          gameClient.proposeVariant().then((resp) => {
-            proposePending = false;
-            if (resp && resp.success) {
-              activeVariant = resp.variant;
-              activeWindow = resp.window;
-              if (window.__gameState) {
-                window.__gameState.variant.id = resp.variant.variant_id;
-                window.__gameState.variant.timerRunning = true;
-                window.__gameState.variant.timerMs = Math.max(0, resp.window.deadline_ms - Date.now());
-                window.__gameState.variant.timerExpired = false;
-              }
-              if (shownVariantId !== resp.variant.variant_id) {
-                shownVariantId = resp.variant.variant_id;
-                _queueVariantSpawn(resp.variant);
-              }
-            }
-          }).catch(() => { proposePending = false; });
-        }
-
-        // Render variant if backend reports one we haven't shown yet.
+        // Render variant if backend reports one we haven't shown yet
+        // (proposed via note-triggered flow in detection handler).
         if (activeVariant && shownVariantId !== activeVariant.variant_id) {
           shownVariantId = activeVariant.variant_id;
           _queueVariantSpawn(activeVariant);

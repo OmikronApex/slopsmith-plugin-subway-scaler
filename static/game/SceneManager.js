@@ -6,7 +6,7 @@
 
 import * as THREE from './vendor/three.module.js';
 import { laneX, cameraForPitch, SPAWN_Z, LANE_X_SCALE } from './TrackSystem.js';
-import { COLORS, STRING_COLORS } from './ui/tokens.js';
+import { COLORS, colourForString } from './ui/tokens.js';
 
 const CHAR_Y = 1.1;
 const FRONT_Z = 0;
@@ -207,12 +207,15 @@ export function createScene(canvas) {
     variantInfo = null;
   }
 
-  function _variantLaneX(side, transitionFret) {
+  function _variantLaneX(side, anchorFret, anchorNoteLane) {
     const sign = side === 'RIGHT' ? 1 : -1;
-    if (transitionFret != null) {
-      // Intended fret: 2 frets from the transition note (toward the variant).
-      const targetFret = transitionFret + sign * 2;
-      const lane = Math.max(0, Math.min(numLanes - 1, targetFret - baseFret));
+    // Place variant 2 lanes outside the anchor note's lane. No clamp:
+    // the variant must sit beyond the main track range (1-track gap expected).
+    if (anchorNoteLane != null) {
+      return laneX(anchorNoteLane + sign * 2, numLanes);
+    }
+    if (anchorFret != null) {
+      const lane = (anchorFret - baseFret) + sign * 2;
       return laneX(lane, numLanes);
     }
     // Fallback when wave not yet known: 2 lane widths beyond the edge.
@@ -220,14 +223,23 @@ export function createScene(canvas) {
     return laneX(edgeLane, numLanes) + sign * 2 * LANE_X_SCALE;
   }
 
-  function proposeVariantTracks(variant, transitionWave) {
+  function proposeVariantTracks(variant, transitionWave, anchorNote, anchorWave) {
     clearVariantGeom();
-    const vx = _variantLaneX(variant.side, transitionWave?.safe_fret);
-    // Anchor to proposal time so the variant travels during the full UP(2) ascent.
-    // Wave spawn time is too late — the target wave spawns close to the apex, leaving
-    // insufficient travel time for the geometry to reach the player.
-    const spawnMs = performance.now() - gameStartTime;
-    const speedPxMs = transitionWave?.speed_px_per_ms ?? lastWaveSpeed;
+    // Anchor note: note at wave.note_index - 1 (apex for RIGHT, root for LEFT).
+    // Color matches the anchor note's string. Position is 2 lanes from anchor.
+    const anchorFret = anchorNote?.fret ?? transitionWave?.safe_fret;
+    const anchorNoteLane = (anchorNote?.fret != null) ? (anchorNote.fret - baseFret) : null;
+    if (!anchorNote) {
+      console.warn('[variant] anchor note missing — color/X may be off', { variant, transitionWave });
+    }
+    const anchorString = anchorNote?.string;
+    const vx = _variantLaneX(variant.side, anchorFret, anchorNoteLane);
+    // Align variant Z with the TARGET wave's safezone (the wave one note after
+    // the anchor). The variant safezone should sit adjacent to that safezone,
+    // not the anchor's, so the player accepts on the wave following root/apex.
+    const timingWave = transitionWave ?? anchorWave;
+    const spawnMs = timingWave?.spawn_time_ms ?? (performance.now() - gameStartTime);
+    const speedPxMs = timingWave?.speed_px_per_ms ?? lastWaveSpeed;
     const nowGameMs = performance.now() - gameStartTime;
 
     const mesh = buildVariantTrackGroup(variant.side, vx);
@@ -237,12 +249,14 @@ export function createScene(canvas) {
     variantProposePiece = { mesh, spawnTimeMs: spawnMs, speedPxMs };
     variantInfo = { side: variant.side, variantX: vx, speedPxMs };
 
-    // Safe zone color: for RIGHT, use transition note's string (same string, +2 frets).
-    // For LEFT, use variant base_string (root's string — lowest string of new scale).
-    const szString = variant.side === 'RIGHT'
-      ? transitionWave?.safe_string
-      : variant.base_string;
-    const variantSzColor = STRING_COLORS[szString] ?? COLORS.ACCENT;
+    // Safe zone color from anchor note's string. Use the same palette mapping
+    // as SafeZoneRenderer (low-pitch→high-pitch), so variant color matches the
+    // primary safezone of the anchor wave.
+    const stringCount = instrument?.stringCount ?? 6;
+    const paletteIdx = anchorString != null ? (stringCount - anchorString) : 0;
+    const variantSzColor = anchorString != null
+      ? colourForString(paletteIdx, instrument)
+      : COLORS.ACCENT;
     const szGeo = new THREE.PlaneGeometry(1.2, VARIANT_SZ_DEPTH);
     const szMat = new THREE.MeshStandardMaterial({
       color: variantSzColor,
@@ -252,14 +266,15 @@ export function createScene(canvas) {
     });
     const szMesh = new THREE.Mesh(szGeo, szMat);
     szMesh.rotation.x = -Math.PI / 2;
-    // Anchor to proposal time — safe zone travels alongside variant geometry.
     szMesh.userData.spawnMs = spawnMs;
     szMesh.userData.speedPxMs = speedPxMs;
     const szElapsed = Math.max(0, nowGameMs - spawnMs);
+    // Match SafeZoneRenderer Z: SPAWN_Z + elapsed*speed*0.5 + DEPTH/2.
+    // Without the +DEPTH/2 offset the variant safezone trails the anchor's by half a depth.
     szMesh.position.set(vx, 0.05, SPAWN_Z + szElapsed * speedPxMs * 0.5 + VARIANT_SZ_DEPTH / 2);
-    if (transitionWave?.safe_fret != null) {
+    if (anchorFret != null) {
       const fretOffset = variant.side === 'RIGHT' ? 2 : -2;
-      const label = makeTextSprite((transitionWave.safe_fret + fretOffset).toString());
+      const label = makeTextSprite((anchorFret + fretOffset).toString());
       szMesh.add(label);
     }
     scene.add(szMesh);
@@ -429,7 +444,7 @@ export function createScene(canvas) {
       }
     }
 
-    // Variant safe zone — scrolls in lockstep with target wave (same spawn time + speed)
+    // Variant safe zone — scrolls in lockstep with variant geometry (same spawn time + speed)
     if (variantSafeZoneMesh) {
       const elapsed = Math.max(0, nowMs - gameStartTime - variantSafeZoneMesh.userData.spawnMs);
       const z = SPAWN_Z + elapsed * variantSafeZoneMesh.userData.speedPxMs * 0.5 + VARIANT_SZ_DEPTH / 2;
@@ -437,7 +452,7 @@ export function createScene(canvas) {
       if (window.__gameState) {
         window.__gameState.variant.safeZoneZ = z;
       }
-      // Miss: front edge has passed player (AC-2)
+      // Miss: back edge has passed player (AC-2)
       if (z > VARIANT_SZ_DEPTH / 2) {
         const cb = onVariantMissedCb;
         clearVariantGeom();
@@ -619,9 +634,11 @@ export class SceneManager {
     instance._renderer.render(instance._scene, instance._camera);
   }
 
-  static #showClearEffect(instance, position, stringIndex) {
+  static #showClearEffect(instance, position, stringIndex, instrument = null) {
     if (!instance._scene || !THREE.RingGeometry) return;
-    const color = STRING_COLORS[stringIndex] || 0xFFFFFF;
+    // stringIndex is 1-based from HIGH (tabulator); convert to low→high palette index.
+    const stringCount = instrument?.stringCount ?? 6;
+    const color = colourForString(stringCount - stringIndex, instrument);
     const geometry = new THREE.RingGeometry(0.1, 0.3, 16);
     const material = new THREE.MeshBasicMaterial({
       color,

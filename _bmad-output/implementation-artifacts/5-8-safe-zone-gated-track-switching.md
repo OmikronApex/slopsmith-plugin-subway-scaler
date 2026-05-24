@@ -382,7 +382,13 @@ None.
 - static/game/SceneManager.js
 - static/game/main.js
 - static/game/ui/SafeZoneRenderer.js
+- static/game/ui/tokens.js
+- static/game/TrackSystem.js
+- static/game/stringPalette.js (deleted, 2026-05-25)
 - services/game_engine.py
+- tests/unit/js/tokens.test.js
+- tests/unit/js/TrackSystem.test.js
+- tests/unit/js/stringPalette.test.js (deleted, 2026-05-25)
 - _bmad-output/implementation-artifacts/5-8-safe-zone-gated-track-switching.md
 - _bmad-output/implementation-artifacts/sprint-status.yaml
 
@@ -394,3 +400,14 @@ None.
 - 2026-05-24: Retired variant HUD (`variantHud` element and `updateVariantHud` logic) — no UI overlay for variant state; track geometry is the only cue.
 - 2026-05-24: Removed static fret-number labels from track lanes. Note name (e.g. "A3") now displayed as a sprite child of each primary safe zone (SafeZoneRenderer) and the variant safe zone (SceneManager), scrolling with the safe zone toward the player.
 - 2026-05-24: Variant lane X position now derived from the transition note's actual lane (`transitionWave.safe_track ± 2`) rather than the scale edge — correctly handles cases where the apex/root is not on the outermost lane. Fallback to edge + 2× `LANE_X_SCALE` when the wave is not yet known. `updateVariantSafeZoneWave` also corrects the safe zone X when the deferred wave resolves.
+- 2026-05-25: Variant spawn geometry/Z/color/X corrections (post-5-8 follow-ups):
+  - **Z alignment with target safezone:** `proposeVariantTracks` now adds `+ VARIANT_SZ_DEPTH / 2` to the variant safe zone Z (and the per-frame render update) so it matches the formula used by `SafeZoneRenderer` (`SafeZoneRenderer.js:88`). The variant safe zone now sits at the exact same Z as the *target wave's* primary safe zone (the wave one note after root/apex) — adjacent in front of the variant geometry, not at the anchor note. The `anchorWave` param is accepted for API symmetry but `transitionWave` (target wave) is the canonical timing source.
+  - **X position no longer clamped:** `_variantLaneX` removed the `Math.max/min` clamp that pulled the variant onto the apex/root lane. New `anchorNoteLane` argument computes `anchorLane ± 2` directly, producing the expected 1-track gap between the variant and the main track set.
+  - **Alternation between RIGHT and LEFT variants:** `main.js` accept-handler gate is now `if (isRoot || isApex)` at `passes ≥ 2` (removed the `passes > 3` clause that forced RIGHT-only). The backend `last_pass_direction` field already drives side selection; the frontend just needed to allow both triggers to fire.
+  - **Wave-anchor lookup:** the render-loop variant spawn watcher now also locates `anchorWave` (`note_index === targetIdx - 1`) and passes it to `proposeVariantTracks`. Kept for future flexibility; current behavior uses target wave timing.
+  - **Color via design tokens:** variant safe zone color resolves through `colourForString(stringCount - anchorString, instrument)` — same palette mapping as `SafeZoneRenderer`. Fallback `variant.base_string` was dropped (warns instead, surfaces the bug if anchor lookup fails). Per-string colors now match the primary safe zone exactly.
+- 2026-05-25: String-color palette consolidation:
+  - Retired `static/game/stringPalette.js` and `tests/unit/js/stringPalette.test.js`. The architectural design (`ux-design-specification.md`) names `static/game/ui/tokens.js` as the single source of truth for visual design tokens (also generates CSS custom properties) — the two coexisting palettes (`STRING_COLORS` object in tokens, `STRING_COLOURS` array in stringPalette) drifted in both indexing convention and hex values, and were the root cause of the variant color bug.
+  - `tokens.js` `STRING_COLORS` is now a low→high-pitch array (Rocksmith standard, 8 colors) with `colourForString(idx, instrument)` helper (clamped to `instrument.stringCount`). Hex values follow the previous `stringPalette.js` palette so the visible primary safe-zone colors remain unchanged.
+  - Consumers updated: `SafeZoneRenderer.js` (import path), `TrackSystem.js`, `SceneManager.js` (variant safe zone + `#showClearEffect`). Callers that hold a tabulator-form string number (1-based from HIGH, per backend `Note.string`) invert via `stringCount - note.string` before calling `colourForString`.
+  - `tokens.test.js` rewritten for array form + helper. `TrackSystem.test.js` inlined palette removed; asserts via `colourForString(stringCount - note.string, instrument)`.

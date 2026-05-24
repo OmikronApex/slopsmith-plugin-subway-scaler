@@ -17,7 +17,7 @@ from services.instruments import get as get_instrument
 
 # Variant feature: offer after every N completed half-cycles (ascending OR descending).
 # Pattern: Up, Down, Up → RIGHT; Down, Up, Down → LEFT.
-SCALES_PER_VARIANT = 3
+SCALES_PER_VARIANT = 2
 # Default switch window duration.
 DEFAULT_WINDOW_MS = 120_000  # 2-minute safety net; frontend proximity logic drives dismiss timing
 # Variant root offset: 2 frets above highest scale note (RIGHT) or below root (LEFT).
@@ -223,6 +223,8 @@ class GameEngine:
                     "score": session.current_score,
                     "current_track": session.current_track,
                 },
+                "scale_passes_completed": session.scale_passes_completed,
+                "last_pass_direction": session.last_pass_direction,
             }
         else:
             return {
