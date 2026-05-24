@@ -81,10 +81,10 @@ def test_full_variant_accept_flow_via_http(client):
     from services.game_router import engine
     sess = engine.get_session(sid)
     if side == "LEFT":
-        # LEFT: root_midi == trigger; start ascending from index 0
+        # LEFT: root_midi == trigger; start at index 1 (player just played root)
         assert accept["root_midi"] == new_root
-        assert sess.current_note_index == 0
-        assert state3["next_expected_note"]["midi"] == accept["notes"][0]["midi"]
+        assert sess.current_note_index == 1
+        assert state3["next_expected_note"]["midi"] == accept["notes"][1]["midi"]
     else:
         # RIGHT: root_midi is computed candidate root; start descending
         assert accept["root_midi"] != new_root

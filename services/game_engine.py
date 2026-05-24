@@ -461,13 +461,13 @@ class GameEngine:
         )
 
         if variant.side == "LEFT":
-            # variant.root_midi IS the new scale's root; start ascending from root (AC-3).
             new_notes, new_asc_count = self._build_full_scale_notes(
                 session.scale_id_for_variant, variant.root_midi, instrument
             )
             session.root_midi = variant.root_midi
-            session.current_note_index = 0
-            session.total_notes_played = 0
+            # Player just played the new root (trigger note); start at index 1.
+            session.current_note_index = 1 if new_notes and len(new_notes) > 1 else 0
+            session.total_notes_played = 1
         else:  # RIGHT
             # variant.root_midi = old_highest + 2 = target apex; find actual root (AC-4).
             candidate, new_notes, new_asc_count = self._find_root_for_highest(
@@ -475,10 +475,10 @@ class GameEngine:
             )
             if candidate is not None:
                 session.root_midi = candidate
+                # Start at first descending note — player just played the new apex.
                 session.current_note_index = new_asc_count if new_notes and new_asc_count < len(new_notes) else 0
                 session.total_notes_played = 1
             else:
-                # Fallback to LEFT path: keep current root, rebuild, start ascending from index 0.
                 new_notes, new_asc_count = self._build_full_scale_notes(
                     session.scale_id_for_variant, session.root_midi, instrument
                 )
@@ -520,7 +520,36 @@ class GameEngine:
             "base_fret": session.base_fret,
             "num_lanes": session.num_lanes,
             "notes": [n.model_dump() for n in session.notes],
+            "ascending_note_count": session.ascending_note_count,
+            "current_note_index": session.current_note_index,
         }
+
+    def dismiss_variant(self, session_id: str) -> dict:
+        """Proximity-based dismiss: clear the active variant without checking the deadline."""
+        session = self.get_session(session_id)
+        if not session:
+            return {"success": False, "error": "session_not_found"}
+        if not session.active_variant or not session.active_window:
+            return {"success": True}  # idempotent
+        variant = session.active_variant
+        variant.state = "DISMISSED"
+        session.active_window.state = "CLOSED"
+        session.variant_history.append({
+            "variant_id": variant.variant_id,
+            "root_midi": variant.root_midi,
+            "side": variant.side,
+            "decision": "DISMISSED",
+            "at_ms": int(time.time() * 1000),
+        })
+        session.active_variant = None
+        session.active_window = None
+        session.scale_passes_completed = 0
+        session.last_pass_direction = None
+        logger.info(
+            "variant.dismiss session=%s variant=%s side=%s",
+            session.session_id, variant.variant_id, variant.side,
+        )
+        return {"success": True}
 
     def timeout_variant(self, session_id: str, now_ms: Optional[int] = None) -> dict:
         session = self.get_session(session_id)

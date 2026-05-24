@@ -157,7 +157,7 @@ class GameState(BaseModel):
     speed_multiplier: SpeedMultiplier
 
 VariantSide = Literal["LEFT", "RIGHT"]
-VariantStateLit = Literal["SPAWNING", "ACTIVE", "SWITCH_TRIGGERED", "SWITCHED", "TIMEOUT"]
+VariantStateLit = Literal["SPAWNING", "ACTIVE", "SWITCH_TRIGGERED", "SWITCHED", "TIMEOUT", "DISMISSED"]
 WindowStateLit = Literal["OPEN", "SWITCHED", "CLOSED"]
 
 

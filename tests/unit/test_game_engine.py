@@ -30,7 +30,7 @@ def _force_milestone(engine, session, direction="UP"):
 
 
 def test_left_accept_starts_ascending_from_root():
-    """AC-3: LEFT accept sets current_note_index=0 and root_midi=variant.root_midi."""
+    """AC-3: LEFT accept sets current_note_index=1 (player just played root)."""
     engine = GameEngine()
     session = engine.create_session(scale_id="major", root_midi=60)
     _force_milestone(engine, session, direction="DOWN")  # DOWN → LEFT variant
@@ -46,7 +46,7 @@ def test_left_accept_starts_ascending_from_root():
 
     session = engine.get_session(session.session_id)
     assert session.root_midi == new_root
-    assert session.current_note_index == 0
+    assert session.current_note_index == 1
     assert session.notes[0].midi == new_root
 
 

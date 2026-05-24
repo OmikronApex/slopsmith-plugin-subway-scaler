@@ -373,12 +373,15 @@ None.
 - main.js: `timerMs` always 0 (position drives timing); `timerRunning` stays true while `activeVariant !== null` (AC-9 preserved).
 - main.js: `_testVariantTimer` refactored to IIFE-scoped local inside `setVariant` test hook; removed from outer scope and cleanup.
 - services/game_engine.py: `DEFAULT_WINDOW_MS` raised to 120_000 (2-minute safety net).
+- SafeZoneRenderer.js: stores `safe_midi` in zone mesh `userData`; exposes `isAnyPrimarySafeZoneAdjacent(midi)` — returns true when any zone matching that midi has `|z| <= SAFE_ZONE_DEPTH / 2`.
+- main.js: regular note `onDetection` handler now returns early (note silently ignored) if `safeZoneRenderer.isAnyPrimarySafeZoneAdjacent(det.note.midi)` is false — spatial gate applied symmetrically to both variant and regular track acceptance.
 - Python tests: 71/71 pass. Playwright: no regressions (0 tests collected — requires Docker/server).
 
 ### File List
 
 - static/game/SceneManager.js
 - static/game/main.js
+- static/game/ui/SafeZoneRenderer.js
 - services/game_engine.py
 - _bmad-output/implementation-artifacts/5-8-safe-zone-gated-track-switching.md
 - _bmad-output/implementation-artifacts/sprint-status.yaml
@@ -386,3 +389,8 @@ None.
 ### Change Log
 
 - 2026-05-24: Story 5-8 implemented — safe zone-gated variant accept, proximity dismiss, HUD rewrite, szSpawnMs canonical formula, null wave deferral, backend safety-net raised to 120 s.
+- 2026-05-24: Extended spatial gate to regular track acceptance — `SafeZoneRenderer.isAnyPrimarySafeZoneAdjacent(midi)` added; `onDetection` ignores notes played outside the primary safe zone window.
+- 2026-05-24: Removed variant spawn audio cue (`playVariantCue`) and its call sites — the incoming transition track geometry is the sole signal to the player.
+- 2026-05-24: Retired variant HUD (`variantHud` element and `updateVariantHud` logic) — no UI overlay for variant state; track geometry is the only cue.
+- 2026-05-24: Removed static fret-number labels from track lanes. Note name (e.g. "A3") now displayed as a sprite child of each primary safe zone (SafeZoneRenderer) and the variant safe zone (SceneManager), scrolling with the safe zone toward the player.
+- 2026-05-24: Variant lane X position now derived from the transition note's actual lane (`transitionWave.safe_track ± 2`) rather than the scale edge — correctly handles cases where the apex/root is not on the outermost lane. Fallback to edge + 2× `LANE_X_SCALE` when the wave is not yet known. `updateVariantSafeZoneWave` also corrects the safe zone X when the deferred wave resolves.

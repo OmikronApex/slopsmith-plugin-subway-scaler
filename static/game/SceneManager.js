@@ -69,9 +69,9 @@ export function createScene(canvas) {
 
   function makeTextSprite(message) {
     const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
     canvas.width = 64;
     canvas.height = 64;
+    const ctx = canvas.getContext('2d');
     ctx.font = 'Bold 48px Arial';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -80,11 +80,10 @@ export function createScene(canvas) {
     ctx.lineWidth = 4;
     ctx.strokeText(message, 32, 32);
     ctx.fillText(message, 32, 32);
-
-    const texture = new THREE.CanvasTexture(canvas);
-    const mat = new THREE.SpriteMaterial({ map: texture });
-    const sprite = new THREE.Sprite(mat);
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas) }));
     sprite.scale.set(0.8, 0.8, 1);
+    // Safe zone has rotation.x = -π/2, so local +Z maps to world +Y.
+    sprite.position.set(0, 0, 0.5);
     return sprite;
   }
 
@@ -126,7 +125,6 @@ export function createScene(canvas) {
   function clearScene() {
     for (const t of tracks) {
       scene.remove(t.mesh);
-      scene.remove(t.label);
     }
     tracks = [];
     clearWaves();
@@ -143,11 +141,7 @@ export function createScene(canvas) {
       mesh.position.set(x, -0.05, -TRACK_DEPTH / 2 + 5);
       scene.add(mesh);
 
-      const label = makeTextSprite((baseFret + i).toString());
-      label.position.set(x, 0.1, 1.8);
-      scene.add(label);
-
-      tracks.push({ mesh, label });
+      tracks.push({ mesh });
     }
     targetCameraX = 0;
     currentCameraX = 0;
@@ -213,24 +207,36 @@ export function createScene(canvas) {
     variantInfo = null;
   }
 
-  function _variantLaneX(side) {
+  function _variantLaneX(side, transitionFret) {
     const sign = side === 'RIGHT' ? 1 : -1;
+    if (transitionFret != null) {
+      // Intended fret: 2 frets from the transition note (toward the variant).
+      const targetFret = transitionFret + sign * 2;
+      const lane = Math.max(0, Math.min(numLanes - 1, targetFret - baseFret));
+      return laneX(lane, numLanes);
+    }
+    // Fallback when wave not yet known: 2 lane widths beyond the edge.
     const edgeLane = side === 'RIGHT' ? numLanes - 1 : 0;
-    return laneX(edgeLane, numLanes) + sign * LANE_X_SCALE;
+    return laneX(edgeLane, numLanes) + sign * 2 * LANE_X_SCALE;
   }
 
-  function proposeVariantTracks(variant, transitionWave = null) {
+  function proposeVariantTracks(variant, transitionWave) {
     clearVariantGeom();
-    const vx = _variantLaneX(variant.side);
-    const spawnTimeMs = performance.now() - gameStartTime;
-    const mesh = buildVariantTrackGroup(variant.side, vx);
-    mesh.position.set(0, 0, SPAWN_Z);
-    scene.add(mesh);
-    variantProposePiece = { mesh, spawnTimeMs, speedPxMs: lastWaveSpeed };
-    variantInfo = { side: variant.side, variantX: vx, speedPxMs: lastWaveSpeed };
+    const vx = _variantLaneX(variant.side, transitionWave?.safe_fret);
+    // Anchor both geometry and safe zone to the target wave's spawn time so they
+    // travel in lockstep with the wave regardless of difficulty/speed.
+    const waveSpawnMs = transitionWave?.spawn_time_ms ?? (performance.now() - gameStartTime);
+    const speedPxMs = transitionWave?.speed_px_per_ms ?? lastWaveSpeed;
+    const nowGameMs = performance.now() - gameStartTime;
 
-    // Safe zone on variant lane — colored by transition string (story 5-7, AC-2, AC-3)
-    const variantSzColor = STRING_COLORS[variant.base_string] ?? COLORS.ACCENT;
+    const mesh = buildVariantTrackGroup(variant.side, vx);
+    const geomElapsed = Math.max(0, nowGameMs - waveSpawnMs);
+    mesh.position.set(0, 0, SPAWN_Z + geomElapsed * speedPxMs * 0.5);
+    scene.add(mesh);
+    variantProposePiece = { mesh, spawnTimeMs: waveSpawnMs, speedPxMs };
+    variantInfo = { side: variant.side, variantX: vx, speedPxMs };
+
+    const variantSzColor = STRING_COLORS[transitionWave?.safe_string] ?? STRING_COLORS[variant.base_string] ?? COLORS.ACCENT;
     const szGeo = new THREE.PlaneGeometry(1.2, VARIANT_SZ_DEPTH);
     const szMat = new THREE.MeshStandardMaterial({
       color: variantSzColor,
@@ -240,17 +246,16 @@ export function createScene(canvas) {
     });
     const szMesh = new THREE.Mesh(szGeo, szMat);
     szMesh.rotation.x = -Math.PI / 2;
-    // szSpawnMs: use wave.spawn_time_ms directly (AC-5, canonical anchor).
-    // Falls back to current time when no wave is provided (AC-6: safe zone deferred).
-    let szSpawnMs;
-    if (transitionWave) {
-      szSpawnMs = transitionWave.spawn_time_ms;
-    } else {
-      szSpawnMs = performance.now() - gameStartTime;
+    // Anchor to the target wave's spawn time — safe zone travels in lockstep with the wave.
+    szMesh.userData.spawnMs = waveSpawnMs;
+    szMesh.userData.speedPxMs = speedPxMs;
+    const szElapsed = Math.max(0, nowGameMs - waveSpawnMs);
+    szMesh.position.set(vx, 0.05, SPAWN_Z + szElapsed * speedPxMs * 0.5 + VARIANT_SZ_DEPTH / 2);
+    if (transitionWave?.safe_fret != null) {
+      const fretOffset = variant.side === 'RIGHT' ? 2 : -2;
+      const label = makeTextSprite((transitionWave.safe_fret + fretOffset).toString());
+      szMesh.add(label);
     }
-    szMesh.userData.spawnMs = szSpawnMs;
-    szMesh.userData.waveSet = !!transitionWave;
-    szMesh.position.set(vx, 0.05, SPAWN_Z + VARIANT_SZ_DEPTH / 2);
     scene.add(szMesh);
     variantSafeZoneMesh = szMesh;
   }
@@ -264,19 +269,16 @@ export function createScene(canvas) {
     variantDismissPiece = { mesh, spawnTimeMs, speedPxMs: lastWaveSpeed };
   }
 
-  function acceptVariantTracks(newPrimary, notes = []) {
+  function acceptVariantTracks(newPrimary, notes = [], startIndex = 0) {
     if (!variantInfo) {
-      // Fallback: no active variant state, rebuild immediately.
       clearScene();
       baseFret = newPrimary.base_fret;
       numLanes = newPrimary.num_lanes;
       rebuildTracks();
       return;
     }
-    // Land character on-grid using NEW num_lanes (P6 fix).
     const edgeLane = variantInfo.side === 'RIGHT' ? newPrimary.num_lanes - 1 : 0;
     const acceptX = laneX(edgeLane, newPrimary.num_lanes);
-    // AC-6 §1: spawn dismiss piece so old track visually peels away.
     if (!variantDismissPiece) {
       const spawnTimeMs = performance.now() - gameStartTime;
       const mesh = buildVariantTrackGroup(variantInfo.side, variantInfo.variantX);
@@ -284,9 +286,9 @@ export function createScene(canvas) {
       scene.add(mesh);
       variantDismissPiece = { mesh, spawnTimeMs, speedPxMs: lastWaveSpeed };
     }
-    // AC-6 §2-4: defer character tween + track rebuild to render loop.
-    // Store notes for post-rebuild character alignment (story 5-7, AC-7).
-    variantAcceptState = { newPrimary, acceptX, characterMoved: false, notes };
+    // startIndex: which note the player will play next (used to snap character to the
+    // note they just played, i.e. startIndex - 1 for RIGHT / 0 for LEFT).
+    variantAcceptState = { newPrimary, acceptX, characterMoved: false, notes, startIndex };
   }
 
   function setInstrument(inst) {
@@ -421,10 +423,10 @@ export function createScene(canvas) {
       }
     }
 
-    // Variant safe zone — scroll with same formula as SafeZoneRenderer (AC-2, AC-8)
+    // Variant safe zone — scrolls in lockstep with target wave (same spawn time + speed)
     if (variantSafeZoneMesh) {
       const elapsed = Math.max(0, nowMs - gameStartTime - variantSafeZoneMesh.userData.spawnMs);
-      const z = SPAWN_Z + elapsed * lastWaveSpeed * 0.5 + VARIANT_SZ_DEPTH / 2;
+      const z = SPAWN_Z + elapsed * variantSafeZoneMesh.userData.speedPxMs * 0.5 + VARIANT_SZ_DEPTH / 2;
       variantSafeZoneMesh.position.z = z;
       if (window.__gameState) {
         window.__gameState.variant.safeZoneZ = z;
@@ -462,10 +464,11 @@ export function createScene(canvas) {
           baseFret = variantAcceptState.newPrimary.base_fret;
           numLanes = variantAcceptState.newPrimary.num_lanes;
           rebuildTracks();
-          // Snap character to first post-accept note's lane (story 5-7, AC-7).
-          const firstNote = variantAcceptState.notes?.[0];
-          if (firstNote && firstNote.fret != null) {
-            const lane = Math.max(0, Math.min(numLanes - 1, firstNote.fret - baseFret));
+          // Snap character to the note just played (startIndex - 1 for RIGHT; 0 for LEFT).
+          const snapIdx = variantAcceptState.startIndex > 0 ? variantAcceptState.startIndex - 1 : 0;
+          const snapNote = variantAcceptState.notes?.[snapIdx];
+          if (snapNote && snapNote.fret != null) {
+            const lane = Math.max(0, Math.min(numLanes - 1, snapNote.fret - baseFret));
             character.position.x = laneX(lane, numLanes);
           }
           targetCameraX = 0;
@@ -494,13 +497,6 @@ export function createScene(canvas) {
     onVariantMissedCb = cb;
   }
 
-  function updateVariantSafeZoneWave(wave) {
-    if (variantSafeZoneMesh && !variantSafeZoneMesh.userData.waveSet) {
-      variantSafeZoneMesh.userData.spawnMs = wave.spawn_time_ms;
-      variantSafeZoneMesh.userData.waveSet = true;
-    }
-  }
-
   return {
     threeScene: scene,
     setInstrument,
@@ -518,7 +514,6 @@ export function createScene(canvas) {
     acceptVariantTracks,
     isVariantSafeZoneAdjacent,
     setOnVariantMissed,
-    updateVariantSafeZoneWave,
     resize(w, h) {
       if (w <= 0 || h <= 0) return;
       renderer.setSize(w, h, false);

@@ -256,6 +256,15 @@ async def accept_variant(session_id: str, payload: dict):
     return result
 
 
+@router.post("/{session_id}/variant/dismiss")
+async def dismiss_variant_route(session_id: str):
+    """Dismiss the active variant (proximity-based miss, no deadline check)."""
+    result = engine.dismiss_variant(session_id)
+    if not result["success"] and result.get("error") == "session_not_found":
+        raise HTTPException(status_code=404, detail="Session not found")
+    return result
+
+
 @router.post("/{session_id}/variant/timeout")
 async def timeout_variant(session_id: str, payload: dict | None = None):
     """Mark the active variant as timed out (deadline passed)."""

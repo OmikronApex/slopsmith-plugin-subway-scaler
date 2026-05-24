@@ -119,10 +119,10 @@ def test_accept_switches_root_and_regenerates_notes(client):
     assert len(r["notes"]) > 0
     sess_after = engine.get_session(s["session_id"])
     if side == "LEFT":
-        # LEFT: root_midi = variant.root_midi; start ascending from index 0
+        # LEFT: root_midi = variant.root_midi; start at index 1 (player just played root)
         assert r["root_midi"] == new_root
         assert r["notes"][0]["midi"] == new_root
-        assert sess_after.current_note_index == 0
+        assert sess_after.current_note_index == 1
     else:
         # RIGHT: root_midi is the computed actual root (not the trigger apex)
         assert r["root_midi"] != new_root
