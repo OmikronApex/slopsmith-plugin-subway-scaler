@@ -59,3 +59,33 @@
 - W2 — Score shows 0 in game-over overlay if backend poll hasn't delivered first score update when collision occurs. Pre-existing race condition between collision detection and score polling.
 - W3 — `resumeGame()` does not call `overlayMgr.hide()` — by design (overlay self-hides via onResumeClick), but any future external caller would leave overlay visible while game runs. No current broken path.
 - W4 — `forceCollision` test hook sets `run.state = 'failed'` directly without `run.abandon()` — test-only hook, bypass is intentional.
+
+## Deferred from: code review of 5-4-backend-variant-direction-logic (2026-05-23)
+
+- Contract and integration tests import `engine` singleton directly via `from services.game_router import engine` — breaks test isolation if router is ever moved out-of-process; tests would silently always see `sess == None`.
+
+## Deferred from: code review of 5-5-scenemanager-visual-refactor-single-lane-peel-transition (2026-05-23)
+
+- Variant geometry not cleaned up if game ends mid-dismiss animation — `cleanup()` in `main.js` calls `dismissVariantTracks()` but not `clearVariantGeom()` directly; if the user quits before the dismiss piece scrolls past, proposal/lane/highlight meshes remain in the Three.js scene until the next `reset()` call. Self-healing, cosmetic only.
+
+## Deferred from: code review of 5-1-wire-variant-observable-state-and-test-hook (2026-05-23)
+
+- DOWN-pass false positive on arbitrary index reset — depends on play_note error handling; likely harmless pending verification of how incorrect notes affect current_note_index.
+- `scales.py` octave guard accepts 1-4 but `_build_full_scale_notes` clamps to 3 — silent caller mismatch; callers passing `octaves=4` get silently clamped with no error.
+- `game_engine.py` refactors exceed declared "bug fix" scope — `scale_passes_completed`, `last_pass_direction`, `_build_full_scale_notes`, and variant direction redesign bundled into 5-1; process concern, no runtime defect.
+- `setVariant(null)` vs `timeoutVariant.then` `timerExpired` write race — theoretical; JS single-threaded but fetch `.then` can queue after `cleanup()` resets the object, leaving `timerExpired: true` on an otherwise zeroed variant state.
+
+## Deferred from: code review of 5-2-remove-atdd-scaffolding-and-validate-e2e (2026-05-23)
+
+- Backend polling loop overwrites `__gameState.variant.id` set by `setVariant` hook every ~200ms — tests pass because Playwright's rapid waitForFunction resolves before the next poll clobbers the value, but could flake on heavily loaded CI; pre-existing test hook design limitation [static/game/main.js].
+- `setInterval` timer subject to browser throttling in hidden/backgrounded tabs — not applicable in active Playwright sessions; 3000ms waitForFunction timeout provides headroom; pre-existing design [static/game/main.js:~733].
+
+## Deferred from: code review of 5-8-safe-zone-gated-track-switching (2026-05-25)
+
+- `onRestart` rootMidi hardcoded to `tuning[0] + 5` (was `computeRandomRootMidi`) [static/game/main.js, setup.js] — out-of-scope behavior change shipped under 5-8; pre-existing intent unclear, see Decisions section of 5-8.
+- 120 s backend window + frontend crash → orphaned variant on reconnect — reconnected client could accept on first matching note without seeing safe zone; needs session-recovery story.
+- Poll race after `dismissVariant`: phantom variant respawn — sub-100 ms window between POST and next poll where backend may still report the just-dismissed variant; needs request-id correlation.
+- Degenerate scale (`ascendingNoteCount <= 1`) propose path [static/game/main.js] — unreachable for any catalog scale; defensive only.
+- AC-9 `timerMs` not always 0 — both note-trigger and poll paths write `Math.max(0, deadline_ms - Date.now())`; AC-9 permits the deviation and E2E sync uses `safeZoneZ`.
+- AC-5 `szSpawnMs` augmented with `+ VARIANT_SZ_DEPTH / 2` offset — change-logged 2026-05-25; spec wording stale but intent preserved.
+- AC-6 mechanism replaced (`variantPendingSpawn` + render-loop watcher vs spec's `pendingVariantPropose` + `updateVariantSafeZoneWave`) — functionally equivalent; doc fix is Patch P12 in 5-8 review.

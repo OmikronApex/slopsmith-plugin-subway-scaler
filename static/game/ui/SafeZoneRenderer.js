@@ -1,8 +1,28 @@
 import * as THREE from '../vendor/three.module.js';
-import { colourForString } from '../stringPalette.js';
+import { colourForString } from './tokens.js';
 import { SPAWN_Z } from '../TrackSystem.js';
 
 const SAFE_ZONE_DEPTH = 20;
+
+function makeLabel(text) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 64;
+  canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  ctx.font = 'Bold 48px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'white';
+  ctx.strokeStyle = 'black';
+  ctx.lineWidth = 4;
+  ctx.strokeText(text, 32, 32);
+  ctx.fillText(text, 32, 32);
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas) }));
+  sprite.scale.set(0.8, 0.8, 1);
+  // Safe zone has rotation.x = -π/2, so local +Z maps to world +Y.
+  sprite.position.set(0, 0, 0.5);
+  return sprite;
+}
 
 /**
  * SafeZoneRenderer handles the visualization of safe tracks.
@@ -52,7 +72,16 @@ export class SafeZoneRenderer {
         this.scene.add(mesh);
         this.zones.set(wave.wave_id, mesh);
       }
-      mesh.userData = { spawn_time_ms: wave.spawn_time_ms, speed_px_per_ms: wave.speed_px_per_ms };
+      const prevFret = mesh.userData.safe_fret;
+      mesh.userData = { spawn_time_ms: wave.spawn_time_ms, speed_px_per_ms: wave.speed_px_per_ms, safe_midi: wave.safe_midi, safe_fret: wave.safe_fret };
+
+      if (wave.safe_fret != null && wave.safe_fret !== prevFret) {
+        const old = mesh.getObjectByName('sz-label');
+        if (old) mesh.remove(old);
+        const label = makeLabel(wave.safe_fret.toString());
+        label.name = 'sz-label';
+        mesh.add(label);
+      }
 
       const x = laneXFn(wave.safe_track);
       const elapsed = Math.max(0, nowMs - gameStartTime - wave.spawn_time_ms);
@@ -64,10 +93,18 @@ export class SafeZoneRenderer {
       // Safe zone color corresponds to the string used
       // Tabulator uses string 1 = highest pitch, so invert: lowest string → idx 0 (Red)
       const stringCount = (instrument && instrument.stringCount) || 6;
-      const paletteIdx = wave.safe_string ? (stringCount - wave.safe_string) : 0;
+      const paletteIdx = wave.safe_string != null ? (stringCount - wave.safe_string) : 0;
       const color = colourForString(paletteIdx, instrument);
       mesh.material.color.setHex(color);
     });
+  }
+
+  isAnyPrimarySafeZoneAdjacent(midi) {
+    for (const [, mesh] of this.zones.entries()) {
+      if (midi !== undefined && mesh.userData.safe_midi !== midi) continue;
+      if (Math.abs(mesh.position.z) <= SAFE_ZONE_DEPTH / 2) return true;
+    }
+    return false;
   }
 
   reset() {

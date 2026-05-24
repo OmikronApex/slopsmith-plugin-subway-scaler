@@ -151,6 +151,7 @@ async def start_game(payload: dict):
         "num_lanes": session.num_lanes,
         "notes": session.notes,
         "root_note": session.notes[0] if session.notes else None,
+        "ascending_note_count": session.ascending_note_count,
         "timing_params": timing_params,
         "game_state": game_state
     }
@@ -204,7 +205,8 @@ async def get_session_route(session_id: str):
         "current_note_index": session.current_note_index,
         "next_expected_note": session.notes[session.current_note_index] if session.notes else None,
         # Variant exposure (feature 008-track-variants).
-        "octave_loops_completed": session.octave_loops_completed,
+        "scale_passes_completed": session.scale_passes_completed,
+        "last_pass_direction": session.last_pass_direction,
         "active_variant": session.active_variant.model_dump() if session.active_variant else None,
         "active_window": session.active_window.model_dump() if session.active_window else None,
     }
@@ -249,6 +251,15 @@ async def accept_variant(session_id: str, payload: dict):
     if midi is None:
         raise HTTPException(status_code=400, detail="midi is required")
     result = engine.accept_variant(session_id, midi, now_ms=now_ms)
+    if not result["success"] and result.get("error") == "session_not_found":
+        raise HTTPException(status_code=404, detail="Session not found")
+    return result
+
+
+@router.post("/{session_id}/variant/dismiss")
+async def dismiss_variant_route(session_id: str):
+    """Dismiss the active variant (proximity-based miss, no deadline check)."""
+    result = engine.dismiss_variant(session_id)
     if not result["success"] and result.get("error") == "session_not_found":
         raise HTTPException(status_code=404, detail="Session not found")
     return result

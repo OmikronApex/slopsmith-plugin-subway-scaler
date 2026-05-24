@@ -10,6 +10,7 @@ Covers:
 from __future__ import annotations
 
 import pytest
+from services.game_engine import SCALES_PER_VARIANT
 
 
 BASE = "/api/plugins/subway-scaler/game"
@@ -23,15 +24,17 @@ def _start(client, **kwargs):
     return r.json()
 
 
-def _force_milestone(client, session_id, loops=2):
+def _force_milestone(client, session_id, direction="UP"):
     """Drive the engine to the next milestone by directly bumping the counter.
 
-    The user-facing flow requires playing all 13 notes loops*times; we shortcut
-    via the in-process engine to keep the contract focused on variant logic.
+    The user-facing flow requires playing N half-cycles; we shortcut via the
+    in-process engine to keep the contract focused on variant logic.
+    direction: "UP" → RIGHT variant; "DOWN" → LEFT variant.
     """
     from services.game_router import engine
     sess = engine.get_session(session_id)
-    sess.octave_loops_completed = loops
+    sess.scale_passes_completed = SCALES_PER_VARIANT
+    sess.last_pass_direction = direction
 
 
 def test_propose_rejected_before_milestone(client):
@@ -92,25 +95,42 @@ def test_accept_after_deadline_rejected(client):
 
 
 def test_accept_switches_root_and_regenerates_notes(client):
+    from services.game_router import engine
     s = _start(client)
     original_root = 60  # passed in _start
     _force_milestone(client, s["session_id"])
     p = client.post(f"{BASE}/{s['session_id']}/variant/propose", json={"now_ms": 1000}).json()
     new_root = p["variant"]["root_midi"]
     side = p["variant"]["side"]
-    expected_shift = 5 if side == "RIGHT" else 2
-    assert abs(new_root - original_root) == expected_shift
+    # RIGHT: 2 above highest scale note; LEFT: root - 2
+    sess_before = engine.get_session(s["session_id"])
+    if side == "RIGHT":
+        expected_root = max(n.midi for n in sess_before.notes) + 2
+    else:
+        expected_root = original_root - 2
+    assert new_root == expected_root
     r = client.post(
         f"{BASE}/{s['session_id']}/variant/accept",
         json={"midi": new_root, "now_ms": 1500},
     ).json()
     assert r["success"] is True
-    assert r["root_midi"] == new_root
-    assert r["base_fret"] == p["variant"]["base_fret"]
-    assert r["num_lanes"] == p["variant"]["num_lanes"]
+    assert r["base_fret"] >= 0
+    assert r["num_lanes"] >= 3
     assert len(r["notes"]) > 0
-    # First note should be the new root MIDI.
-    assert r["notes"][0]["midi"] == new_root
+    sess_after = engine.get_session(s["session_id"])
+    if side == "LEFT":
+        # LEFT: root_midi = variant.root_midi; start at index 1 (player just played root)
+        assert r["root_midi"] == new_root
+        assert r["notes"][0]["midi"] == new_root
+        assert sess_after.current_note_index == 1
+    else:
+        # RIGHT: root_midi is the computed actual root (not the trigger apex)
+        assert r["root_midi"] != new_root
+        assert r["root_midi"] == sess_after.root_midi
+        # Apex of new scale = trigger note
+        assert sess_after.notes[sess_after.ascending_note_count - 1].midi == new_root
+        # Start descending: first note is first step below apex
+        assert sess_after.current_note_index == sess_after.ascending_note_count
 
 
 def test_timeout_clears_variant_and_records_history(client):
@@ -143,13 +163,14 @@ def test_timeout_before_deadline_rejected(client):
 
 
 def test_side_alternates_across_consecutive_variants(client):
-    s = _start(client)
+    s = _start(client, root_midi=48)  # C3 so RIGHT variant lands in playable frets
     sid = s["session_id"]
-    _force_milestone(client, sid)
+    _force_milestone(client, sid, direction="DOWN")  # DOWN → RIGHT variant
     first = client.post(f"{BASE}/{sid}/variant/propose", json={"now_ms": 1000}).json()
+    assert first["variant"]["side"] == "RIGHT"
     # Timeout the first to clear it.
     client.post(f"{BASE}/{sid}/variant/timeout", json={"now_ms": first["window"]["deadline_ms"] + 1})
-    _force_milestone(client, sid)
+    _force_milestone(client, sid, direction="UP")  # UP → LEFT variant
     second = client.post(f"{BASE}/{sid}/variant/propose", json={"now_ms": 10000}).json()
-    # Sides should differ when both are playable; on standard guitar at root C4 they are.
+    assert second["variant"]["side"] == "LEFT"
     assert second["variant"]["side"] != first["variant"]["side"]

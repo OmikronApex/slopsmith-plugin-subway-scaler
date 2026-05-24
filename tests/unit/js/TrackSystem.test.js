@@ -7,16 +7,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // TODO: TrackSystem.js does not exist yet — import will fail until implementation
 import { TrackSystem, VARIANT_DIRECTION } from '../../../static/game/TrackSystem.js';
 
-// STRING_COLORS inlined to avoid depending on unimplemented tokens.js
-const STRING_COLORS = {
-  1: 0xFF3333,
-  2: 0xFFDD00,
-  3: 0x3366FF,
-  4: 0xFF8800,
-  5: 0x33AA33,
-  6: 0x9933CC,
-  7: 0xFF66AA,
-};
+import { colourForString } from '../../../static/game/ui/tokens.js';
 
 // Expected track background color (Night City palette --color-bg-stage)
 const COLOR_BG_STAGE = '#1A1A2E';
@@ -49,13 +40,14 @@ function makeMockSessionConfig(trackCount = 6) {
     track_count: trackCount,
     notes: Array.from({ length: trackCount }, (_, i) => ({
       midi: 60 + i,
-      string: (i % 7) + 1,
+      string: (i % 6) + 1,
       fret: i,
     })),
     scale: 'major',
     root_midi: 60,
     difficulty: 'medium',
     instrument_id: 'guitar-standard',
+    instrument: { stringCount: 6 },
   };
 }
 
@@ -93,14 +85,17 @@ describe('TrackSystem.init() — Story 3.2', () => {
     }
   });
 
-  it('safe zone color matches STRING_COLORS[note.string]', () => {
+  it('safe zone color matches colourForString(stringCount - note.string)', () => {
     const gameState = makeMockGameState();
     const sessionConfig = makeMockSessionConfig(3);
+    const stringCount = sessionConfig.instrument.stringCount;
     TrackSystem.init(sessionConfig, gameState);
     for (let i = 0; i < gameState.scene.tracks.length; i++) {
       const lane = gameState.scene.tracks[i];
       const note = sessionConfig.notes[i];
-      expect(lane.safeZoneColor).toBe(STRING_COLORS[note.string]);
+      expect(lane.safeZoneColor).toBe(
+        colourForString(stringCount - note.string, sessionConfig.instrument)
+      );
     }
   });
 

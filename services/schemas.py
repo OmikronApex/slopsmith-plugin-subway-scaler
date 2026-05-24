@@ -157,7 +157,7 @@ class GameState(BaseModel):
     speed_multiplier: SpeedMultiplier
 
 VariantSide = Literal["LEFT", "RIGHT"]
-VariantStateLit = Literal["SPAWNING", "ACTIVE", "SWITCH_TRIGGERED", "SWITCHED", "TIMEOUT"]
+VariantStateLit = Literal["SPAWNING", "ACTIVE", "SWITCH_TRIGGERED", "SWITCHED", "TIMEOUT", "DISMISSED"]
 WindowStateLit = Literal["OPEN", "SWITCHED", "CLOSED"]
 
 
@@ -172,8 +172,8 @@ class VariantTrackSet(BaseModel):
     variant_id: str
     root_midi: int = Field(..., ge=21, le=108)
     base_fret: int = Field(..., ge=0, le=24)
-    num_lanes: int = Field(..., ge=3, le=12)
-    base_lane: int = Field(0, ge=0, le=11)
+    num_lanes: int = Field(..., ge=3, le=24)
+    base_lane: int = Field(0, ge=0, le=23)
     base_string: int = Field(1, ge=1, le=6)
     side: VariantSide
     state: VariantStateLit = "SPAWNING"

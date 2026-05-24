@@ -322,6 +322,7 @@ This story uses only CSS Grid, CSS clamp(), and existing HTML element creation. 
 
 - 2026-05-21: Story created. Planned polish of setup UI to match Night City design mockup.
 - 2026-05-21: Full implementation complete. Game title with text-shadow effects, 2-column grid layout, scale preview display, toggle button styling, and responsive breakpoints implemented. All 7 tasks marked complete. 93 tests passing, 0 failures. Ready for code review.
+- 2026-05-25: **AC-3 retired** — scale preview element (`.scale-preview`) was either rolled back without a change-log entry or never shipped (no occurrences in `setup.js` as of 2026-05-25). UX decision to retire the feature confirmed during 5-8 code review: removed from `ux-design-directions.html` mockup (CSS + element), and the corresponding e2e test (`epic1-setup.spec.ts` "scale preview element is present and updates on selection change") deleted. Tasks 3/checklist items above are now historical only.
 
 ---
 

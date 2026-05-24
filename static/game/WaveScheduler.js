@@ -36,7 +36,9 @@ export class WaveScheduler {
     return {
       wave_id: `w-${this._totalWavesSpawned}`,
       wave_index: this._totalWavesSpawned,
+      note_index: this._nextWaveNoteIndex,
       safe_track: safeTrack,
+      safe_fret: note.fret,
       safe_midi: note.midi,
       note_name: note.name,
       safe_string: note.string ?? null,
@@ -51,11 +53,11 @@ export class WaveScheduler {
     return this._waves;
   }
 
-  reset(notes) {
+  reset(notes, startIndex = 0) {
     this._notes = notes;
     this._waves = [];
     this._nextDeadlineMs = 0;
-    this._nextWaveNoteIndex = 0;
+    this._nextWaveNoteIndex = notes.length > 0 ? startIndex % notes.length : 0;
     this._totalWavesSpawned = 0;
   }
 }

@@ -6,7 +6,6 @@
  * TIER 1 — CURRENTLY IMPLEMENTED (tests should pass now):
  *   - Collision overlay appears with failure message
  *   - Pause button toggles phase state
- *   - Abandon button shows overlay with abandonment message
  *   - game-over overlay contains a number (score)
  *
  * TIER 2 — ATDD SCAFFOLDS (test.fail — expected to fail until Epic 4 ships):
@@ -82,17 +81,9 @@ test.describe('Epic 4 Tier 1: pause button (currently implemented)', () => {
     expect(phase).toBe('playing');
   });
 
-  test('abandon button click shows overlay with abandonment message', async ({ gamePage }) => {
-    await startGame(gamePage);
-
-    const abandonBtn = gamePage.locator(`${ROOT} .hud button`).filter({ hasText: /abandon/i });
-    await expect(abandonBtn).toBeVisible({ timeout: 3000 });
-    await abandonBtn.click();
-
-    const overlay = gamePage.locator(`${ROOT} .overlay:not(.hidden)`);
-    await expect(overlay).toBeVisible({ timeout: 3000 });
-    await expect(overlay).toContainText(/abandon/i);
-  });
+  // Abandon-button test removed 2026-05-25 — abandon UI button was retired.
+  // GameState.abandon() remains as a programmatic API (used by main-menu path),
+  // but no in-game HUD button exists or is planned.
 });
 
 // ─── TIER 2: Epic 4 overlay features (now implemented) ───────────────────────

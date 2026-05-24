@@ -1,7 +1,5 @@
-// Red-phase ATDD scaffold — Story 1.3: Design Token System
-
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { COLORS, STRING_COLORS, injectTokens } from '../../../static/game/ui/tokens.js';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { COLORS, STRING_COLORS, colourForString, injectTokens } from '../../../static/game/ui/tokens.js';
 
 describe('Design Token System', () => {
   describe('COLORS exports', () => {
@@ -51,46 +49,44 @@ describe('Design Token System', () => {
     });
   });
 
-  describe('STRING_COLORS exports', () => {
-    it('exports STRING_COLORS object', () => {
-      expect(STRING_COLORS).toBeDefined();
-      expect(typeof STRING_COLORS).toBe('object');
+  describe('STRING_COLORS (low→high pitch palette)', () => {
+    it('is an array of 8 Rocksmith standard colors', () => {
+      expect(Array.isArray(STRING_COLORS)).toBe(true);
+      expect(STRING_COLORS).toHaveLength(8);
     });
 
-    it('STRING_COLORS[1] equals 0xFF3333', () => {
-      expect(STRING_COLORS[1]).toBe(0xFF3333);
+    it('STRING_COLORS[0] is Red (lowest pitch)', () => {
+      expect(STRING_COLORS[0]).toBe(0xCC0000);
     });
 
-    it('STRING_COLORS[2] equals 0xFFDD00', () => {
-      expect(STRING_COLORS[2]).toBe(0xFFDD00);
+    it('STRING_COLORS[3] is Orange', () => {
+      expect(STRING_COLORS[3]).toBe(0xCC6600);
     });
 
-    it('STRING_COLORS[3] equals 0x3366FF', () => {
-      expect(STRING_COLORS[3]).toBe(0x3366FF);
+    it('STRING_COLORS[5] is Purple (highest pitch on 6-string)', () => {
+      expect(STRING_COLORS[5]).toBe(0x9900CC);
+    });
+  });
+
+  describe('colourForString', () => {
+    const GUITAR = { stringCount: 6 };
+    const BASS = { stringCount: 4 };
+
+    it('returns the palette color at the given low→high index', () => {
+      expect(colourForString(0, GUITAR)).toBe(0xCC0000);
+      expect(colourForString(5, GUITAR)).toBe(0x9900CC);
     });
 
-    it('STRING_COLORS[4] equals 0xFF8800', () => {
-      expect(STRING_COLORS[4]).toBe(0xFF8800);
+    it('clamps the index to instrument.stringCount - 1', () => {
+      expect(colourForString(99, BASS)).toBe(0xCC6600); // bass max idx = 3 = orange
     });
 
-    it('STRING_COLORS[5] equals 0x33AA33', () => {
-      expect(STRING_COLORS[5]).toBe(0x33AA33);
+    it('clamps negative indices to 0', () => {
+      expect(colourForString(-1, GUITAR)).toBe(0xCC0000);
     });
 
-    it('STRING_COLORS[6] equals 0x9933CC', () => {
-      expect(STRING_COLORS[6]).toBe(0x9933CC);
-    });
-
-    it('STRING_COLORS[7] equals 0xFF66AA', () => {
-      expect(STRING_COLORS[7]).toBe(0xFF66AA);
-    });
-
-    it('STRING_COLORS has exactly 7 string colors (indices 1-7)', () => {
-      const keys = Object.keys(STRING_COLORS).map(Number);
-      expect(keys).toHaveLength(7);
-      for (let i = 1; i <= 7; i++) {
-        expect(keys).toContain(i);
-      }
+    it('falls back to the full palette when instrument is null', () => {
+      expect(colourForString(5, null)).toBe(0x9900CC);
     });
   });
 
@@ -98,7 +94,6 @@ describe('Design Token System', () => {
     let mockRoot;
 
     beforeEach(() => {
-      // Mock document.documentElement with a simple object for testing
       mockRoot = {
         style: {
           properties: {},
@@ -107,11 +102,7 @@ describe('Design Token System', () => {
           },
         },
       };
-
-      // Temporarily replace document.documentElement for testing
-      global.document = {
-        documentElement: mockRoot,
-      };
+      global.document = { documentElement: mockRoot };
     });
 
     it('exports injectTokens function', () => {
@@ -119,74 +110,23 @@ describe('Design Token System', () => {
       expect(typeof injectTokens).toBe('function');
     });
 
-    it('injectTokens() sets --color-bg-void', () => {
+    it('sets Night City CSS variables', () => {
       injectTokens();
       expect(mockRoot.style.properties['--color-bg-void']).toBe('#0D0D1A');
-    });
-
-    it('injectTokens() sets --color-bg-stage', () => {
-      injectTokens();
       expect(mockRoot.style.properties['--color-bg-stage']).toBe('#1A1A2E');
-    });
-
-    it('injectTokens() sets --color-bg-near', () => {
-      injectTokens();
       expect(mockRoot.style.properties['--color-bg-near']).toBe('#252538');
-    });
-
-    it('injectTokens() sets --color-accent', () => {
-      injectTokens();
       expect(mockRoot.style.properties['--color-accent']).toBe('#FFB800');
-    });
-
-    it('injectTokens() sets --color-text-primary', () => {
-      injectTokens();
       expect(mockRoot.style.properties['--color-text-primary']).toBe('#E8E8F0');
-    });
-
-    it('injectTokens() sets --color-text-disabled', () => {
-      injectTokens();
       expect(mockRoot.style.properties['--color-text-disabled']).toBe('#555570');
-    });
-
-    it('injectTokens() sets --color-edge', () => {
-      injectTokens();
       expect(mockRoot.style.properties['--color-edge']).toBe('#08080F');
     });
 
-    it('injectTokens() sets all 7 string color custom properties (1-7)', () => {
+    it('sets one CSS variable per palette string (0..N-1)', () => {
       injectTokens();
-      const expectedColors = {
-        1: '#FF3333',
-        2: '#FFDD00',
-        3: '#3366FF',
-        4: '#FF8800',
-        5: '#33AA33',
-        6: '#9933CC',
-        7: '#FF66AA',
-      };
-
-      for (let i = 1; i <= 7; i++) {
-        expect(mockRoot.style.properties[`--color-string-${i}`]).toBe(expectedColors[i]);
+      for (let i = 0; i < STRING_COLORS.length; i++) {
+        const hex = '#' + STRING_COLORS[i].toString(16).padStart(6, '0').toUpperCase();
+        expect(mockRoot.style.properties[`--color-string-${i}`]).toBe(hex);
       }
-    });
-
-    it('injectTokens() custom properties match COLORS hex values', () => {
-      injectTokens();
-
-      const checks = [
-        { prop: '--color-bg-void', expected: '#0D0D1A' },
-        { prop: '--color-bg-stage', expected: '#1A1A2E' },
-        { prop: '--color-bg-near', expected: '#252538' },
-        { prop: '--color-accent', expected: '#FFB800' },
-        { prop: '--color-text-primary', expected: '#E8E8F0' },
-        { prop: '--color-text-disabled', expected: '#555570' },
-        { prop: '--color-edge', expected: '#08080F' },
-      ];
-
-      checks.forEach(({ prop, expected }) => {
-        expect(mockRoot.style.properties[prop]).toBe(expected);
-      });
     });
   });
 });

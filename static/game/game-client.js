@@ -100,6 +100,16 @@ export class GameClient {
     return await r.json();
   }
 
+  async dismissVariant() {
+    if (!this.sessionId) return null;
+    const r = await fetch(`${this.baseUrl}/game/${this.sessionId}/variant/dismiss`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    return await r.json();
+  }
+
   async timeoutVariant() {
     if (!this.sessionId) return null;
     const r = await fetch(`${this.baseUrl}/game/${this.sessionId}/variant/timeout`, {
