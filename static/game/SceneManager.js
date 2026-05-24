@@ -20,7 +20,7 @@ const LANE_W = 1.4;               // Lane box width (matches BoxGeometry in rebu
 const PIECE_H = 0.06;             // Track piece height
 const STRAIGHT_LEN = 60;          // Z length of variant parallel track = 3 wave spacings (story 5-7 adjustment)
 const DIAG_LEN = 15;              // Z length of diagonal section in bend piece
-const SEG_LEN = 25;               // Z length of a persistent lane segment
+// SEG_LEN = 25 removed — variant track uses fixed 3-piece group (story 5-7)
 
 export function createScene(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -103,7 +103,6 @@ export function createScene(canvas) {
   // One bent piece scrolls in (propose) or out (dismiss); straight lane segs fill the gap.
   let variantProposePiece = null;   // { mesh: Group, spawnTimeMs, speedPxMs }
   let variantDismissPiece = null;   // { mesh: Group, spawnTimeMs, speedPxMs }
-  let variantLaneSegs = [];         // persistent straight lane segment meshes
   let variantInfo = null;           // { side, variantX }
   let variantSafeZoneMesh = null;   // safe zone mesh on variant lane (story 5-7)
   let variantAcceptState = null;    // { newPrimary, acceptX, characterMoved } — tracks accept animation
@@ -166,23 +165,29 @@ export function createScene(canvas) {
 
   // ─── Variant geometry helpers (story 5-5) ─────────────────────────────────
 
-  // Returns a Three.js Group whose geometry bakes in a 45° railway-switch bend.
-  // The group translates only in Z at runtime (AC-8). No runtime rotation.
-  // side: "LEFT"|"RIGHT" — which side the diagonal exits toward.
+  // Returns a Three.js Group with 3 baked pieces forming a lane switch:
+  // incoming diagonal → straight (parallel) section → outgoing diagonal.
+  // The group translates only in Z at runtime. No runtime rotation.
+  // side: "LEFT"|"RIGHT" — which side the diagonals exit toward.
   // variantX: world X of the straight section centre.
-  function buildBendPiece(side, variantX) {
+  function buildVariantTrackGroup(side, variantX) {
     const mat = trackMat;
     const group = new THREE.Group();
     const sign = side === 'RIGHT' ? 1 : -1;
+    // Outgoing diagonal (back — arrives last): 45° peel from variant lane off-screen.
+    const outgoing = new THREE.Mesh(new THREE.BoxGeometry(LANE_W, PIECE_H, DIAG_LEN * 1.414), mat);
+    outgoing.rotation.set(0, sign * -Math.PI / 4, 0);
+    outgoing.position.set(variantX + sign * DIAG_LEN * 0.5, 0, -(STRAIGHT_LEN / 2 + DIAG_LEN * 0.5));
+    group.add(outgoing);
     // Straight section: player-facing end at highest local Z (first to reach player).
     const straight = new THREE.Mesh(new THREE.BoxGeometry(LANE_W, PIECE_H, STRAIGHT_LEN), mat);
     straight.position.set(variantX, 0, 0);
     group.add(straight);
-    // Diagonal section: baked ±45° corner connecting straight to off-screen on side.
-    const diag = new THREE.Mesh(new THREE.BoxGeometry(LANE_W, PIECE_H, DIAG_LEN * 1.414), mat);
-    diag.rotation.set(0, sign * -Math.PI / 4, 0);
-    diag.position.set(variantX + sign * DIAG_LEN * 0.5, 0, -(STRAIGHT_LEN / 2 + DIAG_LEN * 0.5));
-    group.add(diag);
+    // Incoming diagonal (front — arrives first): 45° peel from main-track area to variant lane.
+    const incoming = new THREE.Mesh(new THREE.BoxGeometry(LANE_W, PIECE_H, DIAG_LEN * 1.414), mat);
+    incoming.rotation.set(0, sign * -Math.PI / 4, 0);
+    incoming.position.set(variantX + sign * DIAG_LEN * 0.5, 0, STRAIGHT_LEN / 2 + DIAG_LEN * 0.5);
+    group.add(incoming);
     return group;
   }
 
@@ -197,11 +202,6 @@ export function createScene(canvas) {
       variantDismissPiece.mesh.traverse(c => { if (c.isMesh) c.geometry?.dispose(); });
       variantDismissPiece = null;
     }
-    for (const seg of variantLaneSegs) {
-      scene.remove(seg);
-      seg.geometry?.dispose();
-    }
-    variantLaneSegs = [];
     if (variantSafeZoneMesh) {
       scene.remove(variantSafeZoneMesh);
       variantSafeZoneMesh.geometry?.dispose();
@@ -222,7 +222,7 @@ export function createScene(canvas) {
     clearVariantGeom();
     const vx = _variantLaneX(variant.side);
     const spawnTimeMs = performance.now() - gameStartTime;
-    const mesh = buildBendPiece(variant.side, vx);
+    const mesh = buildVariantTrackGroup(variant.side, vx);
     mesh.position.set(0, 0, SPAWN_Z);
     scene.add(mesh);
     variantProposePiece = { mesh, spawnTimeMs, speedPxMs: lastWaveSpeed };
@@ -258,7 +258,7 @@ export function createScene(canvas) {
   function dismissVariantTracks() {
     if (!variantInfo || variantDismissPiece) return;
     const spawnTimeMs = performance.now() - gameStartTime;
-    const mesh = buildBendPiece(variantInfo.side, variantInfo.variantX);
+    const mesh = buildVariantTrackGroup(variantInfo.side, variantInfo.variantX);
     mesh.position.set(0, 0, SPAWN_Z);
     scene.add(mesh);
     variantDismissPiece = { mesh, spawnTimeMs, speedPxMs: lastWaveSpeed };
@@ -279,7 +279,7 @@ export function createScene(canvas) {
     // AC-6 §1: spawn dismiss piece so old track visually peels away.
     if (!variantDismissPiece) {
       const spawnTimeMs = performance.now() - gameStartTime;
-      const mesh = buildBendPiece(variantInfo.side, variantInfo.variantX);
+      const mesh = buildVariantTrackGroup(variantInfo.side, variantInfo.variantX);
       mesh.position.set(0, 0, SPAWN_Z);
       scene.add(mesh);
       variantDismissPiece = { mesh, spawnTimeMs, speedPxMs: lastWaveSpeed };
@@ -461,33 +461,6 @@ export function createScene(canvas) {
           currentCameraX = 0;
           variantAcceptState = null;
         }
-      }
-    }
-
-    // Persistent variant lane segments — speed snapshot per seg (P3), cull at SEG_LEN/2 (P5)
-    if (variantInfo && !variantDismissPiece) {
-      const nowRel = nowMs - gameStartTime;
-      const segTravelTime = SEG_LEN / Math.max(0.001, lastWaveSpeed * 0.5);
-      const needNewSeg = variantLaneSegs.length === 0 ||
-        nowRel - variantLaneSegs[variantLaneSegs.length - 1].userData.spawnTimeMs >= segTravelTime;
-      if (needNewSeg) {
-        const seg = new THREE.Mesh(new THREE.BoxGeometry(LANE_W, PIECE_H, SEG_LEN), trackMat);
-        seg.position.set(variantInfo.variantX, 0, SPAWN_Z);
-        seg.userData.spawnTimeMs = nowRel;
-        seg.userData.speedPxMs = lastWaveSpeed;
-        scene.add(seg);
-        variantLaneSegs.push(seg);
-      }
-      const toRemove = [];
-      for (const seg of variantLaneSegs) {
-        const elapsed = Math.max(0, nowRel - seg.userData.spawnTimeMs);
-        seg.position.z = SPAWN_Z + elapsed * seg.userData.speedPxMs * 0.5;
-        if (seg.position.z > SEG_LEN / 2) toRemove.push(seg);
-      }
-      for (const seg of toRemove) {
-        variantLaneSegs.splice(variantLaneSegs.indexOf(seg), 1);
-        scene.remove(seg);
-        seg.geometry?.dispose();
       }
     }
 
