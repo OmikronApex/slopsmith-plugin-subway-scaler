@@ -34,8 +34,9 @@ export const STRING_COLORS = [
 
 // Look up a string color by low→high index, clamping to instrument.stringCount.
 export function colourForString(stringIdx, instrument) {
-  const max = instrument?.stringCount ?? STRING_COLORS.length;
-  const i = Math.max(0, Math.min(stringIdx, max - 1));
+  const stringCount = instrument?.stringCount ?? STRING_COLORS.length;
+  const cap = Math.min(stringCount, STRING_COLORS.length);
+  const i = Math.max(0, Math.min(stringIdx, cap - 1));
   return STRING_COLORS[i];
 }
 

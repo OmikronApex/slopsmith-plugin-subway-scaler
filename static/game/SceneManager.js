@@ -446,19 +446,23 @@ export function createScene(canvas) {
 
     // Variant safe zone — scrolls in lockstep with variant geometry (same spawn time + speed)
     if (variantSafeZoneMesh) {
-      const elapsed = Math.max(0, nowMs - gameStartTime - variantSafeZoneMesh.userData.spawnMs);
-      const z = SPAWN_Z + elapsed * variantSafeZoneMesh.userData.speedPxMs * 0.5 + VARIANT_SZ_DEPTH / 2;
-      variantSafeZoneMesh.position.z = z;
-      if (window.__gameState) {
-        window.__gameState.variant.safeZoneZ = z;
+      const spawnMs = variantSafeZoneMesh.userData.spawnMs;
+      const speedPxMs = variantSafeZoneMesh.userData.speedPxMs;
+      if (spawnMs != null && speedPxMs != null) {
+        const elapsed = Math.max(0, nowMs - gameStartTime - spawnMs);
+        const z = SPAWN_Z + elapsed * speedPxMs * 0.5 + VARIANT_SZ_DEPTH / 2;
+        variantSafeZoneMesh.position.z = z;
+        if (window.__gameState?.variant) {
+          window.__gameState.variant.safeZoneZ = z;
+        }
+        // Miss: back edge has passed player (AC-2)
+        if (z > VARIANT_SZ_DEPTH / 2) {
+          const cb = onVariantMissedCb;
+          clearVariantGeom();
+          if (cb) cb();
+        }
       }
-      // Miss: back edge has passed player (AC-2)
-      if (z > VARIANT_SZ_DEPTH / 2) {
-        const cb = onVariantMissedCb;
-        clearVariantGeom();
-        if (cb) cb();
-      }
-    } else if (window.__gameState) {
+    } else if (window.__gameState?.variant) {
       window.__gameState.variant.safeZoneZ = null;
     }
 

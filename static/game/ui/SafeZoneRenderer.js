@@ -93,7 +93,7 @@ export class SafeZoneRenderer {
       // Safe zone color corresponds to the string used
       // Tabulator uses string 1 = highest pitch, so invert: lowest string → idx 0 (Red)
       const stringCount = (instrument && instrument.stringCount) || 6;
-      const paletteIdx = wave.safe_string ? (stringCount - wave.safe_string) : 0;
+      const paletteIdx = wave.safe_string != null ? (stringCount - wave.safe_string) : 0;
       const color = colourForString(paletteIdx, instrument);
       mesh.material.color.setHex(color);
     });

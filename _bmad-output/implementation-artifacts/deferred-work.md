@@ -79,3 +79,13 @@
 
 - Backend polling loop overwrites `__gameState.variant.id` set by `setVariant` hook every ~200ms — tests pass because Playwright's rapid waitForFunction resolves before the next poll clobbers the value, but could flake on heavily loaded CI; pre-existing test hook design limitation [static/game/main.js].
 - `setInterval` timer subject to browser throttling in hidden/backgrounded tabs — not applicable in active Playwright sessions; 3000ms waitForFunction timeout provides headroom; pre-existing design [static/game/main.js:~733].
+
+## Deferred from: code review of 5-8-safe-zone-gated-track-switching (2026-05-25)
+
+- `onRestart` rootMidi hardcoded to `tuning[0] + 5` (was `computeRandomRootMidi`) [static/game/main.js, setup.js] — out-of-scope behavior change shipped under 5-8; pre-existing intent unclear, see Decisions section of 5-8.
+- 120 s backend window + frontend crash → orphaned variant on reconnect — reconnected client could accept on first matching note without seeing safe zone; needs session-recovery story.
+- Poll race after `dismissVariant`: phantom variant respawn — sub-100 ms window between POST and next poll where backend may still report the just-dismissed variant; needs request-id correlation.
+- Degenerate scale (`ascendingNoteCount <= 1`) propose path [static/game/main.js] — unreachable for any catalog scale; defensive only.
+- AC-9 `timerMs` not always 0 — both note-trigger and poll paths write `Math.max(0, deadline_ms - Date.now())`; AC-9 permits the deviation and E2E sync uses `safeZoneZ`.
+- AC-5 `szSpawnMs` augmented with `+ VARIANT_SZ_DEPTH / 2` offset — change-logged 2026-05-25; spec wording stale but intent preserved.
+- AC-6 mechanism replaced (`variantPendingSpawn` + render-loop watcher vs spec's `pendingVariantPropose` + `updateVariantSafeZoneWave`) — functionally equivalent; doc fix is Patch P12 in 5-8 review.

@@ -1,6 +1,6 @@
 # Story 5.8: Safe Zone-Gated Track Switching & Proximity-Based Variant Dismiss
 
-**Status:** review
+**Status:** in-progress
 
 **Epic:** 5 — Variant Track System
 **Story ID:** 5-8
@@ -87,16 +87,13 @@ The polling-loop block in `main.js` that currently triggers `timeoutVariant()` w
 `onVariantMissed` (AC-2). The backend's `DEFAULT_WINDOW_MS` acts as a safety-net only (no
 UI change required; optionally raise it to 120000 ms to avoid false server-side expirations).
 
-**AC-4 — HUD shows proximity state, not countdown:**
-`updateVariantHud()` no longer displays a seconds countdown. While the variant is active and
-NOT adjacent (`isVariantSafeZoneAdjacent()` false), HUD shows:
-`Switch → [note name] ([side])`
-While adjacent, HUD shows:
-`SWITCH → [note name] ← NOW`
-After dismiss/accept, HUD hides.
-The adjacency window duration is derived from `VARIANT_SZ_DEPTH` and the current wave speed
-(`VARIANT_SZ_DEPTH / (lastWaveSpeed * 0.5)`) — it is intentionally coupled to difficulty
-settings so that higher difficulty (faster waves) means a shorter acceptance window.
+**AC-4 — No HUD; track geometry is sole cue (amended 2026-05-25 post-review):**
+The variant HUD (`variantHud` element, `updateVariantHud()` logic) is removed entirely.
+The player is informed of an incoming variant exclusively by the parallel-lane geometry
+spawning at the horizon and the colored safe zone scrolling toward player position. No
+text overlay, no countdown, no "SWITCH ← NOW" indicator. The adjacency window duration is
+implicit and difficulty-coupled (`VARIANT_SZ_DEPTH / (lastWaveSpeed * 0.5)`).
+_Original AC required a proximity-state HUD; superseded by the 2026-05-24 HUD retirement._
 
 **AC-5 — Spawn co-location: variant safe zone travels side-by-side with transition safe zone:**
 When `findTransitionWave(side)` returns a non-null wave, `szSpawnMs = wave.spawn_time_ms`
@@ -116,9 +113,14 @@ spawn the variant safe zone at an arbitrary position. Instead:
 - Once found, call `proposeVariantTracks(variant, wave)` retroactively (the formula handles
   `szSpawnMs` in the past correctly — the safe zone will snap to the correct Z).
 
-**AC-7 — Regular track switches unchanged:**
-`moveToTrack` behavior is not modified. Regular note-play → backend success → `moveToTrack`
-flow is unaffected.
+**AC-7 — Regular track switches: spatial-gated symmetric with variant accept (amended 2026-05-25 post-review):**
+`moveToTrack` itself is not modified. However, the `onDetection` handler now applies the
+same spatial gate to regular notes as to variant accept: a detection is forwarded to
+`run.onDetection(det)` only when `safeZoneRenderer.isAnyPrimarySafeZoneAdjacent(det.note.midi)`
+is true. Off-window detections are silently dropped at the handler. This matches the
+variant rule: musical/spatial judgment, not raw note recognition.
+_Follow-up: miss telemetry for off-window detections (visual/audio cue, miss counter
+increment) is deferred to a separate story; current behavior is "silent drop"._
 
 **AC-8 — `window.__gameState.variant.safeZoneZ` state bridge:**
 The render loop in `SceneManager.js` writes `window.__gameState.variant.safeZoneZ` each frame:
@@ -248,24 +250,12 @@ compatibility; `timerMs` may now always return 0 (safe zone position drives timi
     ```
   - Manual verify: trigger a variant, observe both safe zones arrive at z = 0 simultaneously.
 
-- [x] Task 7 — Handle findTransitionWave null gracefully (AC-6)
-  - Add module-level `let pendingVariantPropose = null;` in `main.js`.
-  - When `findTransitionWave(side)` returns `null` during a propose call:
-    ```js
-    pendingVariantPropose = { variant: resp.variant, side: resp.variant.side };
-    scene.proposeVariantTracks(resp.variant, null);  // spawn lane geometry only, no safe zone
-    ```
-  - In the polling callback, if `pendingVariantPropose !== null`:
-    ```js
-    const w = findTransitionWave(pendingVariantPropose.side);
-    if (w) {
-      scene.updateVariantSafeZoneWave(w);  // new SceneManager function (see below)
-      pendingVariantPropose = null;
-    }
-    ```
-  - Add `updateVariantSafeZoneWave(wave)` to `SceneManager.js`: if `variantSafeZoneMesh` exists
-    and has no valid `spawnMs` yet, compute `szSpawnMs = wave.spawn_time_ms` and set
-    `variantSafeZoneMesh.userData.spawnMs = szSpawnMs`.
+- [x] Task 7 — Handle findTransitionWave null gracefully (AC-6) _[mechanism revised 2026-05-25]_
+  - Final mechanism is **wave-watcher in the render loop**, not poll-callback retroactive update.
+  - `main.js` declares module-level `let variantPendingSpawn = null;` (shape: `{ variant, targetNoteIndex }`).
+  - `_queueVariantSpawn(variant)`: sets `variantPendingSpawn` with `targetNoteIndex = variant.side === 'RIGHT' ? ascendingNoteCount : 1`. Called from the note-trigger propose path on root/apex success.
+  - The render-loop watcher in `SceneManager.js:446-463` resolves the queued spawn each frame: when a wave matching `targetNoteIndex` is present in the scheduler, it locates `anchorWave` (`note_index === targetIdx - 1`) and calls `scene.proposeVariantTracks(variant, targetWave, anchorNote, anchorWave)` — geometry and safe zone spawn together with the correct `spawnMs = targetWave.spawn_time_ms` from the start.
+  - `proposeVariantTracks` is no longer called speculatively with a null wave; lane geometry and safe zone always spawn in the same frame the wave is found. No `updateVariantSafeZoneWave` / `pendingVariantPropose` helpers — they were replaced before merge.
 
 - [x] Task 8 — Raise backend safety-net deadline (AC-3)
   - In `services/game_engine.py`, change:
@@ -364,12 +354,12 @@ None.
 
 ### Completion Notes List
 
-- SceneManager.js: added `isVariantSafeZoneAdjacent()`, `setOnVariantMissed(cb)`, `updateVariantSafeZoneWave(wave)` functions and exported them. Added `onVariantMissedCb` module variable.
+- SceneManager.js: added `isVariantSafeZoneAdjacent()`, `setOnVariantMissed(cb)` functions and exported them. Added `onVariantMissedCb` module variable. (Note: earlier draft mentioned `updateVariantSafeZoneWave` — never landed; replaced by render-loop wave-watcher.)
 - SceneManager.js render loop: writes `window.__gameState.variant.safeZoneZ` each frame (null when no safe zone). Miss detection fires `onVariantMissedCb` when safe zone center Z > VARIANT_SZ_DEPTH/2.
 - SceneManager.js `proposeVariantTracks`: `szSpawnMs` now uses `transitionWave.spawn_time_ms` directly (canonical). `userData.waveSet` flag enables `updateVariantSafeZoneWave` deferred update.
 - main.js: accept guard now requires `scene.isVariantSafeZoneAdjacent()`. Deadline-based timeout block removed. `setOnVariantMissed` callback wired after run starts.
 - main.js: `updateVariantHud` rewritten — proximity-based messaging; called each rAF frame.
-- main.js: `pendingVariantPropose` added; both propose paths set it on null wave; poll callback retries `findTransitionWave` until resolved.
+- main.js: `variantPendingSpawn` added (shape `{ variant, targetNoteIndex }`); set by `_queueVariantSpawn(variant)` on note-trigger propose. The render-loop wave-watcher in `SceneManager.js` resolves it once a matching wave appears in the scheduler. (Earlier draft used the name `pendingVariantPropose` with a poll-callback retry; renamed and relocated to the render loop before merge.)
 - main.js: `timerMs` always 0 (position drives timing); `timerRunning` stays true while `activeVariant !== null` (AC-9 preserved).
 - main.js: `_testVariantTimer` refactored to IIFE-scoped local inside `setVariant` test hook; removed from outer scope and cleanup.
 - services/game_engine.py: `DEFAULT_WINDOW_MS` raised to 120_000 (2-minute safety net).
@@ -411,3 +401,47 @@ None.
   - `tokens.js` `STRING_COLORS` is now a low→high-pitch array (Rocksmith standard, 8 colors) with `colourForString(idx, instrument)` helper (clamped to `instrument.stringCount`). Hex values follow the previous `stringPalette.js` palette so the visible primary safe-zone colors remain unchanged.
   - Consumers updated: `SafeZoneRenderer.js` (import path), `TrackSystem.js`, `SceneManager.js` (variant safe zone + `#showClearEffect`). Callers that hold a tabulator-form string number (1-based from HIGH, per backend `Note.string`) invert via `stringCount - note.string` before calling `colourForString`.
   - `tokens.test.js` rewritten for array form + helper. `TrackSystem.test.js` inlined palette removed; asserts via `colourForString(stringCount - note.string, instrument)`.
+- 2026-05-25: Retroactively scoped under 5-8 (post-review decision):
+  - **Variant side-direction mapping flipped:** `services/game_engine.py` propose now uses `UP → LEFT`, `DOWN → RIGHT` (was `UP → RIGHT`). Pairs with the safe-zone-gated accept timing so the variant always appears on the side the player is moving *away from* on the current pass.
+  - **`SCALES_PER_VARIANT` lowered 3 → 2** in `services/game_engine.py`. Player encounters a variant proposal after every 2 half-cycles instead of 3 — denser variant gameplay matches the tighter spatial accept window.
+  - **`WaveScheduler.js` extended:** added `note_index` and `safe_fret` fields to spawned waves; added `reset(notes, startIndex)` to support the render-loop wave-watcher (Task 7 revised mechanism) and variant-accept track replacement. The "Do NOT touch" list in this story is hereby amended to permit these additive fields.
+  - **Deterministic restart root:** `main.js` `onRestart` and `setup.js` initial root use `inst.tuning[0] + 5` (was `computeRandomRootMidi`). Stable root simplifies the variant alternation testing surface; randomization can return in a later story if desired.
+- 2026-05-25: Post-review defensive patches (code-review of story 5-8):
+  - `main.js onDetection`: added `if (!det?.note || det.note.midi == null) return;` guard; wrapped `gameClient.acceptVariant` in try/catch with state-clear on rejection so a network failure cannot leave `activeVariant` stuck swallowing trigger-midi inputs.
+  - `SceneManager.js` render loop: variant safe-zone block guards on `spawnMs != null && speedPxMs != null` before computing `z`; `window.__gameState?.variant` optional-chained for cleanup-race safety.
+  - `tokens.js colourForString`: clamp now caps by `Math.min(stringCount, STRING_COLORS.length)` so >8-string instruments cannot index out of the array.
+  - `SafeZoneRenderer.js`: `wave.safe_string` truthy-check changed to `!= null` — string index 0 (lowest pitch) was previously falling through to the default Red color.
+
+_Generated 2026-05-25 via `/bmad-code-review` (Blind + Edge Case + Acceptance auditor layers, diff `39b3ed2..HEAD`)._
+
+#### Decisions resolved (2026-05-25)
+
+- [x] [Review][Decision] AC-4 HUD contradiction → **amended AC-4** to "no HUD; track geometry sole cue". No code change.
+- [x] [Review][Decision] AC-7 spatial gate violation → **amended AC-7** to document the spatial gate as intentional symmetry with variant accept. Miss telemetry deferred to separate story.
+- [x] [Review][Decision] Out-of-scope changes → **retroactively scoped** under 5-8. New Change Log entry (2026-05-25) documents direction flip, `SCALES_PER_VARIANT` 3→2, `WaveScheduler.js` additive fields, deterministic restart root.
+
+#### Patches
+
+- [ ] [Review][Patch] `dismiss_variant` clobbers `last_pass_direction` → breaks LEFT/RIGHT alternation [services/game_engine.py `dismiss_variant`] — Sets `session.last_pass_direction = None`; next propose falls into RIGHT fallback. Fix: preserve `last_pass_direction` on dismiss (only reset on accept). _Skipped 2026-05-25: gameplay-affecting; action item for follow-up story._
+- [x] [Review][Patch] `onDetection` crashes when `det.note` missing — applied 2026-05-25 [static/game/main.js].
+- [x] [Review][Patch] `gameClient.acceptVariant()` unhandled promise rejection — applied 2026-05-25 with try/catch + state clear [static/game/main.js].
+- [ ] [Review][Patch] Trigger note double-processed on `success:false` accept response — _Skipped 2026-05-25: gameplay-affecting; action item for follow-up story._
+- [x] [Review][Patch] `__gameState.variant` undefined write in render loop — applied 2026-05-25 (optional chaining) [static/game/SceneManager.js].
+- [x] [Review][Patch] NaN Z when `userData.spawnMs` undefined — applied 2026-05-25 (guard on `spawnMs != null && speedPxMs != null`) [static/game/SceneManager.js].
+- [ ] [Review][Patch] `dismiss_variant` half-state short-circuit — _Skipped 2026-05-25: edge-case behavior change; action item for follow-up story._
+- [x] [Review][Patch] `colourForString` out-of-range for >8-string instruments — applied 2026-05-25 (cap by `Math.min(stringCount, STRING_COLORS.length)`) [static/game/ui/tokens.js].
+- [x] [Review][Patch] `wave.safe_string === 0` falsy bug — applied 2026-05-25 (`!= null` check) [static/game/ui/SafeZoneRenderer.js].
+- [ ] [Review][Patch] Tab-resume → instant variant miss — _Skipped 2026-05-25: gameplay-affecting; action item for follow-up story._
+- [ ] [Review][Patch] `_queueVariantSpawn` LEFT-side never resolves on tiny sequences — _Skipped 2026-05-25: gameplay-affecting (unreachable for catalog scales but still defensive); action item for follow-up story._
+- [x] [Review][Patch] Task 7 + Completion Notes doc drift (`pendingVariantPropose` / `updateVariantSafeZoneWave` → `variantPendingSpawn` + render-loop watcher) — applied 2026-05-25.
+- [ ] [Review][Patch] **(new from D2)** Miss telemetry on regular-note silent drop [static/game/main.js:567] — Off-window detections currently `return` with zero feedback. Add `run.onMissOutsideWindow?.(det)` hook (or equivalent) before the early return so scoring + visual/audio cue still fire. _Deferred: not yet implemented; tracked as action item for follow-up story._
+
+#### Deferred (pre-existing or out-of-scope robustness)
+
+- [x] [Review][Defer] `onRestart` rootMidi = `tuning[0] + 5` deterministic (was `computeRandomRootMidi`) [static/game/main.js, setup.js] — Out-of-scope and unrelated to story 5-8 intent; covered by Decisions section. Pre-existing intent unclear.
+- [x] [Review][Defer] 120 s backend window + frontend crash → orphaned variant on reconnect — Broader session-resume robustness; reconnected client could accept on first matching note without seeing safe zone. Needs separate session-recovery story.
+- [x] [Review][Defer] Poll race after `dismissVariant`: phantom respawn — Sub-100 ms window between POST and next poll where backend may still report the just-dismissed variant. Low likelihood; needs request-id correlation to fix cleanly.
+- [x] [Review][Defer] Degenerate scale (`ascendingNoteCount <= 1`) propose path [static/game/main.js propose branch] — Unreachable for any catalog scale; defensive only.
+- [x] [Review][Defer] AC-9 `timerMs` not always 0 — Both note-trigger and poll paths write `Math.max(0, deadline_ms - Date.now())`. AC-9 permits ("may now always return 0"); E2E sync uses `safeZoneZ` anyway.
+- [x] [Review][Defer] AC-5 `szSpawnMs` augmented with `+ VARIANT_SZ_DEPTH / 2` offset — Change-logged 2026-05-25 (Z alignment with target safezone); behaves correctly. Spec wording stale but intent preserved.
+- [x] [Review][Defer] AC-6 mechanism replaced (`variantPendingSpawn` + render-loop watcher in place of `pendingVariantPropose` + `updateVariantSafeZoneWave`) — Functionally equivalent; covered by Patch P12 (doc fix).

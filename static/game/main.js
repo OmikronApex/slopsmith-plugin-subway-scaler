@@ -526,11 +526,22 @@ export async function bootstrap(root) {
 
       audio.onDetection(async (det) => {
         if (!run || run.state !== 'running') return;
+        if (!det?.note || det.note.midi == null) return;
 
         // Variant accept: gate on adjacency — safe zone must be at player position (AC-1).
-        if (activeVariant && activeWindow && det && det.note && det.note.midi === activeWindow.trigger_midi
+        if (activeVariant && activeWindow && det.note.midi === activeWindow.trigger_midi
             && scene.isVariantSafeZoneAdjacent()) {
-          const resp = await gameClient.acceptVariant(det.note.midi);
+          let resp = null;
+          try { resp = await gameClient.acceptVariant(det.note.midi); }
+          catch (_) {
+            shownVariantId = null;
+            activeVariant = null;
+            activeWindow = null;
+            variantPendingSpawn = null;
+            variantSpawnedForWave = null;
+            updateVariantHud();
+            return;
+          }
           if (resp && resp.success) {
             const startIdx = resp.current_note_index ?? 0;
             scene.acceptVariantTracks(
