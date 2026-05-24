@@ -381,12 +381,12 @@ class GameEngine:
             id="default", name="Default", kind="guitar",
             stringCount=6, tuning=[40, 45, 50, 55, 59, 64], maxFret=24,
         )
-        # Direction follows the last half-cycle: ascending → RIGHT, descending → LEFT.
-        # None means no pass recorded yet (e.g. tests that bump the counter directly); try RIGHT first.
+        # Direction follows upcoming half-cycle: just descended (root) → about to go up → RIGHT.
+        # Just ascended (apex) → about to go down → LEFT.
         if session.last_pass_direction is None:
             primary_side = "RIGHT"
         else:
-            primary_side = "RIGHT" if session.last_pass_direction == "UP" else "LEFT"
+            primary_side = "RIGHT" if session.last_pass_direction == "DOWN" else "LEFT"
 
         new_root = None
         side = None

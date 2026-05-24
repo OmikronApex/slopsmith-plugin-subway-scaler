@@ -126,7 +126,7 @@ def test_consecutive_variants_alternate_sides_via_http(client):
     # Force second milestone with direction opposite to first.
     sess = engine.get_session(sid)
     sess.scale_passes_completed = SCALES_PER_VARIANT
-    sess.last_pass_direction = "DOWN" if side1 == "RIGHT" else "UP"
+    sess.last_pass_direction = "UP" if side1 == "RIGHT" else "DOWN"
 
     p2 = client.post(f"{BASE}/{sid}/variant/propose", json={"now_ms": 10000}).json()
     assert p2["success"] is True

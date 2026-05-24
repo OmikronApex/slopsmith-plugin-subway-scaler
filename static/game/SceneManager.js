@@ -223,20 +223,26 @@ export function createScene(canvas) {
   function proposeVariantTracks(variant, transitionWave) {
     clearVariantGeom();
     const vx = _variantLaneX(variant.side, transitionWave?.safe_fret);
-    // Anchor both geometry and safe zone to the target wave's spawn time so they
-    // travel in lockstep with the wave regardless of difficulty/speed.
-    const waveSpawnMs = transitionWave?.spawn_time_ms ?? (performance.now() - gameStartTime);
+    // Anchor to proposal time so the variant travels during the full UP(2) ascent.
+    // Wave spawn time is too late — the target wave spawns close to the apex, leaving
+    // insufficient travel time for the geometry to reach the player.
+    const spawnMs = performance.now() - gameStartTime;
     const speedPxMs = transitionWave?.speed_px_per_ms ?? lastWaveSpeed;
     const nowGameMs = performance.now() - gameStartTime;
 
     const mesh = buildVariantTrackGroup(variant.side, vx);
-    const geomElapsed = Math.max(0, nowGameMs - waveSpawnMs);
+    const geomElapsed = Math.max(0, nowGameMs - spawnMs);
     mesh.position.set(0, 0, SPAWN_Z + geomElapsed * speedPxMs * 0.5);
     scene.add(mesh);
-    variantProposePiece = { mesh, spawnTimeMs: waveSpawnMs, speedPxMs };
+    variantProposePiece = { mesh, spawnTimeMs: spawnMs, speedPxMs };
     variantInfo = { side: variant.side, variantX: vx, speedPxMs };
 
-    const variantSzColor = STRING_COLORS[transitionWave?.safe_string] ?? STRING_COLORS[variant.base_string] ?? COLORS.ACCENT;
+    // Safe zone color: for RIGHT, use transition note's string (same string, +2 frets).
+    // For LEFT, use variant base_string (root's string — lowest string of new scale).
+    const szString = variant.side === 'RIGHT'
+      ? transitionWave?.safe_string
+      : variant.base_string;
+    const variantSzColor = STRING_COLORS[szString] ?? COLORS.ACCENT;
     const szGeo = new THREE.PlaneGeometry(1.2, VARIANT_SZ_DEPTH);
     const szMat = new THREE.MeshStandardMaterial({
       color: variantSzColor,
@@ -246,10 +252,10 @@ export function createScene(canvas) {
     });
     const szMesh = new THREE.Mesh(szGeo, szMat);
     szMesh.rotation.x = -Math.PI / 2;
-    // Anchor to the target wave's spawn time — safe zone travels in lockstep with the wave.
-    szMesh.userData.spawnMs = waveSpawnMs;
+    // Anchor to proposal time — safe zone travels alongside variant geometry.
+    szMesh.userData.spawnMs = spawnMs;
     szMesh.userData.speedPxMs = speedPxMs;
-    const szElapsed = Math.max(0, nowGameMs - waveSpawnMs);
+    const szElapsed = Math.max(0, nowGameMs - spawnMs);
     szMesh.position.set(vx, 0.05, SPAWN_Z + szElapsed * speedPxMs * 0.5 + VARIANT_SZ_DEPTH / 2);
     if (transitionWave?.safe_fret != null) {
       const fretOffset = variant.side === 'RIGHT' ? 2 : -2;

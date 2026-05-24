@@ -33,7 +33,7 @@ def test_left_accept_starts_ascending_from_root():
     """AC-3: LEFT accept sets current_note_index=1 (player just played root)."""
     engine = GameEngine()
     session = engine.create_session(scale_id="major", root_midi=60)
-    _force_milestone(engine, session, direction="DOWN")  # DOWN → LEFT variant
+    _force_milestone(engine, session, direction="UP")  # UP → LEFT variant
 
     propose = engine.propose_variant(session.session_id, now_ms=1000)
     assert propose["success"] is True
@@ -77,7 +77,7 @@ def test_right_accept_starts_descending_from_apex():
     """
     engine = GameEngine()
     session = engine.create_session(scale_id="major", root_midi=48)
-    _force_milestone(engine, session, direction="UP")  # UP → RIGHT variant
+    _force_milestone(engine, session, direction="DOWN")  # DOWN → RIGHT variant
 
     propose = engine.propose_variant(session.session_id, now_ms=1000)
     assert propose["success"] is True

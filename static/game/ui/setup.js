@@ -237,7 +237,7 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
       const selectedInst = instruments.find(i => i.id === currentInstrumentId);
       if (!selectedInst) throw new Error('Invalid instrument selection');
 
-      const rootMidi = computeRandomRootMidi(selectedInst);
+      const rootMidi = selectedInst.tuning[0] + 5;
 
       // Save to localStorage (but not root_midi)
       saveSettings({

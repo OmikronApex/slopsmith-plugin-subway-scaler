@@ -165,12 +165,12 @@ def test_timeout_before_deadline_rejected(client):
 def test_side_alternates_across_consecutive_variants(client):
     s = _start(client, root_midi=48)  # C3 so RIGHT variant lands in playable frets
     sid = s["session_id"]
-    _force_milestone(client, sid, direction="UP")  # first variant → RIGHT
+    _force_milestone(client, sid, direction="DOWN")  # DOWN → RIGHT variant
     first = client.post(f"{BASE}/{sid}/variant/propose", json={"now_ms": 1000}).json()
     assert first["variant"]["side"] == "RIGHT"
     # Timeout the first to clear it.
     client.post(f"{BASE}/{sid}/variant/timeout", json={"now_ms": first["window"]["deadline_ms"] + 1})
-    _force_milestone(client, sid, direction="DOWN")  # second variant → LEFT
+    _force_milestone(client, sid, direction="UP")  # UP → LEFT variant
     second = client.post(f"{BASE}/{sid}/variant/propose", json={"now_ms": 10000}).json()
     assert second["variant"]["side"] == "LEFT"
     assert second["variant"]["side"] != first["variant"]["side"]
