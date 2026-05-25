@@ -201,6 +201,24 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
   rootLabel.appendChild(el('label', {}, 'Root: randomised fret 5–8'));
   form.appendChild(rootLabel);
 
+  // Debug logging checkbox
+  const storedDebug = stored.debug_logging === true;
+  let currentDebugLogging = storedDebug;
+  const debugGroup = el('div', { class: 'form-group full-width' });
+  const debugLabel = el('label', {}, 'Debug logging');
+  const debugCheckbox = el('input', {
+    type: 'checkbox',
+    id: 'debug-logging',
+    class: 'debug-checkbox',
+    ...(storedDebug ? { checked: 'checked' } : {}),
+  });
+  debugCheckbox.addEventListener('change', (e) => {
+    currentDebugLogging = e.target.checked;
+  });
+  debugGroup.appendChild(debugLabel);
+  debugGroup.appendChild(debugCheckbox);
+  form.appendChild(debugGroup);
+
   // Error message (hidden by default)
   const errorMsg = el('div', {
     class: 'error-message',
@@ -243,7 +261,8 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
       saveSettings({
         scale_id: currentScaleId,
         difficulty: currentDifficulty,
-        instrument_id: currentInstrumentId
+        instrument_id: currentInstrumentId,
+        debug_logging: currentDebugLogging,
       });
 
       // Call session-config endpoint with timeout
@@ -262,7 +281,7 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
       errorMsg.classList.remove('visible');
       errorMsg.textContent = '';
       startBtn.disabled = false;
-      onGameStart(response);
+      onGameStart({ ...response, debug_logging: currentDebugLogging });
     } catch (err) {
       // Show error message with context
       const errMsg = err.name === 'AbortError'

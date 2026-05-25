@@ -4,8 +4,16 @@
 import { createScene } from './SceneManager.js';
 import { startAudio } from './AudioDetector.js';
 import { Run, difficultyToTimePerNoteMs } from './GameState.js';
+import {
+  setTransitionPhase,
+  setTransitionPhaseListener,
+  registerPhaseCleanup,
+  currentTransitionPhase,
+  resetTransitionPhase,
+} from './TransitionPhases.js';
 import { quantize, midiToName } from './notes.js';
 import { GameClient } from './game-client.js';
+import { DebugLogger } from './DebugLogger.js';
 import { SafeZoneRenderer } from './ui/SafeZoneRenderer.js';
 import { laneX } from './TrackSystem.js';
 import { injectTokens } from './ui/tokens.js';
@@ -53,6 +61,18 @@ export async function bootstrap(root) {
     streamType: null,
   };
 
+  // Structured event log for E2E test observability (Story 6.7).
+  function pushGameEvent(type, data = {}) {
+    if (!window.__gameEvents) window.__gameEvents = [];
+    window.__gameEvents.push({ type, time: _now(), timestamp: Date.now(), data });
+  }
+  window.pushGameEvent = pushGameEvent;
+
+  // Test-mode clock override: set window.__fakeGameClock (game-relative ms) to drive deterministically.
+  const _now = () => window.__TEST_MODE && window.__fakeGameClock != null
+    ? window.__fakeGameClock
+    : performance.now();
+
   // Initialize game state observable for E2E tests (story 0-5)
   window.__TEST_MODE = window.__TEST_MODE ?? false;
   window.__gameState = {
@@ -62,13 +82,14 @@ export async function bootstrap(root) {
     character: { positionX: 0, positionY: 0, velocityX: 0, velocityY: 0, state: 'idle' },
     scene: { waveCount: 0 },
     score: { current: 0, highScore: 0, distanceTraveled: 0 },
-    collision: { lastCollisionType: null, lastCollisionTimestamp: null, invincibilityFrames: 0 },
+    collision: { lastCollisionType: null, lastCollisionTimestamp: null, invincibilityFrames: 0, lastDebug: null, waveCount: 0, charTrack: null },
     gameOver: { isGameOver: false, reason: null, triggeredAt: null },
     session: { phase: 'idle', pauseCount: 0, totalPausedMs: 0 },
-    variant: { id: null, timerMs: 0, timerRunning: false, timerExpired: false, safeZoneZ: null },
+    variant: { id: null, timerMs: 0, timerRunning: false, timerExpired: false, safeZoneZ: null, transitionPhase: 'idle' },
     lastDetectedNote: null,
     _test: { forceCollision: null, triggerPause: null, resetGame: null, setVariant: null },
   };
+  pushGameEvent('init');
 
   // Persistent RAF loop keeps loop.frameCount ticking for E2E liveness checks
   (function _bgLoop(last) {
@@ -114,6 +135,8 @@ export async function bootstrap(root) {
   // Helper: pause the run and show the pause overlay
   function pauseGame(reason = 'normal') {
     if (!run || run.state !== 'running') return;
+    pushGameEvent('game.pause', { reason });
+    if (_debugLogger) _debugLogger.log('game.pause', { reason });
     _pauseReason = reason;
     run.pause(performance.now());
     if (audio) audio.pause();
@@ -126,6 +149,8 @@ export async function bootstrap(root) {
   // Helper: resume the run and hide the overlay
   async function resumeGame() {
     if (!run || run.state !== 'paused') return;
+    pushGameEvent('game.resume');
+    if (_debugLogger) _debugLogger.log('game.resume');
     const reason = _pauseReason;
     _pauseReason = 'normal';
     if (reason === 'audio-error' && audio) {
@@ -168,6 +193,7 @@ export async function bootstrap(root) {
     state.rootMidi = sessionConfig.root_midi;
     state.scaleId = sessionConfig.scale_id;
     state.instrumentId = sessionConfig.instrument_id;
+    state.debugLogging = !!sessionConfig.debug_logging;
 
     // Difficulty is client-only, read from localStorage
     try {
@@ -280,6 +306,11 @@ export async function bootstrap(root) {
   let audio = null;
   let _pauseReason = 'normal';
   let rafId = null;
+  let _runAcceptTransitionFn = null; // set by start(); exposed to _test hooks
+  let _waveScheduler = null;         // set by start(); exposed to _test.clearSceneWaves() (Story 6.7)
+  let _perFrameHook = null;          // called each RAF frame; used by breather phase (Story 6.4)
+  let _variantBreatherMs = 3000;     // module-level so _test.setBreatherMs() can override (Story 6.7)
+  let _debugLogger = null;          // debug logger (set by start(); flushes JSONL to server /logs/)
   let prevFretPos = null;
 
   // Variant state mirrors backend (feature 008-track-variants).
@@ -374,6 +405,13 @@ export async function bootstrap(root) {
         notesResp.base_fret,
         notesResp.num_lanes,
       );
+      _waveScheduler = waveScheduler;
+      pushGameEvent('game.start', { difficulty: state.difficulty, base_fret: notesResp.base_fret, num_lanes: notesResp.num_lanes });
+
+      // File-based debug logger (activated by setup checkbox).
+      const debugLogger = new DebugLogger(notesResp.session_id, state.debugLogging, 0);
+      _debugLogger = debugLogger;
+      debugLogger.log('game.start', { difficulty: state.difficulty, session_id: notesResp.session_id });
 
       // ascending_note_count: index where descending begins in the note sequence.
       // Mutable — updated after each variant accept when the new scale may differ.
@@ -384,6 +422,134 @@ export async function bootstrap(root) {
       let apexNote = (ascendingNoteCount > 0 && notesResp.notes)
         ? notesResp.notes[ascendingNoteCount - 1] : null;
 
+      // Transition phase machine (Story 6.1) — reset on each game start, then register
+      // default listeners that drive the synchronous accept waterfall. Later stories
+      // replace individual listeners with async, animation-driven variants.
+      resetTransitionPhase();
+      if (window.__gameState?.variant) {
+        window.__gameState.variant.transitionPhase = 'idle';
+      }
+
+      // Universal phase change logger (debug-logging).
+      setTransitionPhaseListener((next, prev) => {
+        if (_debugLogger) _debugLogger.log('phase.change', { from: prev, to: next });
+      });
+
+      // Default accepted → riding: soft halt, then advance phase.
+      setTransitionPhaseListener((next, prev, ctx) => {
+        if (next !== 'accepted') return;
+        waveScheduler.pauseQueueing();
+        setTransitionPhase('riding', ctx);
+      });
+
+      // Riding → breather: character traverses to variant lane; camera follows; phase advances at bend midpoint.
+      setTransitionPhaseListener((next, prev, ctx) => {
+        if (next !== 'riding') return;
+        const info = scene.getVariantInfo();
+        scene.setCameraMode('riding');
+        if (info) {
+          scene.setCharacterTargetX(info.variantX);
+          // Track camera to character each frame during riding (RAF loop calls scene.render which reads targetCameraX).
+          // The camera lerp in render() picks up targetCameraX updates via setTargetCameraX.
+          scene.setOnBendMidpointReached(() => {
+            setTransitionPhase('breather', ctx);
+          });
+        } else {
+          // No variant geometry (test path or edge case) — advance synchronously.
+          setTransitionPhase('breather', ctx);
+        }
+      });
+
+      // Phase-exit cleanup: reset camera mode and clear bend callback on any riding exit.
+      registerPhaseCleanup('riding', () => {
+        scene.clearBendMidpointCallback();
+        scene.setCameraMode('default');
+      });
+
+      // Breather: hold until timer expires AND all outgoing waves have cleared (Story 6.4).
+      // _variantBreatherMs is module-level so _test.setBreatherMs() can override for tests.
+      _variantBreatherMs = notesResp.timing_params?.variant_breather_ms ?? 3000;
+      setTransitionPhaseListener((next, prev, ctx) => {
+        if (next !== 'breather') return;
+        const breatherStartMs = performance.now();
+        const resp = ctx.resp;
+
+        _perFrameHook = () => {
+          const timerExpired = performance.now() - breatherStartMs >= _variantBreatherMs;
+          const wavesCleared = scene.getActiveWaveCount() === 0;
+          if (timerExpired && wavesCleared) {
+            _perFrameHook = null;
+            if (_debugLogger) _debugLogger.log('breather.complete', { timerExpired, activeWaveCount: scene.getActiveWaveCount() });
+            const spawnSpeed = scene.getLastWaveSpeed();
+            const newBase = resp?.base_fret ?? notesResp.base_fret;
+            const newLanes = resp?.num_lanes ?? notesResp.num_lanes;
+            scene.spawnVariantTracks(newBase, newLanes, spawnSpeed);
+            scene.setOnTracksLanded(() => setTransitionPhase('promoting', ctx));
+          }
+        };
+        registerPhaseCleanup('breather', () => { _perFrameHook = null; });
+      });
+
+      // Default promoting → active: call /variant/promote to commit scale swap.
+      setTransitionPhaseListener((next, prev, ctx) => {
+        if (next !== 'promoting') return;
+        gameClient.promoteVariant().then((resp) => {
+          if (!resp || !resp.success) {
+            console.error('[main] promote failed', resp);
+            waveScheduler.resumeQueueing(notesResp.notes, run?.cursor ?? 0);
+            setTransitionPhase('idle', ctx);
+            return;
+          }
+          const startIdx = resp.current_note_index ?? 0;
+          if (run && resp.notes) {
+            run.sequence = resp.notes;
+            run.cursor = startIdx;
+            setExpected();
+          }
+          if (resp.ascending_note_count != null) {
+            ascendingNoteCount = resp.ascending_note_count;
+          }
+          if (resp.notes) {
+            rootNote = resp.notes[0] ?? null;
+            apexNote = ascendingNoteCount > 0 ? resp.notes[ascendingNoteCount - 1] : null;
+            const gameNow = _now() - gameStartTime;
+            waveScheduler.resumeQueueing(resp.notes, startIdx, resp.base_fret, resp.num_lanes, gameNow);
+          }
+          // Snap character from variant track X to the correct main-track lane (Story 6.6 bugfix).
+          if (resp.current_track != null) {
+            scene.moveToTrack(resp.current_track, true);
+          }
+          // Sync scene lane geometry with new scale (numLanes may differ from original).
+          if (resp.base_fret != null && resp.num_lanes != null) {
+            scene.setLaneGeometry(resp.base_fret, resp.num_lanes);
+          }
+          pushGameEvent('variant.promote', { base_fret: resp.base_fret, num_lanes: resp.num_lanes, note_index: startIdx });
+          if (_debugLogger) _debugLogger.log('variant.promote', { base_fret: resp.base_fret, num_lanes: resp.num_lanes, note_index: startIdx, current_track: resp.current_track });
+          safeZoneRenderer.reset();
+          setTransitionPhase('active', ctx);
+        }).catch((err) => {
+          console.error('[main] promote error', err);
+          waveScheduler.resumeQueueing(notesResp.notes, run?.cursor ?? 0);
+          setTransitionPhase('idle', ctx);
+        });
+      });
+
+      // Default active: reset variant tracking state.
+      setTransitionPhaseListener((next, prev, ctx) => {
+        if (next !== 'active') return;
+        shownVariantId = null;
+        activeVariant = null;
+        activeWindow = null;
+        variantPendingSpawn = null;
+        variantSpawnedForWave = null;
+        updateVariantHud();
+      });
+
+      function runAcceptTransition(resp) {
+        setTransitionPhase('accepted', { resp });
+      }
+      _runAcceptTransitionFn = runAcceptTransition;
+
       // Start the rendering loop so we can see the initial state
       let _pausedAt = null;
       let gameStartTime = 0; // set after audio setup so countdownStart is accurate
@@ -392,11 +558,37 @@ export async function bootstrap(root) {
 
         // Use visual collision detection as the primary failure source.
         // Invincible mode (debug): skip the failure transition entirely.
-        if (run.state === 'running' && !state.invincible && scene.checkCollision()) {
-          run.state = 'failed';
+        // Also skip during cinematic transition: character is on the variant lane and
+        // old-scale waves have primary-lane safe zones, so collision is expected but not fatal.
+        const _inTransition = ['accepted','riding','breather','promoting'].includes(currentTransitionPhase());
+        if (run.state === 'running' && !state.invincible && !_inTransition) {
+          const collided = scene.checkCollision();
+          if (window.__gameState) {
+            window.__gameState.collision.waveCount = scene.getActiveWaveCount();
+            window.__gameState.collision.charTrack = run?.cursor ?? null;
+            window.__gameState.collision.lastDebug = scene.getLastCollisionDebug?.() ?? null;
+          }
+          if (collided) {
+            const debug = window.__gameState?.collision?.lastDebug;
+            pushGameEvent('collision', debug ?? {});
+            if (_debugLogger) _debugLogger.log('collision', { charX: debug?.charX, safeX: debug?.safeX, safeTrack: debug?.safeTrack, numLanes: debug?.numLanes, charTrack: run?.cursor, phase: currentTransitionPhase() });
+            run.state = 'failed';
+          }
         }
 
         run.tick(now);
+
+        // Frame-level debug logging (throttled to every 60 frames to avoid log spam).
+        if (_debugLogger && window.__gameState && window.__gameState.loop.frameCount % 60 === 0) {
+          _debugLogger.log('frame', {
+            frame: window.__gameState.loop.frameCount,
+            phase: currentTransitionPhase(),
+            runState: run.state,
+            charTrack: run?.cursor,
+            waveCount: scene.getActiveWaveCount(),
+            inTransition: ['accepted','riding','breather','promoting'].includes(currentTransitionPhase()),
+          });
+        }
 
         // Sync observable session phase each frame (AC-4 story 0-5)
         if (window.__gameState) {
@@ -413,6 +605,8 @@ export async function bootstrap(root) {
         }
         if (run.state === 'failed') {
           const finalScore = window.__gameState?.score?.current || 0;
+          pushGameEvent('game.over', { reason: 'collision', score: finalScore });
+          if (_debugLogger) _debugLogger.log('game.over', { reason: 'collision', score: finalScore });
           if (window.__gameState) {
             window.__gameState.gameOver.isGameOver = true;
             window.__gameState.gameOver.reason = 'collision';
@@ -430,12 +624,12 @@ export async function bootstrap(root) {
           return;
         }
         if (_pausedAt !== null) {
-          gameStartTime += now - _pausedAt;
+          gameStartTime += _now() - _pausedAt;
           scene.setGameStartTime(gameStartTime);
           _pausedAt = null;
         }
 
-        const game_now = now - gameStartTime;
+        const game_now = _now() - gameStartTime;
         const speedMultiplier = 1.0; // TODO: wire run.speedMultiplier when available
         waveScheduler.tick(game_now, speedMultiplier);
         const waves = waveScheduler.waves;
@@ -468,12 +662,20 @@ export async function bootstrap(root) {
           }
         }
 
-        scene.setWaves(waves, now);
+        scene.setWaves(waves, _now());
         safeZoneRenderer.update(waves, 0, (track) => laneX(track, notesResp.num_lanes), now, gameStartTime, currentInstrument());
 
         if (window.__gameState) {
           window.__gameState.scene.waveCount = waves.length;
         }
+
+        // During riding phase, camera X tracks the character (Story 6.3).
+        if (currentTransitionPhase() === 'riding') {
+          scene.setTargetCameraX(scene.getCharacterX());
+        }
+
+        // Per-frame hook: used by breather phase timer/wave-clearance check (Story 6.4).
+        if (_perFrameHook) _perFrameHook();
 
         scene.render(now);
         updateVariantHud(); // AC-4: update each frame to catch brief adjacency window
@@ -489,9 +691,10 @@ export async function bootstrap(root) {
 
       // countdownStart must be captured AFTER audio setup so any async delay
       // doesn't skew gameStartTime and cause waves to appear early.
-      const countdownStart = performance.now();
+      const countdownStart = _now();
       gameStartTime = countdownStart + 3500;
       scene.setGameStartTime(gameStartTime);
+      if (_debugLogger) _debugLogger.setGameStartTime(gameStartTime);
 
       rafId = requestAnimationFrame(loop);
 
@@ -513,8 +716,17 @@ export async function bootstrap(root) {
 
       // Proximity dismiss: SceneManager fires this when safe zone passes player (AC-2, AC-3)
       scene.setOnVariantMissed(() => {
+        // Guard: only dismiss during proposed or riding — after breather the variant is
+        // being committed, not missed. Without this guard a late miss fires during breather
+        // and overwrites the phase to idle, aborting the transition.
+        const _missPhase = currentTransitionPhase();
+        if (_missPhase !== 'proposed' && _missPhase !== 'riding') return;
         if (activeVariant) {
           gameClient.dismissVariant().catch(() => {});
+          if (waveScheduler.queueingPaused) {
+            waveScheduler.resumeQueueing(run.sequence, run.cursor);
+          }
+          setTransitionPhase('idle', { reason: 'missed' });
           shownVariantId = null;
           activeVariant = null;
           activeWindow = null;
@@ -529,8 +741,10 @@ export async function bootstrap(root) {
         }
       });
 
-      audio.onDetection(async (det) => {
+      let _onDetection = null;
+      const detectionHandler = async (det) => {
         if (!run || run.state !== 'running') return;
+        _onDetection = detectionHandler;
         if (!det?.note || det.note.midi == null) return;
 
         // Variant accept: gate on adjacency — safe zone must be at player position (AC-1).
@@ -539,6 +753,15 @@ export async function bootstrap(root) {
           let resp = null;
           try { resp = await gameClient.acceptVariant(det.note.midi); }
           catch (_) {
+            // Guard: another concurrent callback may have already advanced the phase.
+            if (currentTransitionPhase() !== 'proposed') {
+              if (_debugLogger) _debugLogger.log('variant.accept.stale', { phase: currentTransitionPhase(), error: 'network' });
+              return;
+            }
+            if (waveScheduler.queueingPaused) {
+              waveScheduler.resumeQueueing(run.sequence, run.cursor);
+            }
+            setTransitionPhase('idle', { reason: 'accept-failed' });
             shownVariantId = null;
             activeVariant = null;
             activeWindow = null;
@@ -548,38 +771,23 @@ export async function bootstrap(root) {
             return;
           }
           if (resp && resp.success) {
-            const startIdx = resp.current_note_index ?? 0;
-            scene.acceptVariantTracks(
-              { num_lanes: resp.num_lanes, base_fret: resp.base_fret },
-              resp.notes,
-              startIdx,
-            );
-            if (run && resp.notes) {
-              run.sequence = resp.notes;
-              run.cursor = startIdx;
-              setExpected();
-            }
-            if (resp.ascending_note_count != null) {
-              ascendingNoteCount = resp.ascending_note_count;
-            }
-            if (resp.notes) {
-              rootNote = resp.notes[0] ?? null;
-              apexNote = ascendingNoteCount > 0 ? resp.notes[ascendingNoteCount - 1] : null;
-              waveScheduler.reset(resp.notes, startIdx);
-            }
-            scene.setWaves([], performance.now());
-            safeZoneRenderer.reset();
-
-            shownVariantId = null;
-            activeVariant = null;
-            activeWindow = null;
-            variantPendingSpawn = null;
-            variantSpawnedForWave = null;
-            updateVariantHud();
+            pushGameEvent('variant.accept', { variant_id: activeVariant?.variant_id ?? resp.variant_id, midi: det.note.midi });
+            if (_debugLogger) _debugLogger.log('variant.accept', { variant_id: activeVariant?.variant_id ?? resp.variant_id, midi: det.note.midi });
+            runAcceptTransition(resp);
             return;
           }
           // Accept attempted but backend rejected (success:false). Clear stale variant
           // state and consume the trigger note — do NOT also process as a regular note.
+          // Guard: if another detection callback already advanced the phase (accepted→riding→breather)
+          // via a successful concurrent acceptVariant call, do NOT overwrite to idle.
+          if (currentTransitionPhase() !== 'proposed') {
+            if (_debugLogger) _debugLogger.log('variant.accept.stale', { phase: currentTransitionPhase() });
+            return;
+          }
+          if (waveScheduler.queueingPaused) {
+            waveScheduler.resumeQueueing(run.sequence, run.cursor);
+          }
+          setTransitionPhase('idle', { reason: 'accept-rejected' });
           shownVariantId = null;
           activeVariant = null;
           activeWindow = null;
@@ -598,8 +806,10 @@ export async function bootstrap(root) {
         const result = run.onDetection(det);
         if (result === 'accepted') {
           // Sync with backend
-          const playResult = await gameClient.playNote(det.note.midi, performance.now() - run.startedAt);
-          if (playResult && playResult.success) {
+          const playResult = await gameClient.playNote(det.note.midi, _now() - run.startedAt);
+          pushGameEvent('note.accepted', { midi: det.note.midi, cursor: prevIdx });
+            if (_debugLogger) _debugLogger.log('note.accepted', { midi: det.note.midi, cursor: prevIdx, track: playResult?.game_state?.current_track });
+            if (playResult && playResult.success) {
             if (playResult.game_state && playResult.game_state.current_track !== undefined) {
               scene.moveToTrack(playResult.game_state.current_track);
             }
@@ -619,6 +829,8 @@ export async function bootstrap(root) {
                 try {
                   const resp = await gameClient.proposeVariant();
                   if (resp && resp.success) {
+                    pushGameEvent('variant.propose', { variant_id: resp.variant.variant_id, side: resp.variant.side, root_midi: resp.variant.root_midi });
+                    if (_debugLogger) _debugLogger.log('variant.propose', { variant_id: resp.variant.variant_id, side: resp.variant.side, root_midi: resp.variant.root_midi, base_fret: resp.variant.base_fret, num_lanes: resp.variant.num_lanes });
                     activeVariant = resp.variant;
                     activeWindow = resp.window;
                     shownVariantId = resp.variant.variant_id;
@@ -628,6 +840,7 @@ export async function bootstrap(root) {
                       window.__gameState.variant.timerMs = Math.max(0, resp.window.deadline_ms - Date.now());
                       window.__gameState.variant.timerExpired = false;
                     }
+                    setTransitionPhase('proposed', { variant: resp.variant });
                     _queueVariantSpawn(resp.variant);
                   }
                 } finally {
@@ -642,7 +855,8 @@ export async function bootstrap(root) {
         } else if (result === 'rejected') {
           feedbackEl.textContent = '·';
         }
-      });
+      };
+      audio.onDetection(detectionHandler);
 
       setExpected();
 
@@ -675,8 +889,19 @@ export async function bootstrap(root) {
         }
 
         // Variant lifecycle (feature 008-track-variants).
+        const prevVariant = activeVariant;
         activeVariant = pollState.active_variant || null;
         activeWindow = pollState.active_window || null;
+        // Polling-driven dismiss: backend cleared the variant without frontend initiating it.
+        if (prevVariant && !activeVariant && currentTransitionPhase() === 'proposed') {
+          if (waveScheduler.queueingPaused) {
+            waveScheduler.resumeQueueing(run.sequence, run.cursor);
+          }
+          setTransitionPhase('idle', { reason: 'dismissed' });
+          shownVariantId = null;
+          variantPendingSpawn = null;
+          variantSpawnedForWave = null;
+        }
         if (window.__gameState) {
           window.__gameState.variant.id = activeVariant ? activeVariant.variant_id : null;
           window.__gameState.variant.timerRunning = !!(activeVariant && activeWindow &&
@@ -715,6 +940,7 @@ export async function bootstrap(root) {
     // Keep the mic stream alive for the next run; silence detection and error handlers.
     if (audio) { audio.onDetection(() => {}); audio.onError(() => {}); }
     pauseBtn.classList.add('hidden');
+    if (_debugLogger) { _debugLogger.destroy(); _debugLogger = null; }
     if (window.__gameState) {
       window.__gameState.session.phase = 'idle';
       window.__gameState.loop.running = false;
@@ -799,6 +1025,36 @@ export async function bootstrap(root) {
           }, 50);
         };
       })(),
+      // Shorten the breather timer for fast E2E test completion (Story 6.7).
+      setBreatherMs: (ms) => { _variantBreatherMs = ms; },
+      // Clear all active wave meshes AND scheduler queue (breather wave-clearance gate in tests).
+      clearSceneWaves: () => { scene.clearWavesForTesting(); _waveScheduler?.clearWavesForTesting(); },
+      // Simulates a detected MIDI note through the real detection pipeline.
+      playNote: (midi) => {
+        if (!_onDetection) return;
+        const name = midiToName(midi);
+        _onDetection({
+          note: { midi, name, octave: Math.floor(midi / 12) - 1 },
+          frequencyHz: 440 * Math.pow(2, (midi - 69) / 12),
+          confidence: 0.95,
+          centsOffset: 0,
+        });
+      },
+      // Triggers accept transition via phase machine with a synthetic response (Story 6.1 smoke).
+      triggerVariantAccept: (mockResp) => {
+        if (!run || run.state !== 'running') return;
+        if (!_runAcceptTransitionFn) return;
+        const resp = mockResp || {
+          success: true,
+          current_note_index: 0,
+          num_lanes: 6,
+          base_fret: 2,
+          notes: run.sequence,
+          ascending_note_count: run.sequence ? Math.ceil(run.sequence.length / 2) : 0,
+        };
+        setTransitionPhase('proposed', { variant: { variant_id: 'test-v1', side: 'RIGHT' } });
+        _runAcceptTransitionFn(resp);
+      },
     };
   }
 

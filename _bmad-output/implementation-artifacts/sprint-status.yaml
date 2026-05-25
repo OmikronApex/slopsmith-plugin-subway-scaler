@@ -1,5 +1,5 @@
 generated: "2026-05-21"
-last_updated: "2026-05-25"  # 5-8 done — all remaining review patches applied
+last_updated: "2026-05-25"  # Epic 6 stories 6-1 through 6-7 all in review
 project: "slopsmith-plugin-subway-scaler"
 project_key: "SS"
 tracking_system: "local"
@@ -72,3 +72,14 @@ development_status:
   5-6-full-string-range-wave-spawning: done
   5-7-variant-visual-spec-track-coloring-spawn-timing-transition-animation: done
   5-8-safe-zone-gated-track-switching: done
+
+  # Epic 6 — Variant Transition Cinematic & Handoff
+  epic-6: review
+  6-1-accept-gate-state-machine-soft-halt: review
+  6-2-character-lateral-traversal-onto-variant-track: review
+  6-3-bend-camera-follow-eased-lerp-look-ahead: review
+  6-4-post-bend-breather-and-new-scale-track-approach: review
+  6-5-backend-variant-promote-endpoint: review
+  6-6-variant-scale-wave-spawn-activation: review
+  6-7-e2e-transition-sequence-coverage: review
+  6-8-variant-transition-cinematic-refinement: ready-for-dev

@@ -43,6 +43,11 @@ def test_left_accept_starts_ascending_from_root():
 
     result = engine.accept_variant(session.session_id, midi=trigger, now_ms=1500)
     assert result["success"] is True
+    assert result["state"] == "accepted"
+
+    # Promote commits the scale swap.
+    promoted = engine.promote_variant(session.session_id)
+    assert promoted["success"] is True
 
     session = engine.get_session(session.session_id)
     assert session.root_midi == new_root
@@ -87,6 +92,11 @@ def test_right_accept_starts_descending_from_apex():
 
     result = engine.accept_variant(session.session_id, midi=trigger, now_ms=1500)
     assert result["success"] is True
+    assert result["state"] == "accepted"
+
+    # Promote commits the scale swap.
+    promoted = engine.promote_variant(session.session_id)
+    assert promoted["success"] is True
 
     session = engine.get_session(session.session_id)
     # Apex of new scale must equal the trigger (target_apex)
@@ -94,5 +104,5 @@ def test_right_accept_starts_descending_from_apex():
     # First note to play is the first descending step
     assert session.current_note_index == session.ascending_note_count
     # Returned root_midi is the computed root, not the trigger apex
-    assert result["root_midi"] != target_apex
-    assert result["root_midi"] == session.root_midi
+    assert promoted["root_midi"] != target_apex
+    assert promoted["root_midi"] == session.root_midi

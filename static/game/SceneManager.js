@@ -116,6 +116,20 @@ export function createScene(canvas) {
   let baseFret = 0;
   let numLanes = 6;
 
+  // Camera constants (Story 6.3)
+  const CAMERA_BEND_YAW_MAX = 12 * Math.PI / 180;
+  const CAMERA_LOOK_AHEAD_Z = 5;
+  const CAMERA_RESET_DURATION_MS = 500;
+
+  let _cameraMode = 'default';
+  let _cameraResetStartMs = 0;
+  let _cameraResetStartYaw = 0;
+
+  // Pending tracks — new-scale track meshes scrolling in from horizon (Story 6.4)
+  let _pendingTracks = [];         // [{ mesh, targetZ, speedPxMs }]
+  let _tracksLandedCb = null;
+  let _tracksLandedFired = false;
+
   function clearWaves() {
     for (const w of activeWaves.values()) {
       scene.remove(w.mesh);
@@ -152,6 +166,16 @@ export function createScene(canvas) {
     clearWaves();
     clearVariantGeom();
     tween = null;
+    _charTraversal = null;
+    _bendMidpointCb = null;
+    _bendMidpointFired = false;
+    _cameraMode = 'default';
+    _cameraResetStartMs = 0;
+    _cameraResetStartYaw = 0;
+    for (const pt of _pendingTracks) { scene.remove(pt.mesh); }
+    _pendingTracks = [];
+    _tracksLandedCb = null;
+    _tracksLandedFired = false;
     succeeded = false;
     character.position.set(laneX(0, numLanes), CHAR_Y, FRONT_Z + 0.1);
     character.rotation.set(0, 0, 0);
@@ -206,6 +230,41 @@ export function createScene(canvas) {
     }
     variantAcceptState = null;
     variantInfo = null;
+    _charTraversal = null;
+    _bendMidpointCb = null;
+    _bendMidpointFired = false;
+  }
+
+  // Remove only track lane meshes — preserves activeWaves (in-flight old-scale wave meshes).
+  function clearTracks() {
+    for (const t of tracks) { scene.remove(t.mesh); }
+    tracks = [];
+  }
+
+  // Spawn new-scale track meshes at SPAWN_Z and scroll them toward rest position (Story 6.4).
+  function spawnVariantTracks(newBaseFret, newNumLanes, speedPxMs) {
+    clearTracks();
+    _pendingTracks = [];
+    _tracksLandedFired = false;
+    for (let i = 0; i < newNumLanes; i++) {
+      const x = laneX(i, newNumLanes);
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.06, TRACK_DEPTH), trackMat);
+      mesh.position.set(x, -0.05, SPAWN_Z);
+      scene.add(mesh);
+      _pendingTracks.push({ mesh, targetZ: -TRACK_DEPTH / 2 + 5, speedPxMs });
+    }
+    baseFret = newBaseFret;
+    numLanes = newNumLanes;
+  }
+
+  function areTracksLanded() {
+    if (_pendingTracks.length === 0) return false;
+    return _pendingTracks.every(pt => pt.mesh.position.z <= pt.targetZ + 1);
+  }
+
+  function setOnTracksLanded(cb) {
+    _tracksLandedCb = cb;
+    _tracksLandedFired = false;
   }
 
   function _variantLaneX(side, anchorFret, anchorNoteLane) {
@@ -310,6 +369,8 @@ export function createScene(canvas) {
     }
     // startIndex: which note the player will play next (used to snap character to the
     // note they just played, i.e. startIndex - 1 for RIGHT / 0 for LEFT).
+    // NOTE: variantProposePiece is NOT cleared here — it becomes the ride piece in Epic 6
+    // and continues scrolling until it naturally exits the frame.
     variantAcceptState = { newPrimary, acceptX, characterMoved: false, notes, startIndex };
   }
 
@@ -388,6 +449,18 @@ export function createScene(canvas) {
     rebuildTracks();
   }
 
+  // Lightweight lane geometry update without clearing scene (post-promote).
+  function setLaneGeometry(f, nL) {
+    baseFret = f;
+    numLanes = nL;
+  }
+
+  let _lastCollisionDebug = null;
+
+  function getLastCollisionDebug() {
+    return _lastCollisionDebug;
+  }
+
   function checkCollision() {
     if (!instrument || succeeded) return false;
 
@@ -404,6 +477,16 @@ export function createScene(canvas) {
         const safeX = laneX(w.data.safe_track, numLanes);
         // Lanes are 1.6 apart. If we are > 0.6 away from safe center, we are hitting a cart.
         if (Math.abs(charX - safeX) > 0.6) {
+          _lastCollisionDebug = {
+            charX: Math.round(charX * 100) / 100,
+            charZ: Math.round(charZ * 100) / 100,
+            safeX: Math.round(safeX * 100) / 100,
+            safeTrack: w.data.safe_track,
+            waveId: w.data.wave_id,
+            waveNoteIndex: w.data.note_index,
+            numLanes,
+            baseFret,
+          };
           return true;
         }
       }
@@ -420,6 +503,25 @@ export function createScene(canvas) {
       const e = 1 - (1 - t) * (1 - t);
       character.position.x = tween.fromX + (tween.toX - tween.fromX) * e;
       if (t >= 1) tween = null;
+    }
+
+    // Z-bound character traversal: lerp X from main lane to variant lane (Story 6.2).
+    if (_charTraversal && variantProposePiece) {
+      const straightZ = variantProposePiece.mesh.position.z;
+      const frontEdgeZ = straightZ + STRAIGHT_LEN / 2 + DIAG_LEN;
+      const midpointZ = straightZ + STRAIGHT_LEN / 2 + DIAG_LEN / 2;
+      const range = frontEdgeZ - midpointZ;
+      const progress = range > 0 ? Math.max(0, Math.min(1, (frontEdgeZ - 0) / range)) : 1;
+      character.position.x = _charTraversal.startX + (_charTraversal.targetX - _charTraversal.startX) * progress;
+      if (progress >= 1) _charTraversal = null;
+    }
+
+    // Bend midpoint reached callback — fires once when incoming diagonal midpoint hits player (z ≥ 0).
+    if (_bendMidpointCb && !_bendMidpointFired && isBendMidpointReached()) {
+      _bendMidpointFired = true;
+      const cb = _bendMidpointCb;
+      _bendMidpointCb = null;
+      cb();
     }
 
     // Update wave positions
@@ -519,12 +621,53 @@ export function createScene(canvas) {
       }
     }
 
+    // Pending tracks — scroll new-scale track meshes from SPAWN_Z to rest position (Story 6.4).
+    if (_pendingTracks.length > 0) {
+      for (const pt of _pendingTracks) {
+        pt.mesh.position.z -= pt.speedPxMs * 0.5 * (dt * 1000);
+        if (pt.mesh.position.z <= pt.targetZ) {
+          pt.mesh.position.z = pt.targetZ;
+        }
+      }
+      if (!_tracksLandedFired && areTracksLanded()) {
+        _tracksLandedFired = true;
+        // Promote pending to main tracks array
+        for (const pt of _pendingTracks) { tracks.push({ mesh: pt.mesh }); }
+        _pendingTracks = [];
+        const cb = _tracksLandedCb;
+        _tracksLandedCb = null;
+        if (cb) cb();
+      }
+    }
+
     currentCameraX += (targetCameraX - currentCameraX) * 0.1;
     const rad = (CAMERA_PITCH * Math.PI) / 180;
     camera.position.x = currentCameraX;
     camera.position.y = CAMERA_DISTANCE * Math.sin(rad);
     camera.position.z = CAMERA_DISTANCE * Math.cos(rad) + camBase.lookAt[2];
-    camera.lookAt(currentCameraX, 0, camBase.lookAt[2]);
+
+    if (_cameraMode === 'riding') {
+      // Eased yaw proportional to traversal progress (Story 6.3)
+      const progress = getTraversalProgress() ?? 0;
+      const yaw = CAMERA_BEND_YAW_MAX * Math.sin(progress * Math.PI);
+      const sideSign = variantInfo?.side === 'RIGHT' ? 1 : -1;
+      camera.rotation.y = yaw * sideSign;
+      const lookAheadZ = camBase.lookAt[2] + CAMERA_LOOK_AHEAD_Z;
+      camera.lookAt(currentCameraX + yaw * 2, 0, lookAheadZ);
+    } else if (_cameraResetStartMs > 0) {
+      // Ease yaw back to 0 after riding phase ends
+      const t = Math.min(1, (nowMs - _cameraResetStartMs) / CAMERA_RESET_DURATION_MS);
+      const e = 1 - (1 - t) * (1 - t);
+      camera.rotation.y = _cameraResetStartYaw * (1 - e);
+      if (t >= 1) {
+        camera.rotation.y = 0;
+        _cameraResetStartMs = 0;
+      }
+      camera.lookAt(currentCameraX, 0, camBase.lookAt[2]);
+    } else {
+      camera.rotation.y = 0;
+      camera.lookAt(currentCameraX, 0, camBase.lookAt[2]);
+    }
 
     renderer.render(scene, camera);
   }
@@ -532,6 +675,61 @@ export function createScene(canvas) {
   function isVariantSafeZoneAdjacent() {
     if (!variantSafeZoneMesh) return false;
     return Math.abs(variantSafeZoneMesh.position.z) <= VARIANT_SZ_DEPTH / 2;
+  }
+
+  // Returns true when the incoming diagonal's midpoint has reached z = 0 (player position).
+  function isBendMidpointReached() {
+    if (!variantProposePiece) return false;
+    const straightZ = variantProposePiece.mesh.position.z;
+    return straightZ + STRAIGHT_LEN / 2 + DIAG_LEN / 2 >= 0;
+  }
+
+  // Character traversal state — lateral lerp bound to variant propose piece Z-progress.
+  let _charTraversal = null; // { startX, targetX }
+  let _bendMidpointCb = null;
+  let _bendMidpointFired = false;
+
+  function setCharacterTargetX(targetX) {
+    _charTraversal = { startX: character.position.x, targetX };
+  }
+
+  function setOnBendMidpointReached(cb) {
+    _bendMidpointCb = cb;
+    _bendMidpointFired = false;
+  }
+
+  function clearBendMidpointCallback() {
+    _bendMidpointCb = null;
+    _bendMidpointFired = false;
+  }
+
+  function getVariantInfo() {
+    return variantInfo ? { variantX: variantInfo.variantX, side: variantInfo.side } : null;
+  }
+
+  function setCameraMode(mode) {
+    if (mode === 'default' && _cameraMode === 'riding') {
+      _cameraResetStartMs = performance.now();
+      _cameraResetStartYaw = camera.rotation.y;
+    }
+    _cameraMode = mode;
+  }
+
+  function setTargetCameraX(x) {
+    targetCameraX = x;
+  }
+
+  function getCharacterX() {
+    return character.position.x;
+  }
+
+  function getTraversalProgress() {
+    if (!_charTraversal || !variantProposePiece) return null;
+    const straightZ = variantProposePiece.mesh.position.z;
+    const frontEdgeZ = straightZ + STRAIGHT_LEN / 2 + DIAG_LEN;
+    const midpointZ = straightZ + STRAIGHT_LEN / 2 + DIAG_LEN / 2;
+    const range = frontEdgeZ - midpointZ;
+    return range > 0 ? Math.max(0, Math.min(1, (frontEdgeZ - 0) / range)) : 1;
   }
 
   function setOnVariantMissed(cb) {
@@ -546,15 +744,33 @@ export function createScene(canvas) {
     showSuccess,
     setGameStartTime,
     setBaseFret,
+    setLaneGeometry,
     checkCollision,
     getWaveCount() { return activeWaves.size; },
+    getActiveWaveCount() { return activeWaves.size; },
+    getLastCollisionDebug,
+    getLastWaveSpeed() { return lastWaveSpeed; },
     reset,
     render,
     proposeVariantTracks,
     dismissVariantTracks,
     acceptVariantTracks,
+    clearTracks,
+    spawnVariantTracks,
+    areTracksLanded,
+    setOnTracksLanded,
     isVariantSafeZoneAdjacent,
+    isBendMidpointReached,
+    setCharacterTargetX,
+    setOnBendMidpointReached,
+    clearBendMidpointCallback,
+    getVariantInfo,
+    getCharacterX,
+    getTraversalProgress,
+    setCameraMode,
+    setTargetCameraX,
     setOnVariantMissed,
+    clearWavesForTesting() { clearWaves(); },
     resize(w, h) {
       if (w <= 0 || h <= 0) return;
       renderer.setSize(w, h, false);

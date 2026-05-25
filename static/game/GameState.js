@@ -1,6 +1,17 @@
 // Run state machine + note-acceptance gate.
 // States: idle / running / paused / succeeded / failed / abandoned.
 
+// ===== TRANSITION_PHASES constants (Story 6.1) =====
+export const TRANSITION_PHASES = {
+  IDLE: 'idle',
+  PROPOSED: 'proposed',
+  ACCEPTED: 'accepted',
+  RIDING: 'riding',
+  BREATHER: 'breather',
+  PROMOTING: 'promoting',
+  ACTIVE: 'active',
+};
+
 // ===== PHASES constants (Story 1.2) =====
 export const PHASES = {
   IDLE: 'idle',

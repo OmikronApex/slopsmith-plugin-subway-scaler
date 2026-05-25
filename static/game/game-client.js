@@ -119,4 +119,14 @@ export class GameClient {
     });
     return await r.json();
   }
+
+  async promoteVariant() {
+    if (!this.sessionId) return null;
+    const r = await fetch(`${this.baseUrl}/game/${this.sessionId}/variant/promote`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    return await r.json();
+  }
 }
