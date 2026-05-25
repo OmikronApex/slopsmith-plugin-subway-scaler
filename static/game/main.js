@@ -442,24 +442,28 @@ export async function bootstrap(root) {
         setTransitionPhase('riding', ctx);
       });
 
-      // Riding → breather: character traverses diagonal then straight section (Story 6.8 AC-4).
-      // Extended gate: diagonal complete AND RIDE_EXTEND_Z units on straight section traveled.
-      const RIDE_EXTEND_Z = 15;
+      // Riding → breather: character traverses diagonal then a brief straight extension (Story 6.8 AC-4).
+      // Gate: diagonal traversal completes, then time-based extension (~400ms) before breather.
+      // Safe zone cleared immediately on riding entry — accepted variant can't be missed.
       setTransitionPhaseListener((next, prev, ctx) => {
         if (next !== 'riding') return;
         const info = scene.getVariantInfo();
         scene.setCameraMode('riding');
+        // Clear safe zone so it can't fire a false miss during the extended ride.
+        scene.clearVariantSafeZone?.();
         if (info) {
           scene.setCharacterTargetX(info.variantX);
           scene.clearBendMidpointCallback();
+          let _extendStartMs = null;
+          const RIDE_EXTEND_MS = 400;
           _perFrameHook = () => {
-            const diagComplete = scene.getTraversalProgress() === null || scene.getTraversalProgress() >= 0.95;
-            const characterZ = scene.getCharacterZ();
-            const straightTraveled = characterZ <= -RIDE_EXTEND_Z && !scene.isTraversalActive();
-            if (diagComplete && straightTraveled) {
-              _perFrameHook = null;
-              scene.setCameraMode('default');
-              setTransitionPhase('breather', ctx);
+            if (!scene.isTraversalActive()) {
+              if (_extendStartMs === null) _extendStartMs = performance.now();
+              if (performance.now() - _extendStartMs >= RIDE_EXTEND_MS) {
+                _perFrameHook = null;
+                scene.setCameraMode('default');
+                setTransitionPhase('breather', ctx);
+              }
             }
           };
         } else {

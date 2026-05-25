@@ -778,6 +778,19 @@ export function createScene(canvas) {
     onVariantMissedCb = cb;
   }
 
+  // Clear variant safe zone and miss callback without disturbing traversal or geometry.
+  // Called on accept so the safe zone can't trigger a false miss during riding.
+  function clearVariantSafeZone() {
+    if (variantSafeZoneMesh) {
+      scene.remove(variantSafeZoneMesh);
+      variantSafeZoneMesh.geometry?.dispose();
+      variantSafeZoneMesh.material?.dispose();
+      variantSafeZoneMesh = null;
+    }
+    onVariantMissedCb = null;
+    lastVariantTickMs = 0;
+  }
+
   return {
     threeScene: scene,
     setInstrument,
@@ -814,6 +827,7 @@ export function createScene(canvas) {
     setCameraMode,
     setTargetCameraX,
     setOnVariantMissed,
+    clearVariantSafeZone,
     clearWavesForTesting() { clearWaves(); },
     resize(w, h) {
       if (w <= 0 || h <= 0) return;
