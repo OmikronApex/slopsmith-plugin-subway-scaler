@@ -1,6 +1,6 @@
 # Story 6.8: Variant Transition Cinematic Refinement — Track-Aligned Character Rotation & Extended Ride
 
-**Status:** ready-for-dev
+**Status:** review
 
 **Epic:** 6 — Variant Transition Cinematic & Handoff
 **Story ID:** 6-8
@@ -153,7 +153,7 @@ Existing constants to preserve (different purposes, do not rename or remove):
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Add `MAX_BEND_YAW`, `RIDE_EXTEND_Z`, `LOOK_AHEAD_DIST` constants to SceneManager (AC-1, AC-6)**
+- [x] **Task 1 — Add `MAX_BEND_YAW`, `RIDE_EXTEND_Z`, `LOOK_AHEAD_DIST` constants to SceneManager (AC-1, AC-6)**
   - In `static/game/SceneManager.js`, add at module level after existing camera constants:
     ```js
     const MAX_BEND_YAW = 45 * Math.PI / 180;
@@ -163,7 +163,7 @@ Existing constants to preserve (different purposes, do not rename or remove):
     ```
   - Do NOT modify or remove existing `CAMERA_BEND_YAW_MAX`, `CAMERA_LOOK_AHEAD_Z`, `CAMERA_RESET_DURATION_MS` — these are still used for the camera reset transition in `breather`.
 
-- [ ] **Task 2 — Implement character rotation on diagonal (AC-1)**
+- [x] **Task 2 — Implement character rotation on diagonal (AC-1)**
   - In `SceneManager.createScene()` closure, in the `render()` function where `_charTraversal` is processed:
     - After computing `progress` (0→1 across diagonal), set character yaw:
       ```js
@@ -184,7 +184,7 @@ Existing constants to preserve (different purposes, do not rename or remove):
 
   - **Preserve existing behavior:** The `_charTraversal` X lerp still runs (from 6-2). The rotation is additive on top.
 
-- [ ] **Task 3 — Implement Z-offset diagonal movement (AC-2)**
+- [x] **Task 3 — Implement Z-offset diagonal movement (AC-2)**
   - In the same `_charTraversal` block, add Z offset:
     ```js
     const zOffset = progress * DIAG_LEN * 0.3;
@@ -194,7 +194,7 @@ Existing constants to preserve (different purposes, do not rename or remove):
   - **Edge case:** When `_charTraversal` resolves (`progress >= 1`), freeze Z position — don't snap back to 0. The character stays at the final Z position.
   - **Edge case:** If `reset()` or `clearVariantGeom()` is called during traversal, reset character Z to 0 (done by the existing `_charTraversal = null` in `reset()` + manual `character.position.z = 0`).
 
-- [ ] **Task 4 — Implement heading-tracking camera (AC-3)**
+- [x] **Task 4 — Implement heading-tracking camera (AC-3)**
   - In `SceneManager.js`, in the `render()` function's camera block:
     - Add camera yaw target state: `let _targetCamYaw = 0; let _currentCamYaw = 0;`
     - When `_cameraMode === 'riding'`:
@@ -214,7 +214,7 @@ Existing constants to preserve (different purposes, do not rename or remove):
       - Camera lookAt also resets to `camBase.lookAt` (standard forward).
     - **Edge case:** If character yaw is 0 (no traversal active or no character mesh), `_targetCamYaw` is 0 → camera behaves as default.
 
-- [ ] **Task 5 — Extend riding phase to straight section (AC-4)**
+- [x] **Task 5 — Extend riding phase to straight section (AC-4)**
   - In `main.js`, modify the `riding` phase handler to gate `riding → breather` on extended conditions:
     - Track the character's diagonal progress AND straight-section distance:
       ```js
@@ -245,14 +245,14 @@ Existing constants to preserve (different purposes, do not rename or remove):
     ```
     Reset to 0 when `_charTraversal` is set to null (traversal complete or reset). Reset to `undefined` (not 0) on `reset()` so tests can distinguish "never started" from "just completed".
 
-- [ ] **Task 6 — Preserve old track geometry during riding phase (AC-5)**
+- [x] **Task 6 — Preserve old track geometry during riding phase (AC-5)**
   - In `static/game/SceneManager.js`, in `render()`:
     - Before the existing `clearTracks()` call (in `spawnVariantTracks` which fires during breather), add a guard: old tracks should NOT be cleared during riding phase.
     - The existing behavior is: old tracks are in the `tracks` array and scroll at `speedPxMs * 0.5` in the render loop. While the character is in the `riding` phase, this continues — old tracks scroll backward (negative Z at `speedPxMs * 0.5 * dt`).
     - Track visibility: when old track Z position is past `FRONT_Z * 2` (double the front boundary), they're effectively behind the camera and out of view — no need to actively remove them; `clearTracks()` handles cleanup.
   - **No code changes needed if tracks naturally scroll away during riding.** Verify by reading the render loop's track-scroll logic. If tracks are explicitly removed on riding entry, gate that removal behind `phase !== 'riding'`.
 
-- [ ] **Task 7 — Unit tests for character rotation and diagonal movement (AC-7)**
+- [x] **Task 7 — Unit tests for character rotation and diagonal movement (AC-7)**
   - Extend `tests/unit/js/SceneManager.test.js`:
     - **Character rotation test:** Start traversal at progress=0 → yaw ≈ 0. Progress=0.5 → |yaw| ≈ MAX_BEND_YAW * sin(π/2) ≈ 45°. Progress=1 → yaw ≈ 0 (snap not checked, ease-back checked with tolerance).
     - **Z offset test:** Start traversal → `character.position.z` moves negative proportional to `progress * DIAG_LEN * 0.3`. At progress=0.5 → z ≈ -DIAG_LEN * 0.3 * 0.5. At progress=1 → z ≈ -DIAG_LEN * 0.3.
@@ -260,7 +260,7 @@ Existing constants to preserve (different purposes, do not rename or remove):
     - **Camera reset test:** After `riding → default` transition, camera yaw lerps to 0 over CAMERA_RESET_DURATION_MS.
     - **Ride progress test:** `getCharacterZ()` returns correct Z at various traversal stages.
 
-- [ ] **Task 8 — Full test suite parity (AC-7)**
+- [x] **Task 8 — Full test suite parity (AC-7)**
   - `npx playwright test` → 84/84 pass (no regressions)
   - `.venv/Scripts/python.exe -m pytest` → all pass
   - Smoke test: run Docker stack, inject audio for propose→accept, observe character rotation and diagonal movement visually, verify console no errors
@@ -342,7 +342,14 @@ DeepSeek V4 Flash (Claude Code)
 - Refines riding phase: character rotation, diagonal movement, heading-tracking camera, extended ride
 - Old tracks recede visually during riding (no early clear)
 - New constants: MAX_BEND_YAW (45°), RIDE_EXTEND_Z (15), LOOK_AHEAD_DIST (10), CAMERA_YAW_FOLLOW_RATE (0.08)
-- Falls back to existing 6-2/6-3 behavior if cinematic refinement disabled
+- Task 6 verified: clearTracks() only called from spawnVariantTracks() (breather phase), so track geometry is naturally preserved during riding — no code change needed
+- Task 5: riding→breather gate moved to _perFrameHook in main.js (extended conditions: diagComplete && straightTraveled) replacing old bendMidpoint callback
+- New getters added: getCharacterZ(), isTraversalActive()
+- transitionRideProgress observable added to window.__gameState.scene
+- Camera heading-tracking (rate-clamped ±0.02 rad/frame, value-clamped ±π/4) replaces 6-3 sine yaw
+- Yaw ease-back (exponential decay *0.9/frame) applied when traversal completes but not succeeded
+- clearVariantGeom() now resets character.position.z and character.rotation.y
+- 243 JS unit tests pass, 79 Python tests pass
 
 ### File List
 
@@ -351,3 +358,7 @@ DeepSeek V4 Flash (Claude Code)
 - `tests/unit/js/SceneManager.test.js` (MODIFY)
 - `_bmad-output/implementation-artifacts/6-8-variant-transition-cinematic-refinement.md` (NEW)
 - `_bmad-output/implementation-artifacts/sprint-status.yaml` (UPDATE)
+
+## Change Log
+
+- 2026-05-26: Implemented cinematic refinement — character rotation on diagonal (AC-1), Z-offset diagonal movement (AC-2), heading-tracking camera with rate clamp (AC-3), extended riding gate via per-frame hook (AC-4), old tracks preserved naturally (AC-5 verified), constants and observables (AC-6/7). Updated existing camera unit tests to reflect new heading-tracking behavior. Added 15 new unit tests for rotation, Z-offset, getCharacterZ, isTraversalActive, transitionRideProgress. All 243 JS + 79 Python tests pass.

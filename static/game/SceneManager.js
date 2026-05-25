@@ -121,9 +121,17 @@ export function createScene(canvas) {
   const CAMERA_LOOK_AHEAD_Z = 5;
   const CAMERA_RESET_DURATION_MS = 500;
 
+  // Cinematic refinement constants (Story 6.8)
+  const MAX_BEND_YAW = 45 * Math.PI / 180;
+  const RIDE_EXTEND_Z = 15;
+  const LOOK_AHEAD_DIST = 10;
+  const CAMERA_YAW_FOLLOW_RATE = 0.08; // unused directly — rate clamp of 0.02 rad/frame applies
+
   let _cameraMode = 'default';
   let _cameraResetStartMs = 0;
   let _cameraResetStartYaw = 0;
+  let _targetCamYaw = 0;
+  let _currentCamYaw = 0;
 
   // Pending tracks — new-scale track meshes scrolling in from horizon (Story 6.4)
   let _pendingTracks = [];         // [{ mesh, targetZ, speedPxMs }]
@@ -172,6 +180,9 @@ export function createScene(canvas) {
     _cameraMode = 'default';
     _cameraResetStartMs = 0;
     _cameraResetStartYaw = 0;
+    _targetCamYaw = 0;
+    _currentCamYaw = 0;
+    if (window.__gameState?.scene) window.__gameState.scene.transitionRideProgress = undefined;
     for (const pt of _pendingTracks) { scene.remove(pt.mesh); }
     _pendingTracks = [];
     _tracksLandedCb = null;
@@ -233,6 +244,8 @@ export function createScene(canvas) {
     _charTraversal = null;
     _bendMidpointCb = null;
     _bendMidpointFired = false;
+    character.position.z = FRONT_Z + 0.1;
+    character.rotation.y = 0;
   }
 
   // Remove only track lane meshes — preserves activeWaves (in-flight old-scale wave meshes).
@@ -513,7 +526,34 @@ export function createScene(canvas) {
       const range = frontEdgeZ - midpointZ;
       const progress = range > 0 ? Math.max(0, Math.min(1, (frontEdgeZ - 0) / range)) : 1;
       character.position.x = _charTraversal.startX + (_charTraversal.targetX - _charTraversal.startX) * progress;
-      if (progress >= 1) _charTraversal = null;
+
+      // Character rotation on diagonal (Story 6.8 AC-1)
+      if (character.rotation !== undefined) {
+        const vSide = variantInfo?.side || 'RIGHT';
+        const sign = vSide === 'RIGHT' ? 1 : -1;
+        character.rotation.y = sign * MAX_BEND_YAW * Math.sin(progress * Math.PI);
+      }
+
+      // Z-offset diagonal movement (Story 6.8 AC-2)
+      character.position.z = -(progress * DIAG_LEN * 0.3);
+
+      // transitionRideProgress test hook (Story 6.8 AC-7)
+      if (window.__gameState?.scene) {
+        const diagTraveled = progress * DIAG_LEN;
+        const straightTraveled = Math.max(0, -character.position.z - DIAG_LEN * 0.3);
+        const totalRideDuration = DIAG_LEN + RIDE_EXTEND_Z;
+        window.__gameState.scene.transitionRideProgress = Math.min(1, (diagTraveled + straightTraveled) / totalRideDuration);
+      }
+
+      if (progress >= 1) {
+        _charTraversal = null;
+        if (window.__gameState?.scene) window.__gameState.scene.transitionRideProgress = 0;
+      }
+    }
+
+    // Ease character yaw back to 0 after traversal completes (Story 6.8 AC-1)
+    if (!_charTraversal && !succeeded && character.rotation !== undefined && Math.abs(character.rotation.y) > 0.01) {
+      character.rotation.y *= 0.9;
     }
 
     // Bend midpoint reached callback — fires once when incoming diagonal midpoint hits player (z ≥ 0).
@@ -647,13 +687,13 @@ export function createScene(canvas) {
     camera.position.z = CAMERA_DISTANCE * Math.cos(rad) + camBase.lookAt[2];
 
     if (_cameraMode === 'riding') {
-      // Eased yaw proportional to traversal progress (Story 6.3)
-      const progress = getTraversalProgress() ?? 0;
-      const yaw = CAMERA_BEND_YAW_MAX * Math.sin(progress * Math.PI);
-      const sideSign = variantInfo?.side === 'RIGHT' ? 1 : -1;
-      camera.rotation.y = yaw * sideSign;
-      const lookAheadZ = camBase.lookAt[2] + CAMERA_LOOK_AHEAD_Z;
-      camera.lookAt(currentCameraX + yaw * 2, 0, lookAheadZ);
+      // Heading-tracking camera (Story 6.8 AC-3): follow character rotation with rate clamp
+      _targetCamYaw = Math.max(-Math.PI / 4, Math.min(Math.PI / 4, character.rotation.y * 0.7));
+      _currentCamYaw += Math.max(-0.02, Math.min(0.02, _targetCamYaw - _currentCamYaw));
+      camera.rotation.y = _currentCamYaw;
+      const lookAheadX = character.position.x + Math.sin(_currentCamYaw) * LOOK_AHEAD_DIST;
+      const lookAheadZ = character.position.z + Math.cos(_currentCamYaw) * LOOK_AHEAD_DIST + camBase.lookAt[2];
+      camera.lookAt(lookAheadX, 0, lookAheadZ);
     } else if (_cameraResetStartMs > 0) {
       // Ease yaw back to 0 after riding phase ends
       const t = Math.min(1, (nowMs - _cameraResetStartMs) / CAMERA_RESET_DURATION_MS);
@@ -662,6 +702,8 @@ export function createScene(canvas) {
       if (t >= 1) {
         camera.rotation.y = 0;
         _cameraResetStartMs = 0;
+        _currentCamYaw = 0;
+        _targetCamYaw = 0;
       }
       camera.lookAt(currentCameraX, 0, camBase.lookAt[2]);
     } else {
@@ -766,7 +808,9 @@ export function createScene(canvas) {
     clearBendMidpointCallback,
     getVariantInfo,
     getCharacterX,
+    getCharacterZ() { return character.position.z; },
     getTraversalProgress,
+    isTraversalActive() { return _charTraversal !== null; },
     setCameraMode,
     setTargetCameraX,
     setOnVariantMissed,

@@ -442,28 +442,37 @@ export async function bootstrap(root) {
         setTransitionPhase('riding', ctx);
       });
 
-      // Riding → breather: character traverses to variant lane; camera follows; phase advances at bend midpoint.
+      // Riding → breather: character traverses diagonal then straight section (Story 6.8 AC-4).
+      // Extended gate: diagonal complete AND RIDE_EXTEND_Z units on straight section traveled.
+      const RIDE_EXTEND_Z = 15;
       setTransitionPhaseListener((next, prev, ctx) => {
         if (next !== 'riding') return;
         const info = scene.getVariantInfo();
         scene.setCameraMode('riding');
         if (info) {
           scene.setCharacterTargetX(info.variantX);
-          // Track camera to character each frame during riding (RAF loop calls scene.render which reads targetCameraX).
-          // The camera lerp in render() picks up targetCameraX updates via setTargetCameraX.
-          scene.setOnBendMidpointReached(() => {
-            setTransitionPhase('breather', ctx);
-          });
+          scene.clearBendMidpointCallback();
+          _perFrameHook = () => {
+            const diagComplete = scene.getTraversalProgress() === null || scene.getTraversalProgress() >= 0.95;
+            const characterZ = scene.getCharacterZ();
+            const straightTraveled = characterZ <= -RIDE_EXTEND_Z && !scene.isTraversalActive();
+            if (diagComplete && straightTraveled) {
+              _perFrameHook = null;
+              scene.setCameraMode('default');
+              setTransitionPhase('breather', ctx);
+            }
+          };
         } else {
           // No variant geometry (test path or edge case) — advance synchronously.
           setTransitionPhase('breather', ctx);
         }
       });
 
-      // Phase-exit cleanup: reset camera mode and clear bend callback on any riding exit.
+      // Phase-exit cleanup: reset camera mode and clear hooks on any riding exit.
       registerPhaseCleanup('riding', () => {
         scene.clearBendMidpointCallback();
         scene.setCameraMode('default');
+        if (_perFrameHook) { _perFrameHook = null; }
       });
 
       // Breather: hold until timer expires AND all outgoing waves have cleared (Story 6.4).
