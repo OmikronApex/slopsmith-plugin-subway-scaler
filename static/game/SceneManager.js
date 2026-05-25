@@ -534,15 +534,9 @@ export function createScene(canvas) {
         character.rotation.y = sign * MAX_BEND_YAW * Math.sin(progress * Math.PI);
       }
 
-      // Z-offset diagonal movement (Story 6.8 AC-2)
-      character.position.z = -(progress * DIAG_LEN * 0.3);
-
       // transitionRideProgress test hook (Story 6.8 AC-7)
       if (window.__gameState?.scene) {
-        const diagTraveled = progress * DIAG_LEN;
-        const straightTraveled = Math.max(0, -character.position.z - DIAG_LEN * 0.3);
-        const totalRideDuration = DIAG_LEN + RIDE_EXTEND_Z;
-        window.__gameState.scene.transitionRideProgress = Math.min(1, (diagTraveled + straightTraveled) / totalRideDuration);
+        window.__gameState.scene.transitionRideProgress = progress;
       }
 
       if (progress >= 1) {

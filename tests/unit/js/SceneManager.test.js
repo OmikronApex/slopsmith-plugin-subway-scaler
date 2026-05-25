@@ -384,33 +384,27 @@ describe('createScene — character rotation and diagonal movement (Story 6.8)',
     spawnForProgress(sceneApi, 0.5, 'RIGHT');
     sceneApi.render(0);
     // progress≈0.5 → yaw = MAX_BEND_YAW * sin(π/2) = MAX_BEND_YAW ≈ 0.785 rad
-    // Verified indirectly through getCharacterZ and camera behavior
     expect(sceneApi.isTraversalActive()).toBe(true);
-    // getCharacterZ reflects Z offset: -0.5 * 45 * 0.3 = -6.75
-    expect(sceneApi.getCharacterZ()).toBeCloseTo(-6.75, 0);
+    // Character Z stays at player plane (no Z offset) — world scrolls past player
+    expect(sceneApi.getCharacterZ()).toBeCloseTo(0.1, 1);
   });
 
-  it('Z offset at progress=0.5: character.position.z ≈ -DIAG_LEN*0.3*0.5', () => {
+  it('character Z stays at player plane (≈0.1) during traversal — Z offset removed', () => {
     spawnForProgress(sceneApi, 0.5, 'RIGHT');
     sceneApi.render(0);
-    // -progress * DIAG_LEN * 0.3 = -0.5 * 45 * 0.3 = -6.75
-    const z = sceneApi.getCharacterZ();
-    expect(z).toBeCloseTo(-6.75, 0);
+    expect(sceneApi.getCharacterZ()).toBeCloseTo(0.1, 1);
   });
 
-  it('Z offset at progress=1: character.position.z ≈ -DIAG_LEN*0.3', () => {
+  it('character Z stays at player plane at progress=1', () => {
     spawnForProgress(sceneApi, 1, 'RIGHT');
     sceneApi.render(0);
-    // -1.0 * 45 * 0.3 = -13.5
-    const z = sceneApi.getCharacterZ();
-    expect(z).toBeCloseTo(-13.5, 0);
+    expect(sceneApi.getCharacterZ()).toBeCloseTo(0.1, 1);
   });
 
-  it('LEFT variant produces negative yaw: getCharacterZ still negative', () => {
+  it('LEFT variant: character Z stays at player plane', () => {
     spawnForProgress(sceneApi, 0.5, 'LEFT');
     sceneApi.render(0);
-    // Z offset same regardless of side
-    expect(sceneApi.getCharacterZ()).toBeCloseTo(-6.75, 0);
+    expect(sceneApi.getCharacterZ()).toBeCloseTo(0.1, 1);
   });
 
   it('isTraversalActive returns true during traversal and false when no traversal', () => {
