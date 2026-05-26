@@ -518,11 +518,17 @@ export async function bootstrap(root) {
 
           // Fire promote NOW (don't await) so the new-scale waves can be scheduled
           // during the cinematic rather than at landing. Pre-staging the scheduler
-          // with gameNow=landingGameNow keeps the FIRST_WAVE_ARRIVAL_DELAY_MS-relative
-          // arrival timing identical to a landing-time resume — but the wave meshes
-          // start appearing at SPAWN_Z mid-cinematic and scroll smoothly into view,
-          // eliminating the visible pop-in at landing.
-          const landingGameNow = (_now() - gameStartTime) + dynamicDiagMs + REPOSITION_SLIDE_MS;
+          // with gameNow=landingGameNow puts the first wave at the same spawn_time
+          // it would get at a landing-time resume — but the wave meshes start
+          // appearing at SPAWN_Z mid-cinematic and scroll smoothly into view.
+          //
+          // landingGameNow is then shifted EARLIER by 1.5 wave-gaps so the first
+          // new wave arrives sooner after landing (default scheduler timing put
+          // first arrival a full gap past landing+REPOSITION; that felt late).
+          const tp = notesResp.timing_params;
+          const waveGapMs = (tp?.base_duration_ms ?? 4000) * (tp?.wave_spacing_factor ?? 0.5);
+          const landingGameNow =
+            (_now() - gameStartTime) + dynamicDiagMs + REPOSITION_SLIDE_MS - 1.5 * waveGapMs;
           const promotePromise = gameClient.promoteVariant().catch(err => {
             console.error('[main] promote error', err);
             return null;
