@@ -742,23 +742,31 @@ export function createScene(canvas) {
     const horzDist = camera.position.z - camBase.lookAt[2];
     if (_cinematicExit) {
       const e = _cinematicExit;
-      const p = Math.min(1, (nowMs - e.startMs) / e.durMs);
-      character.position.x = e.fromX + (e.targetX - e.fromX) * p;
-      const yaw = e.fromCamYaw * (1 - p);
-      character.rotation.y = e.fromCharYaw * (1 - p);
+      const tRaw = Math.min(1, (nowMs - e.startMs) / e.durMs);
+      const t = _easeInOutCubic(tRaw);
+      character.position.x = e.fromX + (e.targetX - e.fromX) * t;
+      const yaw = e.fromCamYaw * (1 - t);
+      character.rotation.y = e.fromCharYaw * (1 - t);
       _currentCamYaw = yaw;
       _targetCamYaw = yaw;
       const laX = camera.position.x + Math.sin(yaw) * horzDist;
       const laZ = camera.position.z - Math.cos(yaw) * horzDist;
       camera.lookAt(laX, 0, laZ);
-      if (p >= 1) {
+      if (tRaw >= 1) {
         _cinematicExit = null;
         _currentCamYaw = 0;
         _targetCamYaw = 0;
       }
     } else if (_cameraMode === 'riding') {
-      // Rate-clamped ease toward target yaw set by main.js on corner detection.
-      _currentCamYaw += Math.max(-CAMERA_YAW_RATE, Math.min(CAMERA_YAW_RATE, _targetCamYaw - _currentCamYaw));
+      // Time-based easeInOutCubic when a duration was supplied (Story 6-8 polish):
+      // smoother start than the rate clamp, which jumps to full velocity at frame 1.
+      if (_camEase) {
+        const tRaw = Math.min(1, (nowMs - _camEase.startMs) / _camEase.durMs);
+        _currentCamYaw = _camEase.fromYaw + (_camEase.toYaw - _camEase.fromYaw) * _easeInOutCubic(tRaw);
+        if (tRaw >= 1) _camEase = null;
+      } else {
+        _currentCamYaw += Math.max(-CAMERA_YAW_RATE, Math.min(CAMERA_YAW_RATE, _targetCamYaw - _currentCamYaw));
+      }
       const laX = camera.position.x + Math.sin(_currentCamYaw) * horzDist;
       const laZ = camera.position.z - Math.cos(_currentCamYaw) * horzDist;
       camera.lookAt(laX, 0, laZ);
@@ -867,8 +875,23 @@ export function createScene(canvas) {
     character.position.x = x;
   }
 
-  function setRidingCameraTarget(yaw) {
+  // easeInOutCubic — slow start, fast middle, slow end.
+  function _easeInOutCubic(t) {
+    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  }
+
+  // Camera ease state for riding mode (Story 6-8 polish). When durMs is provided,
+  // the riding render branch eases _currentCamYaw from start→target over that
+  // window with easeInOutCubic instead of the constant-velocity rate clamp.
+  let _camEase = null; // { startMs, durMs, fromYaw, toYaw }
+
+  function setRidingCameraTarget(yaw, durMs = null) {
     _targetCamYaw = yaw;
+    if (durMs != null && durMs > 0) {
+      _camEase = { startMs: performance.now(), durMs, fromYaw: _currentCamYaw, toYaw: yaw };
+    } else {
+      _camEase = null;
+    }
   }
 
   // Synchronized exit lerp (Story 6.8 AC-6).
@@ -887,6 +910,7 @@ export function createScene(canvas) {
   // character.position.x set by main.js after the exit's nominal duration.
   function clearCinematicExit() {
     _cinematicExit = null;
+    _camEase = null;
     _currentCamYaw = 0;
     _targetCamYaw = 0;
   }

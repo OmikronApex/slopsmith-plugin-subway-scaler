@@ -489,17 +489,24 @@ export async function bootstrap(root) {
           const sign = side === 'RIGHT' ? 1 : -1;
           const landingX = variantX + sign * DIAG_LEN;
 
-          // Character snap + camera target (AC-4).
+          // Cinematic duration derived from actual wave-scroll speed so the
+          // character X lerp finishes exactly when the outgoing diagonal's back
+          // edge reaches the player (DIAG_LEN units of group-scroll). Static
+          // DIAG_CROSS_MS drifted relative to the geometry at non-default tempos.
+          const waveSpeed = scene.getLastWaveSpeed() || 0.05;
+          const dynamicDiagMs = DIAG_LEN / (waveSpeed * 0.5);
+
+          // Character snap + camera target (AC-4). Camera eases over half the
+          // diagonal so it reaches 45° around mid-cinematic (matches spec).
           scene.snapCharacterYaw(sign * MAX_BEND_YAW);
-          scene.setRidingCameraTarget(sign * MAX_BEND_YAW);
+          scene.setRidingCameraTarget(sign * MAX_BEND_YAW, dynamicDiagMs / 2);
 
           // Early spawn (AC-5): time wave arrival to land at FIRST_WAVE_ARRIVAL_DELAY_MS post-landing.
           // newScaleCenterX: near edge of new scale at landingX (AC-5 formula).
           // Scene propagates this as _worldOffsetX so subsequent wave/collision/lane logic
           // operates in offset coords automatically.
-          const waveSpeed = scene.getLastWaveSpeed() || 0.05;
           const T_travel = Math.abs(SPAWN_Z) / (waveSpeed * 0.5);
-          const spawnDelayMs = DIAG_CROSS_MS - T_travel + FIRST_WAVE_ARRIVAL_DELAY_MS;
+          const spawnDelayMs = dynamicDiagMs - T_travel + FIRST_WAVE_ARRIVAL_DELAY_MS;
           const resp = ctx?.resp;
           const newBase = resp?.base_fret ?? notesResp.base_fret;
           const newLanes = resp?.num_lanes ?? notesResp.num_lanes;
@@ -508,9 +515,11 @@ export async function bootstrap(root) {
           if (spawnDelayMs <= 0) doSpawn();
           else setTimeout(doSpawn, spawnDelayMs);
 
-          // X lerp (AC-4) + landing handler (AC-6/7/8).
+          // X lerp (AC-4) + landing handler (AC-6/7/8). Duration matches the
+          // diagonal piece's scroll-through time → no drift; character reaches
+          // landingX exactly when the diagonal's back edge passes the player.
           _perFrameHook = () => {
-            const p = Math.min(1, (performance.now() - cornerTime) / DIAG_CROSS_MS);
+            const p = Math.min(1, (performance.now() - cornerTime) / dynamicDiagMs);
             scene.setCharacterX(variantX + (landingX - variantX) * p);
             if (p >= 1) {
               _perFrameHook = null;
