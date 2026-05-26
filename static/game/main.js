@@ -26,8 +26,13 @@ const DIAG_LEN = 45;
 const LANE_W = 1.4;
 
 // URL-driven test-mode keyboard shortcuts (Story 6.8 T12).
+// Setting window.__TEST_MODE here ensures the _test.playNote hook (gated on it later
+// in bootstrap) gets wired — without this, Q/W keydown finds no injection target.
 const TEST_MODE = typeof window !== 'undefined'
   && new URLSearchParams(window.location.search).has('testMode');
+if (TEST_MODE && typeof window !== 'undefined') {
+  window.__TEST_MODE = true;
+}
 import { injectTokens } from './ui/tokens.js';
 import { renderSetupScreen } from './ui/setup.js';
 import { OverlayManager } from './ui/overlay.js';
