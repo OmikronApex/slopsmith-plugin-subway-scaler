@@ -650,25 +650,17 @@ export function createScene(canvas) {
         // - Fire the cb ONCE when the back edge passes the player (z > 10). State
         //   transitions (phase → idle, etc.) happen in main.js immediately.
         // - Defer mesh removal until the geometry is visually off-frame so the
-        //   dismiss animation looks like the SZ + track piece scrolling away
-        //   naturally rather than blinking out at the player plane.
-        // - Post-accept path (cb null) is unchanged: remove SZ mesh quietly so
-        //   variantProposePiece can continue scrolling as the cinematic ride.
+        //   SZ scrolls away naturally rather than blinking out at the player.
+        // - Post-accept path (cb null) gets the same treatment — the SZ scrolls
+        //   past with the rest of the variant geometry instead of vanishing the
+        //   moment the player accepts.
         const SZ_OFFSCREEN_Z = 25; // SZ mesh fully past camera viewport
         if (z > VARIANT_SZ_DEPTH / 2 && !_variantMissFired) {
           _variantMissFired = true;
           lastVariantTickMs = 0;
-          if (onVariantMissedCb) {
-            onVariantMissedCb();
-          } else {
-            // No cb (post-accept disable) → remove SZ now; nothing else to fire.
-            scene.remove(variantSafeZoneMesh);
-            variantSafeZoneMesh.geometry?.dispose();
-            variantSafeZoneMesh.material?.dispose();
-            variantSafeZoneMesh = null;
-          }
-        } else if (_variantMissFired && variantSafeZoneMesh && z > SZ_OFFSCREEN_Z) {
-          // Late SZ cleanup after dismiss-fire when the mesh is off-frame.
+          if (onVariantMissedCb) onVariantMissedCb();
+        }
+        if (_variantMissFired && variantSafeZoneMesh && z > SZ_OFFSCREEN_Z) {
           scene.remove(variantSafeZoneMesh);
           variantSafeZoneMesh.geometry?.dispose();
           variantSafeZoneMesh.material?.dispose();
