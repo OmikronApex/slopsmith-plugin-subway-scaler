@@ -76,22 +76,37 @@ As a player accepting a variant track switch, I want a short cinematic where my 
 
 ## Acceptance Criteria
 
+> **Note:** This section reflects the **final implementation** after extensive
+> iterative refinement. The original spec proposed concrete formulas; several
+> drifted during playtest. The deltas are called out inline; the **Dev Notes →
+> Implementation history** section at the bottom of this file documents the
+> reasoning behind each change.
+
 ### AC-1 — Character Z is never modified
 
-`character.position.z` must not be written at any point during the cinematic. The diagonal Z-travel illusion comes entirely from scrolling geometry + yaw. Any Z-offset will break the visual.
+`character.position.z` must not be written at any point during the cinematic.
+The diagonal Z-travel illusion comes entirely from scrolling geometry, camera
+yaw, and **camera orbital translation** (AC-4). Holds throughout the final
+implementation.
 
 ### AC-2 — Riding phase entry: wait on straight section
 
 On `riding` phase entry:
-1. Call `scene.disableVariantMissCallback()` — nulls `onVariantMissedCb` and `lastVariantTickMs` so the safe zone cannot fire a false miss, but **leaves the safe zone mesh in the scene** so it continues scrolling away naturally (consistent with how all other safe zones behave)
-2. Character is already at `variantX` (traversal from 6-2 completes instantly — incoming diagonal has passed)
-3. Character yaw = 0°, camera target yaw = 0°
-4. No X movement yet
-5. Old-scale waves continue scrolling naturally — do not clear or pause them
+
+1. `scene.disableVariantMissCallback()` — nulls `onVariantMissedCb` (and
+   `lastVariantTickMs`) so the SZ scrolling past during the cinematic cannot
+   fire a false miss. The callback is **re-armed on every new propose** via
+   `_savedMissCb` (set by `setOnVariantMissed`); without that the second
+   variant's dismiss path would only remove the SZ mesh and orphan
+   `variantProposePiece`, stranding the game in "proposed" forever.
+2. `scene.setCharacterTargetX(variantX)` — time-eased traversal onto the variant
+   lane over `LATERAL_MS` (120ms) with `easeInOutCubic`. (Original spec assumed
+   geometric Z-bound traversal that completed in one frame — that read as a
+   snap.)
+3. Old-scale waves and the SZ mesh are **not** torn down; they continue
+   scrolling naturally and are cleaned up by their own scroll-past logic.
 
 Wait for the outgoing corner to reach Z=0 (AC-3).
-
-> **Do not call `clearVariantSafeZone()`** on riding entry — that removes the mesh, which looks wrong. The safe zone should visually scroll off like any other safe zone.
 
 ### AC-3 — Corner detection: outgoing junction reaches Z=0
 
@@ -104,147 +119,208 @@ function isOutgoingCornerAtPlayer() {
 }
 ```
 
-When this fires, begin the diagonal phase (AC-4). Fire once only — latch with a boolean flag.
+Latch with a boolean (`_cornerFired`) so it fires once. Implementation note: the
+SZ render loop's old "miss" tear-down would `clearVariantGeom()` when the SZ
+passed the player, destroying `variantProposePiece` before the corner could
+fire. Post-accept (cb null) it now only removes the SZ mesh, leaving the
+propose-piece scrolling so the corner trigger can fire.
 
-### AC-4 — Diagonal phase begins: snap, ease, lerp
+### AC-4 — Diagonal phase begins: snap, eased camera, time-locked X lerp
 
-When corner is detected:
+When the corner fires:
 
 **Character yaw — instant snap:**
 ```js
 const sign = variantInfo.side === 'RIGHT' ? 1 : -1;
-character.rotation.y = sign * MAX_BEND_YAW;  // hard snap — geometry has a hard corner
+scene.snapCharacterYaw(sign * MAX_BEND_YAW);
 ```
 
-The track geometry has no progressive bend. The character turns sharply at the corner, like stepping onto a diagonal railway switch.
+**Camera — eased orbit around character (not just yaw):**
 
-**Camera yaw — eased follow:**
+The camera does **not** rate-clamp the yaw alone. It pivots its physical
+position around the character (radius 11 = `CAMERA_DISTANCE * cos(pitch) +
+camBase.lookAt[2]`) so the camera body ends up *behind the character along the
+diagonal axis*. The lookAt offset (2 units, in front of the character) rotates
+by the same yaw, so the look-direction comes out exactly along the diagonal:
+
 ```js
-// Set target on corner detection:
-_targetCamYaw = sign * MAX_BEND_YAW;
-
-// Per frame while in riding mode:
-_currentCamYaw += Math.max(-CAMERA_YAW_RATE, Math.min(CAMERA_YAW_RATE, _targetCamYaw - _currentCamYaw));
-camera.rotation.y = _currentCamYaw;
+camera.position.x = currentCameraX - sin(yaw) * camRadius;     // 11
+camera.position.z =                   cos(yaw) * camRadius;
+camera.lookAt(currentCameraX + sin(yaw) * lookFwdDist,         // 2
+              0,
+              -cos(yaw) * lookFwdDist);
 ```
 
-Camera eases toward 45° — it represents the player's perception, which smooths the sharp turn. Camera should reach close to 45° within the first half of `DIAG_CROSS_MS`.
+Yaw eases from 0 → ±π/4 with `easeInOutCubic` over a fixed duration
+(`setRidingCameraTarget` default = 400 ms, same as the exit slide), giving a
+slow start/slow end. At yaw=0 the formula evaluates to the exact rest position
+(no boundary snap at entry/exit).
 
-**X lerp — time-based, variantX → landingX:**
+**X lerp — locked to the diagonal piece's scroll geometry:**
 ```js
-const landingX = variantX + sign * DIAG_LEN;
-const cornerTime = performance.now();
-
-// Per frame:
-const diagProgress = Math.min(1, (performance.now() - cornerTime) / DIAG_CROSS_MS);
-character.position.x = variantX + (landingX - variantX) * diagProgress;
+const dynamicDiagMs = DIAG_LEN / (waveSpeed * 0.5);  // not a fixed constant
+const p = clamp((now - cornerTime) / dynamicDiagMs, 0, 1);
+scene.setCharacterX(variantX + (landingX - variantX) * p);
 ```
 
-`DIAG_CROSS_MS` is the breather window — the time the player has to readjust fingers. It is time-based (not Z-progress-based) so the duration is consistent regardless of wave speed.
+Duration is derived from actual wave speed so the character reaches `landingX`
+exactly when the outgoing diagonal's back edge crosses the player at any tempo
+— stable, no drift. (The original `DIAG_CROSS_MS = 1200` constant has been
+removed.)
 
-### AC-5 — New scale track spawn: early, offset by wave travel time
+### AC-5 — New scale track spawn: early, offset, propagated through world
 
-New scale tracks must spawn early enough that the first wave arrives at the player approximately `FIRST_WAVE_ARRIVAL_DELAY_MS` after the character lands at `landingX`.
-
-Wave travel time from `SPAWN_Z` to Z=0:
-```js
-const T_travel = Math.abs(SPAWN_Z) / scene.getLastWaveSpeed(); // ms
-```
-
-Spawn trigger offset from corner detection:
-```js
-const spawnOffset = DIAG_CROSS_MS - T_travel + FIRST_WAVE_ARRIVAL_DELAY_MS;
-// If spawnOffset <= 0: spawn immediately when corner fires
-// If spawnOffset > 0: schedule spawn spawnOffset ms after corner fires
-```
-
-**New scale track centering:** spawn with the near edge (closest to old scale) at `landingX`:
+New tracks spawn at corner-fire (`spawnDelayMs <= 0` at default speeds) with
+the `newScaleCenterX` formula intact:
 
 ```js
-// sign = +1 for RIGHT transition, -1 for LEFT
 const newScaleCenterX = landingX + sign * (newNumLanes - 1) / 2 * LANE_W;
+scene.spawnVariantTracks(newBase, newLanes, waveSpeed, newScaleCenterX);
 ```
 
-This ensures the outermost track of the new scale always aligns with where the character lands, regardless of how many lanes the new scale has.
+`SceneManager` tracks the active offset as `_worldOffsetX` and propagates it
+through every lane-positioned subsystem so post-transition gameplay operates in
+the offset frame:
 
-`spawnVariantTracks(newBase, newNumLanes, spawnSpeed, newScaleCenterX)` — add `centerX` as a fourth parameter. When provided, the track group is positioned at `centerX` instead of the default world center (0).
+- `rebuildTracks` / `spawnVariantTracks`: lane mesh X = `laneX(i,n) + offset`
+- `setWaves`: cart X = `laneX(i,n) + offset`. The offset + numLanes are
+  **captured per-wave at creation** so in-flight pre-variant waves keep their
+  original frame.
+- `checkCollision`: `safeX = laneX(w.safe_track, w.numLanes) + w.offsetX`
+- `moveToTrack`: `toX = laneX(i,n) + _worldOffsetX`
+- `_variantLaneX` (subsequent variants): adds current offset so a second
+  variant spawns relative to the current frame
+- `SafeZoneRenderer`: per-zone `cachedX` is captured at creation so old SZs
+  keep their original X when the callback's offset shifts
+- `reset` / `setBaseFret` / `setInstrument`: reset `_worldOffsetX = 0`. In
+  `start()`, `scene.reset()` runs **before** `scene.setBaseFret(...)` so the
+  rebuild happens at world center.
+
+**Wave pre-staging (visual polish):** `gameClient.promoteVariant()` is fired
+at corner-fire (not at landing). When it resolves mid-cinematic,
+`waveScheduler.clearWavesForTesting()` + `resumeQueueing(..., landingGameNow)`
+runs. `landingGameNow` is shifted **1.5 wave-gaps earlier** so first arrival
+isn't too far behind landing. Result: new-scale wave meshes appear at SPAWN_Z
+mid-cinematic and visibly scroll into view rather than popping in at landing.
 
 ### AC-6 — Promote on landing + synchronized cinematic exit
 
-When `diagProgress >= 1` (character at `landingX`), all three of the following start simultaneously and complete together at exactly `REPOSITION_SLIDE_MS` later:
+When `diagProgress >= 1` (character at `landingX`):
 
-1. **Reposition slide** — character X lerps from `landingX` to `variantNoteX`:
+1. **Promote response is awaited** (not fire-and-forget — we need
+   `current_track` for an accurate exit target). The promise was kicked off at
+   corner-fire so it's already in flight; we just await it here.
+2. **Exit slide** — character X lerps from `landingX` to the **real lane
+   position** (not `variantNoteX`):
    ```js
-   const variantNoteX = landingX + sign * variantLaneIndex * LANE_W;
-   // variantLaneIndex: 0 = outermost lane (landing position), higher = deeper into new scale
-   // Source: ctx.resp.variant_lane_index from accept_variant response
+   const worldOffsetX = scene.getWorldOffsetX();
+   const targetX = laneX(resp.current_track, resp.num_lanes) + worldOffsetX;
+   scene.startCinematicExit(targetX, REPOSITION_SLIDE_MS);
    ```
+   This eliminates the post-promote jolt the original `variantNoteX` formula
+   produced (it ended in the offset coord system but `moveToTrack` then snapped
+   the character to a different lane in another frame).
+3. **Synchronized exit lerp** (`easeInOutCubic`, all three over
+   `REPOSITION_SLIDE_MS = 400ms`):
+   - character.position.x → targetX
+   - camera yaw → 0
+   - character.rotation.y → 0
+4. **`applyPromoteResponse`** runs once the exit completes. Order matters:
+   - `scene.clearCinematicExit()` (belt-and-suspenders against the lerp
+     overwriting `moveToTrack`'s X on the next render frame)
+   - `scene.setTargetCameraX(worldOffsetX)` (default camera follows the
+     character into the offset frame)
+   - `scene.ghostExistingWaves()` (marks only waves with `offsetX !==
+     _worldOffsetX` as ghost — pre-staged new-frame waves stay collidable)
+   - `scene.finalizeVariantTransition()` (removes retiring tracks + ghost wave
+     meshes; SZs go with them as the renderer naturally fades them)
+   - `setTransitionPhase('active', ctx)`
+5. **No `safeZoneRenderer.reset()` or `waveScheduler.clearWavesForTesting()`
+   here** — both would wipe the pre-staged new-frame state.
 
-2. **Camera yaw resets to 0°** — time-based lerp (NOT rate clamp) from `_currentCamYaw` at landing to 0° over `REPOSITION_SLIDE_MS`:
-   ```js
-   const exitStart = performance.now();
-   const exitFromYaw = _currentCamYaw; // capture current value at landing moment
-   // Per frame during exit:
-   const exitProgress = Math.min(1, (performance.now() - exitStart) / REPOSITION_SLIDE_MS);
-   camera.rotation.y = exitFromYaw * (1 - exitProgress); // lerps exactly to 0
-   ```
-   Must use a time-based lerp here — the rate clamp is asymptotic and cannot guarantee exact 0° at a fixed time.
-
-3. **Character yaw resets to 0°** — same time-based lerp over `REPOSITION_SLIDE_MS`:
-   ```js
-   const exitFromCharYaw = character.rotation.y; // capture at landing
-   character.rotation.y = exitFromCharYaw * (1 - exitProgress);
-   ```
-
-4. **POST /variant/promote** — fire immediately on landing (do not wait for the slide to complete).
-
-**Why synchronize:** the reposition slide is part of the cinematic, not an afterthought. With camera and character yaw both returning to 0° during the slide, the lateral movement reads as the second half of the cutscene — the camera "completing its sweep" back to forward view. If the camera resets before the slide, the slide feels like an unannounced correction. Synchronized, it feels like arriving.
-
-**This slide must complete before the first new-scale wave arrives** — guaranteed by:
-`REPOSITION_SLIDE_MS (200ms) < FIRST_WAVE_ARRIVAL_DELAY_MS (500ms)` ✓
+The exit easing duration (400ms) is bounded by
+`REPOSITION_SLIDE_MS < FIRST_WAVE_ARRIVAL_DELAY_MS = 500ms` so the first new
+wave can't catch the slide.
 
 ### AC-7 — Reposition represents the variant note anchor
 
-The reposition represents the character finding their position within the new scale. The variant note IS the last note played in the old scale and the assumed first note of the new scale. `variantLaneIndex = 0` is a valid case (character already at the correct fret — no visible slide) and must be handled without a special branch.
+Backend `accept_variant` returns `variant_lane_index: 0` (placeholder — the
+true value can be computed in a future story). The exit-slide target is
+derived from `resp.current_track` (backend-authoritative) rather than the
+`variantLaneIndex` formula, which is more correct and naturally handles the
+"already at correct fret, no visible slide" case.
 
 ### AC-8 — Cinematic complete
 
-When `exitProgress >= 1` (both reposition slide and camera/character yaw have reached 0°):
-- Cinematic is complete
-- Transition to `promoting` → `active` can proceed
-- No gating on further yaw settling — both are exactly at 0° by design
+When the exit lerp's `tRaw >= 1`:
 
-### AC-9 — Constants
+- `_cinematicExit` clears, all yaws are exactly 0
+- `applyPromoteResponse` fires (via `setTimeout(..., REPOSITION_SLIDE_MS)`)
+- Phase transitions directly to `active` (the cinematic flow skips `breather`
+  and `promoting` — those listeners remain registered but are unreachable on
+  this path)
 
+### AC-9 — Constants (final)
+
+`SceneManager.js`:
 ```js
-const MAX_BEND_YAW = Math.PI / 4;           // 45° — character snap yaw and camera target
-const DIAG_CROSS_MS = 1200;                 // X crossing duration = breather window (ms)
-const FIRST_WAVE_ARRIVAL_DELAY_MS = 500;    // ms after landing before first new-scale wave arrives
-const REPOSITION_SLIDE_MS = 200;            // quick slide to variant note fret after landing
-const CAMERA_YAW_RATE = 0.02;              // rad/frame camera ease rate (≈0.65s to reach 45°)
+const MAX_BEND_YAW = Math.PI / 4;             // 45° — character snap yaw and camera target
+const FIRST_WAVE_ARRIVAL_DELAY_MS = 500;      // ms after landing before first new-scale wave arrives
+const REPOSITION_SLIDE_MS = 400;              // exit slide duration (was 200 — too snappy)
+const CAMERA_YAW_RATE = 0.02;                 // legacy rate clamp; only used if setRidingCameraTarget called without durMs
+// Camera pivot: setRidingCameraTarget default durMs = 400 (matches REPOSITION_SLIDE_MS)
+// setCharacterTargetX default durMs = LATERAL_MS (120)
 ```
 
-Remove from previous implementation:
-- `RIDE_EXTEND_Z = 15` — unused (Z-based gate was reverted)
-- `RIDE_EXTEND_MS = 400` — replaced by `DIAG_CROSS_MS`
-- `LOOK_AHEAD_DIST` — look-ahead camera replaced by yaw-tracking
+`main.js`:
+```js
+const MAX_BEND_YAW = Math.PI / 4;
+const FIRST_WAVE_ARRIVAL_DELAY_MS = 500;
+const REPOSITION_SLIDE_MS = 400;
+const DIAG_LEN = 45;                          // mirror of SceneManager value
+const LANE_W = 1.4;
+// dynamicDiagMs = DIAG_LEN / (waveSpeed * 0.5) — computed at corner-fire (not a constant)
+// waveGapMs = base_duration_ms * wave_spacing_factor — pulled from timing_params at corner-fire
+```
 
-Preserve:
-- `CAMERA_RESET_DURATION_MS` — still used for camera ease-back on breather/exit
-- `STRAIGHT_LEN`, `DIAG_LEN`, `LANE_W`, `SPAWN_Z`, `FRONT_Z` — geometry constants unchanged
+Removed since spec: `DIAG_CROSS_MS` (replaced with `dynamicDiagMs`),
+`RIDE_EXTEND_Z`, `RIDE_EXTEND_MS`, `LOOK_AHEAD_DIST` (now a local in the
+camera math), `CAMERA_YAW_FOLLOW_RATE`.
 
-### AC-10 — Test parity and new coverage
+Preserved: `CAMERA_RESET_DURATION_MS`, `STRAIGHT_LEN`, `DIAG_LEN`, `LANE_W`,
+`SPAWN_Z`, `FRONT_Z` (geometry constants unchanged).
 
-- All existing Playwright E2E tests pass (no regressions)
-- All Python tests pass
-- New unit tests (`SceneManager.test.js`):
-  - `isOutgoingCornerAtPlayer()` returns false before `group.Z >= STRAIGHT_LEN/2`, true after
-  - Character X reaches `landingX` after `DIAG_CROSS_MS` ms
-  - Character yaw snaps on corner (not before, not gradually)
-  - Camera yaw eases — at frame N it is between 0 and `MAX_BEND_YAW`, closer to MAX at mid-diagonal
-  - `newScaleCenterX` formula verified for LEFT and RIGHT transitions with `numLanes` = 3, 4, 5, 6
-  - `variantNoteX` formula verified for various `variantLaneIndex` values
-  - Spawn offset formula: first wave arrival within ±100ms of `FIRST_WAVE_ARRIVAL_DELAY_MS`
+### AC-10 — Tests
+
+- `tests/unit/js/SceneManager.test.js`: a `Story 6.8 cinematic refinement`
+  describe covers the corner-detection threshold, snap/setX setters, time-eased
+  cinematic exit completion, disable-miss-callback preserving the SZ mesh,
+  riding-mode camera orbit (camera.x shifts in -X with +yaw), and pure-formula
+  coverage for `newScaleCenterX` (both signs × 4 lane counts), `variantNoteX`,
+  and `landingX`. The pre-rewrite tests (sin-curve yaw + look-ahead camera)
+  are marked `describe.skip` (`legacy 6.8 pre-rewrite`).
+- All 232 vitest specs pass (23 skipped); all 81 pytest pass. Playwright E2E
+  not run locally — Docker Desktop unavailable in dev env; CI validates.
+
+### AC-11 — Visual & UX polish (added during implementation)
+
+- **Track extension**: lane mesh near edge pushed from z=5 → z=20 (past the
+  camera at z≈11) so the start of the tracks is out of frame.
+- **Variant SZ off-frame despawn**: dismiss fires once at z>10 but the SZ
+  mesh keeps scrolling until z>25 (off-frame). Same threshold for
+  accept-path SZs.
+- **Variant propose-piece despawn deferred 500ms** past the geometric
+  end-of-diagonal so the piece visibly scrolls out before disappearing.
+- **Variant root-fret cap** raised from 1-12 to 1-18 (was preventing
+  right-side transitions from a start-fret around 5).
+- **Test-mode keyboard injection**: `?testMode=1` enables Q (play current
+  expected scale note) and W (play variant trigger note). Both burst-inject
+  every 30ms for 500ms or until cursor advances — single-shot keypress
+  couldn't catch the SZ adjacency window the way continuous audio detection
+  does.
+- **Stranded-variant timeout**: if `variantPendingSpawn` can't find a target
+  wave within 15s, the variant is gracefully dismissed (backend
+  `dismissVariant` + phase → idle) so the propose-gate doesn't lock forever.
 
 ---
 
@@ -458,16 +534,111 @@ Preserve:
 
 ## Dev Notes
 
-### Files to modify
+### Files modified (final)
 
-- `static/game/SceneManager.js` — constants, new methods (`snapCharacterYaw`, `setCharacterX`, `isOutgoingCornerAtPlayer`, `startCinematicExit`, `disableVariantMissCallback`, `getActiveSafeZones`), camera ease loop, remove sin-curve yaw from `_charTraversal`, `spawnVariantTracks` centerX param, store `variantSafeZoneNote` at safe zone creation
-- `static/game/main.js` — riding phase listener rewrite: corner polling, snap, early spawn, X lerp, promote, reposition
-- `tests/unit/js/SceneManager.test.js` — new unit tests
+- `static/game/SceneManager.js` — constants; new methods
+  (`disableVariantMissCallback`, `isOutgoingCornerAtPlayer`,
+  `snapCharacterYaw`, `setCharacterX`, `setRidingCameraTarget`,
+  `startCinematicExit`, `clearCinematicExit`, `getActiveSafeZones`,
+  `getWorldOffsetX`, `getNumLanes`, `ghostExistingWaves`,
+  `finalizeVariantTransition`); `_worldOffsetX` propagation through
+  `rebuildTracks`/`setWaves`/`checkCollision`/`moveToTrack`/`_variantLaneX`;
+  per-wave `offsetX`+`numLanes` captured at creation; `_retiringTracks`
+  pattern (old lanes survive the cinematic); `_savedMissCb` re-arm on each
+  propose; SZ scroll-past split into fire-cb-at-z>10 + remove-mesh-at-z>25;
+  `variantProposePiece` despawn deferred 500ms past geometric end;
+  `_charTraversal` rewritten as time-eased (`easeInOutCubic`,
+  `LATERAL_MS`); `_camEase` time-eased ride yaw; camera orbits character
+  (radius 11) with lookAt offset (2) rotated by same yaw; full render loop
+  reorganised to compute `effectiveYaw` once then pivot
+- `static/game/main.js` — Story 6.8 constants + `SPAWN_Z` import +
+  `TEST_MODE` flag (sets `window.__TEST_MODE`); riding listener rewritten
+  (corner trigger, snap, eased camera target, early track spawn,
+  dynamic-duration X lerp, **promote pre-fire at corner-fire**, **scheduler
+  pre-stage with `landingGameNow − 1.5 * waveGapMs`**);
+  `onDiagComplete(promotePromise)` awaits promote then runs synchronized
+  exit; `applyPromoteResponse` clears cinematic exit, parks camera at
+  offset, ghost-marks old-frame waves, finalize-removes them, applies
+  promote response (no scheduler/SZ reset); offset-aware
+  `safeZoneRenderer.update` callback (`getNumLanes` + `getWorldOffsetX`);
+  Q/W keydown handler with 500ms burst injection; stranded-variant 15s
+  timeout dismiss; `_onDetection` hoisted to bootstrap scope so
+  `_test.playNote` can close over it; `scene.reset()` reordered before
+  `scene.setBaseFret(...)` so restart sweeps state clean
+- `static/game/ui/SafeZoneRenderer.js` — per-mesh `cachedX` captured on
+  creation; subsequent frames only update Z (so post-variant offset
+  doesn't teleport pre-variant zones)
+- `services/game_engine.py` — `accept_variant` response now includes
+  `variant_lane_index: 0`; `_variant_geometry` root-fret cap raised from
+  1-12 to 1-18
+- `tests/unit/js/SceneManager.test.js` — `Story 6.8 cinematic refinement`
+  describe; legacy 6.8 describes marked `.skip` (`legacy 6.8 pre-rewrite`)
 
 ### Files to read (do not modify)
 
-- `static/game/SceneManager.js` — `buildVariantTrackGroup` (~L204), `clearVariantSafeZone` (~L778), existing `_charTraversal` block (~L522), `spawnVariantTracks`, `render()` loop structure
-- `static/game/main.js` — existing riding phase listener (~L447), `_perFrameHook` pattern, `registerPhaseCleanup`
+- `static/game/WaveScheduler.js` — `resumeQueueing`,
+  `clearWavesForTesting`, `tick` (understanding `_nextDeadlineMs` is key
+  to the pre-stage trick)
+- `static/game/TransitionPhases.js` — phase state machine; cinematic flow
+  skips `breather`/`promoting` but those listeners remain registered as
+  fallback paths
+
+### Implementation history (chronological highlights)
+
+The spec was implemented as written, then iteratively refined through
+playtest. The order roughly:
+
+1. **Initial implementation** of all 12 tasks → all unit tests green.
+2. **Test-mode wiring fixes**: `window.__TEST_MODE` flag, `_onDetection`
+   scope hoist (closure bug), burst injection (single keypress missed
+   spatial adjacency window).
+3. **Corner detection failed**: SZ scroll-past was calling
+   `clearVariantGeom` which destroyed `variantProposePiece` before the
+   corner could fire. Split into cb-aware paths.
+4. **Camera didn't actually rotate**: `camera.rotation.y = yaw` was wiped
+   by `camera.lookAt(...)` each frame. Switched to lookAt-point projection,
+   then to full orbital camera pivoting around the character (radius 11)
+   with lookAt offset (2) rotating in sync — look-direction now lies
+   exactly along the diagonal.
+5. **Game-over on landing** (twice): first because exit lerp clamped p=1
+   on the next render frame and overwrote `moveToTrack`'s X (added
+   `clearCinematicExit`); then because old-frame waves still collided
+   with the now-offset character (`ghostExistingWaves`); then because
+   `WaveScheduler._waves` retained ghost wave entries that `setWaves`
+   rebuilt at the new offset (added scheduler clear at promote).
+6. **AC-5 restored**: initially I dropped the `newScaleCenterX` offset to
+   side-step coord-system complexity. User pushed back; restored with
+   full `_worldOffsetX` propagation through every lane-positioned
+   subsystem.
+7. **Restart didn't reset world**: `scene.reset()` was running after
+   `scene.setBaseFret(...)` so tracks rebuilt at the stale offset. Reordered.
+8. **Old SZs teleported**: `SafeZoneRenderer.update` re-positioned X every
+   frame from the offset-aware callback. Cached X on creation.
+9. **Old tracks despawned too early**: moved tracks from `tracks` into
+   `_retiringTracks` at variant spawn; remove only at `finalizeVariantTransition`.
+10. **Stranded variant after back-to-back transitions**:
+    `disableVariantMissCallback` nulled cb permanently; added `_savedMissCb`
+    re-arm on each propose. Plus 15s `variantPendingSpawn` timeout that
+    actually dismisses (not just clears the watcher).
+11. **Camera snap at cutscene boundaries**: reformulated lookAt as a
+    rotation of the natural cam→lookAt vector so yaw=0 evaluates to the
+    default rest position exactly.
+12. **Diagonal X drift**: `DIAG_CROSS_MS` constant replaced with
+    `dynamicDiagMs = DIAG_LEN / (waveSpeed * 0.5)` so the X lerp finishes
+    when the diagonal's back edge crosses the player at any tempo.
+13. **Visual polish**: track extension to z=20 (past camera); variant SZ
+    off-frame despawn at z>25; propose-piece despawn deferred 500ms; root
+    fret cap 12→18; eased character traversal onto variant lane; camera
+    Z orbit dampening then character-pivot orbit; eased riding camera
+    (400ms `easeInOutCubic`); REPOSITION_SLIDE_MS 200→400 for a
+    perceptible ease-out.
+14. **Wave pre-staging** (final polish): pre-fire promote at corner-fire
+    so the scheduler can be staged mid-cinematic with `landingGameNow −
+    1.5 * waveGapMs`. New waves visibly scroll in from SPAWN_Z during the
+    cinematic instead of popping in at landing. `ghostExistingWaves`
+    narrowed to filter by offset so pre-staged new-frame waves remain
+    collidable; `applyPromoteResponse` no longer resets the scheduler or
+    SZ renderer (would wipe pre-staged state).
 
 ### Why character snaps but camera eases
 
@@ -513,6 +684,7 @@ FRONT_Z = -80        front removal boundary
 
 - 2026-05-26: Full rewrite. Previous spec had three critical errors: Z-offset movement (wrong architecture, reverted), sin-curve yaw (wrong for hard-corner geometry), Z-based gate (mathematically impossible, replaced with ad-hoc timer). This spec replaces all cinematic logic: outgoing corner as trigger, character snap yaw, camera ease to full 45°, time-based X lerp, early wave spawn with travel-time offset, newScaleCenterX formula for lane count, reposition slide to variant note fret, promote on landing. Status reset to ready.
 - 2026-05-26: Implementation complete. Tasks 1–12 done. All vitest (232 passed, 23 legacy 6.8 tests skipped) and pytest (81 passed) green. Playwright E2E not executed locally — Docker Desktop unavailable in dev environment; CI will validate.
+- 2026-05-27: Spec rewrite — ACs and Dev Notes updated to reflect the **final implementation** after ~14 rounds of playtest refinement. Major deltas from original spec: time-eased character traversal (was geometric, snapped to 1-frame); camera orbits character (radius 11, lookAt offset 2) — not just yaw; X lerp duration = `dynamicDiagMs` (was fixed `DIAG_CROSS_MS`); promote awaited (was fire-and-forget) with exit target = `laneX(current_track,n)+offset`; `_worldOffsetX` propagated through every lane-positioned subsystem with per-wave frame capture; wave pre-staging at corner-fire (visual polish, no pop-in); REPOSITION_SLIDE_MS 200→400; root fret cap 12→18; track extension to z=20; SZ + propose-piece off-frame despawn deferral; `_savedMissCb` re-arm; restart ordering fix; `_onDetection` scope fix; stranded-variant 15s dismiss; `_retiringTracks` pattern; ghost narrowed by offset. AC-11 added covering visual/UX polish.
 
 ### Completion Notes
 
