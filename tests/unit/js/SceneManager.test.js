@@ -327,17 +327,18 @@ describe('createScene — Story 6.8 cinematic refinement', () => {
     expect(zonesAfter.some(z => z.isVariant)).toBe(true);
   });
 
-  it('camera in riding mode eases yaw toward target — camera orbits lookAt (position shifts -X with +yaw)', () => {
+  it('camera in riding mode eases yaw toward target — camera orbits character (position shifts -X with +yaw)', () => {
     sceneApi.setCameraMode('riding');
     sceneApi.setRidingCameraTarget(0.5);
-    // After 1 frame the rate-clamp produces yaw ≈ CAMERA_YAW_RATE (no durMs supplied).
-    // Camera orbits the lookAt point — at +yaw camera.x = lookAtX - sin(yaw)*horzDist,
-    // i.e. shifts in -X. (horzDist = CAMERA_DISTANCE * cos(pitch) ≈ 13.)
-    const xBefore = mockCamera.position.x;
-    sceneApi.render(0);
-    const xAfter = mockCamera.position.x;
-    expect(xAfter).toBeLessThan(xBefore);   // moved in -X
-    expect(xAfter).toBeGreaterThan(-0.5);   // small first-frame shift (sin(rate)*horzDist ≈ 0.26)
+    // Default ease duration is LATERAL_MS (120ms). Advance the fake clock past
+    // its end so the eased lerp fully resolves and we can assert the orbit
+    // result. Camera at +yaw shifts in -X (sin(yaw)*camRadius with camRadius=11).
+    nowMs = 200;
+    sceneApi.render(nowMs);
+    expect(mockCamera.position.x).toBeLessThan(0); // moved in -X
+    // sin(0.5) * 11 ≈ 5.27 — first-order check the shift is in the expected band.
+    expect(mockCamera.position.x).toBeGreaterThan(-6);
+    expect(mockCamera.position.x).toBeLessThan(-4);
   });
 
   // Pure formula coverage — derived from spec AC-5/AC-7.
