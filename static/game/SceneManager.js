@@ -107,6 +107,7 @@ export function createScene(canvas) {
   let variantAcceptState = null;    // { newPrimary, acceptX, characterMoved } — tracks accept animation
   let lastWaveSpeed = 0.05;         // captured from setWaves; used for piece scrolling
   let onVariantMissedCb = null;     // registered from main.js (story 5-8, AC-2)
+  let _savedMissCb = null;          // remembered original handler — re-armed on next propose (Story 6-8)
   let lastVariantTickMs = 0;        // last render tick that saw a variant SZ — for tab-resume guard
 
   let tween = null;
@@ -340,6 +341,10 @@ export function createScene(canvas) {
 
   function proposeVariantTracks(variant, transitionWave, anchorNote, anchorWave) {
     clearVariantGeom();
+    // Re-arm the missed callback in case a prior transition's
+    // disableVariantMissCallback() nulled it — without this, dismissing the new
+    // variant only removes the SZ mesh and leaves the propose-piece orphaned.
+    if (_savedMissCb && !onVariantMissedCb) onVariantMissedCb = _savedMissCb;
     // Anchor note: note at wave.note_index - 1 (apex for RIGHT, root for LEFT).
     // Color matches the anchor note's string. Position is 2 lanes from anchor.
     const anchorFret = anchorNote?.fret ?? transitionWave?.safe_fret;
@@ -833,6 +838,7 @@ export function createScene(canvas) {
 
   function setOnVariantMissed(cb) {
     onVariantMissedCb = cb;
+    _savedMissCb = cb; // remember so we can re-arm after a transition disables it
   }
 
   // Disables the variant miss callback without removing the safe zone mesh
