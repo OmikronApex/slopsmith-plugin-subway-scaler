@@ -136,7 +136,11 @@ export function createScene(canvas) {
 
   // Cinematic exit (Story 6.8 AC-6): synchronized time-based lerp.
   let _cinematicExit = null; // { startMs, durMs, fromCamYaw, fromCharYaw, fromX, targetX }
-  let _variantTrackGroupCenterX = 0; // current centerX offset for variant track group (Story 6.8 AC-5)
+
+  // World-space X offset applied to lane positions, cart positions, collision safeX,
+  // and moveToTrack targets after a variant transition (Story 6.8 AC-5). Set by
+  // spawnVariantTracks(centerX). Reset to 0 on scene reset / setInstrument.
+  let _worldOffsetX = 0;
 
   // Pending tracks — new-scale track meshes scrolling in from horizon (Story 6.4)
   let _pendingTracks = [];         // [{ mesh, targetZ, speedPxMs }]
@@ -161,7 +165,7 @@ export function createScene(canvas) {
   function rebuildTracks() {
     const count = numLanes;
     for (let i = 0; i < count; i++) {
-      const x = laneX(i, count);
+      const x = laneX(i, count) + _worldOffsetX;
       const mesh = new THREE.Mesh(
         new THREE.BoxGeometry(1.4, 0.06, TRACK_DEPTH),
         trackMat
@@ -171,8 +175,8 @@ export function createScene(canvas) {
 
       tracks.push({ mesh });
     }
-    targetCameraX = 0;
-    currentCameraX = 0;
+    targetCameraX = _worldOffsetX;
+    currentCameraX = _worldOffsetX;
   }
 
   function reset() {
@@ -193,6 +197,8 @@ export function createScene(canvas) {
     _tracksLandedCb = null;
     _tracksLandedFired = false;
     succeeded = false;
+    _worldOffsetX = 0;
+    _cinematicExit = null;
     character.position.set(laneX(0, numLanes), CHAR_Y, FRONT_Z + 0.1);
     character.rotation.set(0, 0, 0);
     targetCameraX = 0;
@@ -264,7 +270,7 @@ export function createScene(canvas) {
     clearTracks();
     _pendingTracks = [];
     _tracksLandedFired = false;
-    _variantTrackGroupCenterX = centerX;
+    _worldOffsetX = centerX;
     for (let i = 0; i < newNumLanes; i++) {
       const x = laneX(i, newNumLanes) + centerX;
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.06, TRACK_DEPTH), trackMat);
@@ -432,7 +438,7 @@ export function createScene(canvas) {
         for (let i = 0; i < numLanes; i++) {
           if (i === waveData.safe_track) continue;
           const cart = makeCart(bodyMaterial(0x888888));
-          cart.position.x = laneX(i, numLanes);
+          cart.position.x = laneX(i, numLanes) + _worldOffsetX;
           group.add(cart);
         }
         scene.add(group);
@@ -444,7 +450,7 @@ export function createScene(canvas) {
   }
 
   function moveToTrack(trackIdx, immediate = false) {
-    const toX = laneX(trackIdx, numLanes);
+    const toX = laneX(trackIdx, numLanes) + _worldOffsetX;
     if (immediate) {
       character.position.x = toX;
       tween = null;
@@ -498,7 +504,7 @@ export function createScene(canvas) {
       // Sum of half-depths = 0.65 + 0.25 = 0.9.
       if (Math.abs(charZ - waveZ) < 0.8) {
         // Potential collision! Check if we are in the safe lane.
-        const safeX = laneX(w.data.safe_track, numLanes);
+        const safeX = laneX(w.data.safe_track, numLanes) + _worldOffsetX;
         // Lanes are 1.6 apart. If we are > 0.6 away from safe center, we are hitting a cart.
         if (Math.abs(charX - safeX) > 0.6) {
           _lastCollisionDebug = {
@@ -908,6 +914,8 @@ export function createScene(canvas) {
     startCinematicExit,
     clearCinematicExit,
     getActiveSafeZones,
+    getWorldOffsetX() { return _worldOffsetX; },
+    getNumLanes() { return numLanes; },
     clearWavesForTesting() { clearWaves(); },
     resize(w, h) {
       if (w <= 0 || h <= 0) return;

@@ -491,18 +491,17 @@ export async function bootstrap(root) {
           scene.setRidingCameraTarget(sign * MAX_BEND_YAW);
 
           // Early spawn (AC-5): time wave arrival to land at FIRST_WAVE_ARRIVAL_DELAY_MS post-landing.
-          // NOTE: centerX is forced to 0 — the offset-tracks design (AC-5 newScaleCenterX
-          // formula) would require waves, collision detection, and moveToTrack to also
-          // operate in offset coords. That's out of scope; tracks at world center keep the
-          // rest of the game working. The cinematic illusion is preserved via character X
-          // movement only — final landing lerps back to the correct lane in onPromoteApply.
+          // newScaleCenterX: near edge of new scale at landingX (AC-5 formula).
+          // Scene propagates this as _worldOffsetX so subsequent wave/collision/lane logic
+          // operates in offset coords automatically.
           const waveSpeed = scene.getLastWaveSpeed() || 0.05;
           const T_travel = Math.abs(SPAWN_Z) / (waveSpeed * 0.5);
           const spawnDelayMs = DIAG_CROSS_MS - T_travel + FIRST_WAVE_ARRIVAL_DELAY_MS;
           const resp = ctx?.resp;
           const newBase = resp?.base_fret ?? notesResp.base_fret;
           const newLanes = resp?.num_lanes ?? notesResp.num_lanes;
-          const doSpawn = () => scene.spawnVariantTracks(newBase, newLanes, waveSpeed, 0);
+          const newScaleCenterX = landingX + sign * (newLanes - 1) / 2 * LANE_W;
+          const doSpawn = () => scene.spawnVariantTracks(newBase, newLanes, waveSpeed, newScaleCenterX);
           if (spawnDelayMs <= 0) doSpawn();
           else setTimeout(doSpawn, spawnDelayMs);
 
@@ -537,12 +536,13 @@ export async function bootstrap(root) {
           return;
         }
 
-        // Compute the target X = the character's actual lane in the new scale at world
-        // center. variant_lane_index is folded in via resp.current_track (backend
-        // authoritative). REPOSITION_SLIDE_MS slides char from landingX → laneX.
+        // Compute the target X = the character's actual lane in the new scale, in the
+        // OFFSET coord system established by AC-5 (laneX is center-0; world offset added).
+        // REPOSITION_SLIDE_MS slides char from landingX → final lane position.
         const newNumLanes = resp.num_lanes ?? notesResp.num_lanes;
         const currentTrack = resp.current_track ?? 0;
-        const targetX = laneX(currentTrack, newNumLanes);
+        const worldOffsetX = scene.getWorldOffsetX?.() ?? 0;
+        const targetX = laneX(currentTrack, newNumLanes) + worldOffsetX;
 
         scene.startCinematicExit(targetX, REPOSITION_SLIDE_MS);
 
@@ -557,6 +557,9 @@ export async function bootstrap(root) {
         // otherwise the next render frame's clamped p=1 overwrites our moveToTrack
         // value back to landingX (Story 6.8 bugfix — caused instant collision).
         scene.clearCinematicExit?.();
+        // Park the default-mode camera at the new world offset so it stays with the
+        // offset tracks once cinematic exit hands control back (Story 6.8 AC-5).
+        scene.setTargetCameraX?.(scene.getWorldOffsetX?.() ?? 0);
         const startIdx = resp.current_note_index ?? 0;
         if (run && resp.notes) {
           run.sequence = resp.notes;
@@ -788,7 +791,9 @@ export async function bootstrap(root) {
         }
 
         scene.setWaves(waves, _now());
-        safeZoneRenderer.update(waves, 0, (track) => laneX(track, notesResp.num_lanes), now, gameStartTime, currentInstrument());
+        const _safeZoneOffset = scene.getWorldOffsetX?.() ?? 0;
+        const _safeZoneLanes = scene.getNumLanes?.() ?? notesResp.num_lanes;
+        safeZoneRenderer.update(waves, 0, (track) => laneX(track, _safeZoneLanes) + _safeZoneOffset, now, gameStartTime, currentInstrument());
 
         if (window.__gameState) {
           window.__gameState.scene.waveCount = waves.length;
