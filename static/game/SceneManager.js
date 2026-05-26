@@ -739,42 +739,29 @@ export function createScene(canvas) {
     }
 
     currentCameraX += (targetCameraX - currentCameraX) * 0.1;
-    const rad = (CAMERA_PITCH * Math.PI) / 180;
-    camera.position.x = currentCameraX;
-    camera.position.y = CAMERA_DISTANCE * Math.sin(rad);
-    camera.position.z = CAMERA_DISTANCE * Math.cos(rad) + camBase.lookAt[2];
 
-    // Cinematic exit and riding both express yaw by lookAt'ing a point projected
-    // along the yaw direction — directly assigning camera.rotation.y is wiped by
-    // lookAt(). At yaw=0 this formula yields exactly the default-mode lookAt
-    // target (camera.position.x, 0, camBase.lookAt[2]) so entering/leaving these
-    // branches doesn't snap the camera.
-    //
-    // Horizontal distance from camera to its natural lookAt point:
-    //   camera.position.z - camBase.lookAt[2] = CAMERA_DISTANCE * cos(pitch).
-    // Rotating the horizontal forward vector (0, -1) by yaw about Y gives
-    //   (sin(yaw), -cos(yaw)), so lookAt is camera.position + that * horzDist.
-    const horzDist = camera.position.z - camBase.lookAt[2];
+    // Compute the effective camera yaw from whichever mode owns the camera.
+    // We then orbit the camera around its lookAt point — keeping the lookAt
+    // position fixed, the camera body translates in -X/-Z (for +yaw) so the
+    // camera ends up *behind the character along the diagonal axis* rather
+    // than staying at the rest-position Z while only its head rotates. The
+    // diagonal track now appears as a straight line into the distance.
+    let effectiveYaw = 0;
     if (_cinematicExit) {
       const e = _cinematicExit;
       const tRaw = Math.min(1, (nowMs - e.startMs) / e.durMs);
       const t = _easeInOutCubic(tRaw);
       character.position.x = e.fromX + (e.targetX - e.fromX) * t;
-      const yaw = e.fromCamYaw * (1 - t);
+      effectiveYaw = e.fromCamYaw * (1 - t);
       character.rotation.y = e.fromCharYaw * (1 - t);
-      _currentCamYaw = yaw;
-      _targetCamYaw = yaw;
-      const laX = camera.position.x + Math.sin(yaw) * horzDist;
-      const laZ = camera.position.z - Math.cos(yaw) * horzDist;
-      camera.lookAt(laX, 0, laZ);
+      _currentCamYaw = effectiveYaw;
+      _targetCamYaw = effectiveYaw;
       if (tRaw >= 1) {
         _cinematicExit = null;
         _currentCamYaw = 0;
         _targetCamYaw = 0;
       }
     } else if (_cameraMode === 'riding') {
-      // Time-based easeInOutCubic when a duration was supplied (Story 6-8 polish):
-      // smoother start than the rate clamp, which jumps to full velocity at frame 1.
       if (_camEase) {
         const tRaw = Math.min(1, (nowMs - _camEase.startMs) / _camEase.durMs);
         _currentCamYaw = _camEase.fromYaw + (_camEase.toYaw - _camEase.fromYaw) * _easeInOutCubic(tRaw);
@@ -782,25 +769,29 @@ export function createScene(canvas) {
       } else {
         _currentCamYaw += Math.max(-CAMERA_YAW_RATE, Math.min(CAMERA_YAW_RATE, _targetCamYaw - _currentCamYaw));
       }
-      const laX = camera.position.x + Math.sin(_currentCamYaw) * horzDist;
-      const laZ = camera.position.z - Math.cos(_currentCamYaw) * horzDist;
-      camera.lookAt(laX, 0, laZ);
+      effectiveYaw = _currentCamYaw;
     } else if (_cameraResetStartMs > 0) {
-      // Ease yaw back to 0 after riding phase ends
       const t = Math.min(1, (nowMs - _cameraResetStartMs) / CAMERA_RESET_DURATION_MS);
       const e = 1 - (1 - t) * (1 - t);
-      camera.rotation.y = _cameraResetStartYaw * (1 - e);
+      effectiveYaw = _cameraResetStartYaw * (1 - e);
       if (t >= 1) {
-        camera.rotation.y = 0;
         _cameraResetStartMs = 0;
         _currentCamYaw = 0;
         _targetCamYaw = 0;
+        effectiveYaw = 0;
       }
-      camera.lookAt(currentCameraX, 0, camBase.lookAt[2]);
-    } else {
-      camera.rotation.y = 0;
-      camera.lookAt(currentCameraX, 0, camBase.lookAt[2]);
     }
+
+    // Pivot around the natural lookAt point at (currentCameraX, 0, lookAtZ).
+    // horzDist = CAMERA_DISTANCE * cos(pitch) — the horizontal cam→lookAt span.
+    // At effectiveYaw=0 this evaluates to the original rest position exactly.
+    const pitchRad = (CAMERA_PITCH * Math.PI) / 180;
+    const horzDist = CAMERA_DISTANCE * Math.cos(pitchRad);
+    const lookAtZ = camBase.lookAt[2];
+    camera.position.x = currentCameraX - Math.sin(effectiveYaw) * horzDist;
+    camera.position.y = CAMERA_DISTANCE * Math.sin(pitchRad);
+    camera.position.z = lookAtZ + Math.cos(effectiveYaw) * horzDist;
+    camera.lookAt(currentCameraX, 0, lookAtZ);
 
     renderer.render(scene, camera);
   }
