@@ -299,7 +299,7 @@ class GameEngine:
 
         Independent of tabulator (which wraps pitch-class mod 12 and can yield
         wildly wide spans). Anchor the variant at the lowest string where the
-        root sits in fret 1-12 and reserve a tight window matching target_num_lanes.
+        root sits in fret 1-18 and reserve a tight window matching target_num_lanes.
         The variant base note is therefore always at lane 0 of the variant set,
         which makes the "play the new root to switch" prompt visually obvious.
         Returns (base_fret, num_lanes, base_lane_index, base_string_1based_from_high)
@@ -308,7 +308,7 @@ class GameEngine:
         def try_idx(idx):
             open_midi = instrument.tuning[idx]
             fret = root_midi - open_midi
-            if 1 <= fret <= 12:
+            if 1 <= fret <= 18:
                 base_fret = fret
                 # Match target_num_lanes, clamped to the fretboard.
                 num_lanes = target_num_lanes
