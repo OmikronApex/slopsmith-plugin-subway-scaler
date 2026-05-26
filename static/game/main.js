@@ -516,6 +516,27 @@ export async function bootstrap(root) {
           if (spawnDelayMs <= 0) doSpawn();
           else setTimeout(doSpawn, spawnDelayMs);
 
+          // Fire promote NOW (don't await) so the new-scale waves can be scheduled
+          // during the cinematic rather than at landing. Pre-staging the scheduler
+          // with gameNow=landingGameNow keeps the FIRST_WAVE_ARRIVAL_DELAY_MS-relative
+          // arrival timing identical to a landing-time resume — but the wave meshes
+          // start appearing at SPAWN_Z mid-cinematic and scroll smoothly into view,
+          // eliminating the visible pop-in at landing.
+          const landingGameNow = (_now() - gameStartTime) + dynamicDiagMs + REPOSITION_SLIDE_MS;
+          const promotePromise = gameClient.promoteVariant().catch(err => {
+            console.error('[main] promote error', err);
+            return null;
+          });
+          promotePromise.then(resp => {
+            if (!resp || !resp.success) return;
+            // Drop in-flight old-scale waves from the scheduler — their meshes
+            // keep scrolling (setWaves' "wave gone but still in front" path)
+            // until they pass the player; finalizeVariantTransition at landing
+            // hard-cleans whatever remains.
+            waveScheduler.clearWavesForTesting();
+            waveScheduler.resumeQueueing(resp.notes, resp.current_note_index ?? 0, resp.base_fret, resp.num_lanes, landingGameNow);
+          });
+
           // X lerp (AC-4) + landing handler (AC-6/7/8). Duration matches the
           // diagonal piece's scroll-through time → no drift; character reaches
           // landingX exactly when the diagonal's back edge passes the player.
@@ -524,23 +545,17 @@ export async function bootstrap(root) {
             scene.setCharacterX(variantX + (landingX - variantX) * p);
             if (p >= 1) {
               _perFrameHook = null;
-              onDiagComplete(landingX, sign, ctx);
+              onDiagComplete(landingX, sign, ctx, promotePromise);
             }
           };
         };
       });
 
-      async function onDiagComplete(landingX, sign, ctx) {
-        // Fire promote and await — we need resp.current_track + resp.num_lanes to know
-        // where the character should land in the world-center coord system so the exit
-        // slide ends at the correct lane (no jolt). Spec asked for fire-immediate (no
-        // await), but waiting for the network round-trip is more correct here.
-        let resp = null;
-        try {
-          resp = await gameClient.promoteVariant();
-        } catch (err) {
-          console.error('[main] promote error', err);
-        }
+      async function onDiagComplete(landingX, sign, ctx, promotePromise) {
+        // promotePromise was kicked off at corner-fire so the scheduler could be
+        // pre-staged during the cinematic. Await it here only to read the values
+        // we need for the exit slide.
+        const resp = await promotePromise;
         if (!resp || !resp.success) {
           scene.clearCinematicExit?.();
           scene.setCameraMode('default');
@@ -577,12 +592,11 @@ export async function bootstrap(root) {
         // world frame and would otherwise collide with the character who is now in
         // the new frame.
         scene.ghostExistingWaves?.();
-        // Tear down retiring tracks + remove all ghost wave meshes (carts) in one
-        // shot now that the cinematic has landed. Old safezones go with them via
-        // safeZoneRenderer.reset() — safe because there are no surviving old waves
-        // for their cachedX to apply to, and brand-new waves will rebuild fresh.
+        // Tear down retiring tracks + remove old-frame ghost wave meshes.
+        // Scheduler was already pre-staged at corner-fire so new waves are
+        // mid-scroll by now; we do NOT reset the scheduler or safe-zone
+        // renderer here (that would wipe the pre-staged new state).
         scene.finalizeVariantTransition?.();
-        safeZoneRenderer.reset();
         const startIdx = resp.current_note_index ?? 0;
         if (run && resp.notes) {
           run.sequence = resp.notes;
@@ -595,13 +609,6 @@ export async function bootstrap(root) {
         if (resp.notes) {
           rootNote = resp.notes[0] ?? null;
           apexNote = ascendingNoteCount > 0 ? resp.notes[ascendingNoteCount - 1] : null;
-          const gameNow = _now() - gameStartTime;
-          // Drop the scheduler's in-flight outgoing-scale waves — their meshes
-          // were just removed by scene.finalizeVariantTransition(); if we leave
-          // them in the scheduler list, setWaves will rebuild them next tick at
-          // the new world offset and collide with the character.
-          waveScheduler.clearWavesForTesting();
-          waveScheduler.resumeQueueing(resp.notes, startIdx, resp.base_fret, resp.num_lanes, gameNow);
         }
         if (resp.current_track != null) {
           scene.moveToTrack(resp.current_track, true);

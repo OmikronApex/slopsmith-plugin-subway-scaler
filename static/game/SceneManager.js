@@ -1008,7 +1008,13 @@ export function createScene(canvas) {
     getWorldOffsetX() { return _worldOffsetX; },
     getNumLanes() { return numLanes; },
     ghostExistingWaves() {
-      for (const w of activeWaves.values()) w.ghost = true;
+      // Only ghost waves whose captured offset doesn't match the current world
+      // offset — those are the leftover pre-variant waves. New-frame waves
+      // (pre-staged during the cinematic) share the current offset and must
+      // remain collidable.
+      for (const w of activeWaves.values()) {
+        if (w.offsetX !== _worldOffsetX) w.ghost = true;
+      }
     },
     finalizeVariantTransition,
     clearWavesForTesting() { clearWaves(); },
