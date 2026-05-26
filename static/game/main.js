@@ -15,7 +15,19 @@ import { quantize, midiToName } from './notes.js';
 import { GameClient } from './game-client.js';
 import { DebugLogger } from './DebugLogger.js';
 import { SafeZoneRenderer } from './ui/SafeZoneRenderer.js';
-import { laneX } from './TrackSystem.js';
+import { laneX, SPAWN_Z } from './TrackSystem.js';
+
+// Cinematic refinement constants (Story 6.8) — mirror SceneManager values.
+const MAX_BEND_YAW = Math.PI / 4;
+const DIAG_CROSS_MS = 1200;
+const FIRST_WAVE_ARRIVAL_DELAY_MS = 500;
+const REPOSITION_SLIDE_MS = 200;
+const DIAG_LEN = 45;
+const LANE_W = 1.4;
+
+// URL-driven test-mode keyboard shortcuts (Story 6.8 T12).
+const TEST_MODE = typeof window !== 'undefined'
+  && new URLSearchParams(window.location.search).has('testMode');
 import { injectTokens } from './ui/tokens.js';
 import { renderSetupScreen } from './ui/setup.js';
 import { OverlayManager } from './ui/overlay.js';
@@ -442,35 +454,113 @@ export async function bootstrap(root) {
         setTransitionPhase('riding', ctx);
       });
 
-      // Riding → breather: character traverses diagonal then a brief straight extension (Story 6.8 AC-4).
-      // Gate: diagonal traversal completes, then time-based extension (~400ms) before breather.
-      // Safe zone cleared immediately on riding entry — accepted variant can't be missed.
+      // Riding phase (Story 6.8 rewrite): wait on the straight section for the outgoing
+      // corner to reach the player; then snap character yaw, ease camera, time-lerp X to
+      // landingX, schedule early new-scale spawn, and on landing fire promote + sync exit.
       setTransitionPhaseListener((next, prev, ctx) => {
         if (next !== 'riding') return;
         const info = scene.getVariantInfo();
         scene.setCameraMode('riding');
-        // Clear safe zone so it can't fire a false miss during the extended ride.
-        scene.clearVariantSafeZone?.();
-        if (info) {
-          scene.setCharacterTargetX(info.variantX);
-          scene.clearBendMidpointCallback();
-          let _extendStartMs = null;
-          const RIDE_EXTEND_MS = 400;
+        // Disable miss callback only — keep mesh so it scrolls away naturally (AC-2).
+        scene.disableVariantMissCallback?.();
+        if (!info) {
+          // No variant geometry (test/edge path): straight to promoting.
+          setTransitionPhase('promoting', ctx);
+          return;
+        }
+        scene.setCharacterTargetX(info.variantX);
+        scene.clearBendMidpointCallback();
+        let _cornerFired = false;
+        _perFrameHook = () => {
+          if (_cornerFired) return;
+          if (!scene.isOutgoingCornerAtPlayer()) return;
+          _cornerFired = true;
+          const cornerTime = performance.now();
+          const { variantX, side } = scene.getVariantInfo() || info;
+          const sign = side === 'RIGHT' ? 1 : -1;
+          const landingX = variantX + sign * DIAG_LEN;
+
+          // Character snap + camera target (AC-4).
+          scene.snapCharacterYaw(sign * MAX_BEND_YAW);
+          scene.setRidingCameraTarget(sign * MAX_BEND_YAW);
+
+          // Early spawn (AC-5): time wave arrival to land at FIRST_WAVE_ARRIVAL_DELAY_MS post-landing.
+          const waveSpeed = scene.getLastWaveSpeed() || 0.05;
+          // Match SceneManager visual speed: pos.z = SPAWN_Z + elapsed * speed * 0.5.
+          const T_travel = Math.abs(SPAWN_Z) / (waveSpeed * 0.5);
+          const spawnDelayMs = DIAG_CROSS_MS - T_travel + FIRST_WAVE_ARRIVAL_DELAY_MS;
+          const resp = ctx?.resp;
+          const newBase = resp?.base_fret ?? notesResp.base_fret;
+          const newLanes = resp?.num_lanes ?? notesResp.num_lanes;
+          const newScaleCenterX = landingX + sign * (newLanes - 1) / 2 * LANE_W;
+          const doSpawn = () => scene.spawnVariantTracks(newBase, newLanes, waveSpeed, newScaleCenterX);
+          if (spawnDelayMs <= 0) doSpawn();
+          else setTimeout(doSpawn, spawnDelayMs);
+
+          // X lerp (AC-4) + landing handler (AC-6/7/8).
           _perFrameHook = () => {
-            if (!scene.isTraversalActive()) {
-              if (_extendStartMs === null) _extendStartMs = performance.now();
-              if (performance.now() - _extendStartMs >= RIDE_EXTEND_MS) {
-                _perFrameHook = null;
-                scene.setCameraMode('default');
-                setTransitionPhase('breather', ctx);
-              }
+            const p = Math.min(1, (performance.now() - cornerTime) / DIAG_CROSS_MS);
+            scene.setCharacterX(variantX + (landingX - variantX) * p);
+            if (p >= 1) {
+              _perFrameHook = null;
+              onDiagComplete(landingX, sign, ctx);
             }
           };
-        } else {
-          // No variant geometry (test path or edge case) — advance synchronously.
-          setTransitionPhase('breather', ctx);
-        }
+        };
       });
+
+      function onDiagComplete(landingX, sign, ctx) {
+        // Fire promote (do not await) — backend swap proceeds in parallel with cinematic exit.
+        const promotePromise = gameClient.promoteVariant().catch(err => {
+          console.error('[main] promote error', err);
+          return null;
+        });
+
+        const variantLaneIndex = ctx?.resp?.variant_lane_index ?? 0;
+        const variantNoteX = landingX + sign * variantLaneIndex * LANE_W;
+
+        scene.startCinematicExit(variantNoteX, REPOSITION_SLIDE_MS);
+
+        // Apply promote response after exit completes.
+        setTimeout(async () => {
+          const resp = await promotePromise;
+          scene.setCameraMode('default');
+          if (!resp || !resp.success) {
+            waveScheduler.resumeQueueing(notesResp.notes, run?.cursor ?? 0);
+            setTransitionPhase('idle', ctx);
+            return;
+          }
+          applyPromoteResponse(resp, ctx);
+        }, REPOSITION_SLIDE_MS);
+      }
+
+      function applyPromoteResponse(resp, ctx) {
+        const startIdx = resp.current_note_index ?? 0;
+        if (run && resp.notes) {
+          run.sequence = resp.notes;
+          run.cursor = startIdx;
+          setExpected();
+        }
+        if (resp.ascending_note_count != null) {
+          ascendingNoteCount = resp.ascending_note_count;
+        }
+        if (resp.notes) {
+          rootNote = resp.notes[0] ?? null;
+          apexNote = ascendingNoteCount > 0 ? resp.notes[ascendingNoteCount - 1] : null;
+          const gameNow = _now() - gameStartTime;
+          waveScheduler.resumeQueueing(resp.notes, startIdx, resp.base_fret, resp.num_lanes, gameNow);
+        }
+        if (resp.current_track != null) {
+          scene.moveToTrack(resp.current_track, true);
+        }
+        if (resp.base_fret != null && resp.num_lanes != null) {
+          scene.setLaneGeometry(resp.base_fret, resp.num_lanes);
+        }
+        pushGameEvent('variant.promote', { base_fret: resp.base_fret, num_lanes: resp.num_lanes, note_index: startIdx });
+        if (_debugLogger) _debugLogger.log('variant.promote', { base_fret: resp.base_fret, num_lanes: resp.num_lanes, note_index: startIdx, current_track: resp.current_track });
+        safeZoneRenderer.reset();
+        setTransitionPhase('active', ctx);
+      }
 
       // Phase-exit cleanup: reset camera mode and clear hooks on any riding exit.
       registerPhaseCleanup('riding', () => {
@@ -1069,6 +1159,32 @@ export async function bootstrap(root) {
         _runAcceptTransitionFn(resp);
       },
     };
+  }
+
+  // Test-mode keyboard injection (Story 6.8 T12).
+  // Q = fire correct note for nearest regular safe zone; W = fire correct note for variant.
+  if (TEST_MODE) {
+    window.addEventListener('keydown', (ev) => {
+      const k = ev.key?.toLowerCase();
+      if (k !== 'q' && k !== 'w') return;
+      const zones = scene.getActiveSafeZones?.() || [];
+      if (k === 'w') {
+        const vz = zones.find(z => z.isVariant);
+        if (!vz) return;
+        // activeWindow.trigger_midi is the variant safe zone's expected note (backend-authoritative).
+        const midi = activeWindow?.trigger_midi;
+        if (midi == null) return;
+        _injectTestNote(midi);
+      } else if (k === 'q') {
+        const exp = run?.currentExpected?.();
+        if (!exp?.note?.midi) return;
+        _injectTestNote(exp.note.midi);
+      }
+    });
+  }
+  function _injectTestNote(midi) {
+    const fn = window.__gameState?._test?.playNote;
+    if (typeof fn === 'function') fn(midi);
   }
 
   pauseBtn.addEventListener('click', () => {

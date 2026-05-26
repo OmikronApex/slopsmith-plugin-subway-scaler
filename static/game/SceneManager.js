@@ -121,17 +121,22 @@ export function createScene(canvas) {
   const CAMERA_LOOK_AHEAD_Z = 5;
   const CAMERA_RESET_DURATION_MS = 500;
 
-  // Cinematic refinement constants (Story 6.8)
-  const MAX_BEND_YAW = 45 * Math.PI / 180;
-  const RIDE_EXTEND_Z = 15;
-  const LOOK_AHEAD_DIST = 10;
-  const CAMERA_YAW_FOLLOW_RATE = 0.08; // unused directly — rate clamp of 0.02 rad/frame applies
+  // Cinematic refinement constants (Story 6.8 rewrite)
+  const MAX_BEND_YAW = Math.PI / 4;          // 45° — character snap & camera target
+  const DIAG_CROSS_MS = 1200;                // X crossing duration (breather window)
+  const FIRST_WAVE_ARRIVAL_DELAY_MS = 500;   // ms after landing before first new-scale wave
+  const REPOSITION_SLIDE_MS = 200;           // quick slide to variant note fret after landing
+  const CAMERA_YAW_RATE = 0.02;              // rad/frame camera ease rate
 
   let _cameraMode = 'default';
   let _cameraResetStartMs = 0;
   let _cameraResetStartYaw = 0;
   let _targetCamYaw = 0;
   let _currentCamYaw = 0;
+
+  // Cinematic exit (Story 6.8 AC-6): synchronized time-based lerp.
+  let _cinematicExit = null; // { startMs, durMs, fromCamYaw, fromCharYaw, fromX, targetX }
+  let _variantTrackGroupCenterX = 0; // current centerX offset for variant track group (Story 6.8 AC-5)
 
   // Pending tracks — new-scale track meshes scrolling in from horizon (Story 6.4)
   let _pendingTracks = [];         // [{ mesh, targetZ, speedPxMs }]
@@ -255,12 +260,13 @@ export function createScene(canvas) {
   }
 
   // Spawn new-scale track meshes at SPAWN_Z and scroll them toward rest position (Story 6.4).
-  function spawnVariantTracks(newBaseFret, newNumLanes, speedPxMs) {
+  function spawnVariantTracks(newBaseFret, newNumLanes, speedPxMs, centerX = 0) {
     clearTracks();
     _pendingTracks = [];
     _tracksLandedFired = false;
+    _variantTrackGroupCenterX = centerX;
     for (let i = 0; i < newNumLanes; i++) {
-      const x = laneX(i, newNumLanes);
+      const x = laneX(i, newNumLanes) + centerX;
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.06, TRACK_DEPTH), trackMat);
       mesh.position.set(x, -0.05, SPAWN_Z);
       scene.add(mesh);
@@ -341,6 +347,11 @@ export function createScene(canvas) {
     szMesh.rotation.x = -Math.PI / 2;
     szMesh.userData.spawnMs = spawnMs;
     szMesh.userData.speedPxMs = speedPxMs;
+    // Variant note value the safe zone expects — used by getActiveSafeZones (Story 6.8 T12).
+    if (anchorFret != null) {
+      const fretOffset = variant.side === 'RIGHT' ? 2 : -2;
+      szMesh.userData.variantNote = anchorFret + fretOffset;
+    }
     const szElapsed = Math.max(0, nowGameMs - spawnMs);
     // Match SafeZoneRenderer Z: SPAWN_Z + elapsed*speed*0.5 + DEPTH/2.
     // Without the +DEPTH/2 offset the variant safezone trails the anchor's by half a depth.
@@ -526,28 +537,9 @@ export function createScene(canvas) {
       const range = frontEdgeZ - midpointZ;
       const progress = range > 0 ? Math.max(0, Math.min(1, (frontEdgeZ - 0) / range)) : 1;
       character.position.x = _charTraversal.startX + (_charTraversal.targetX - _charTraversal.startX) * progress;
-
-      // Character rotation on diagonal (Story 6.8 AC-1)
-      if (character.rotation !== undefined) {
-        const vSide = variantInfo?.side || 'RIGHT';
-        const sign = vSide === 'RIGHT' ? 1 : -1;
-        character.rotation.y = sign * MAX_BEND_YAW * Math.sin(progress * Math.PI);
-      }
-
-      // transitionRideProgress test hook (Story 6.8 AC-7)
-      if (window.__gameState?.scene) {
-        window.__gameState.scene.transitionRideProgress = progress;
-      }
-
       if (progress >= 1) {
         _charTraversal = null;
-        if (window.__gameState?.scene) window.__gameState.scene.transitionRideProgress = 0;
       }
-    }
-
-    // Ease character yaw back to 0 after traversal completes (Story 6.8 AC-1)
-    if (!_charTraversal && !succeeded && character.rotation !== undefined && Math.abs(character.rotation.y) > 0.01) {
-      character.rotation.y *= 0.9;
     }
 
     // Bend midpoint reached callback — fires once when incoming diagonal midpoint hits player (z ≥ 0).
@@ -680,14 +672,25 @@ export function createScene(canvas) {
     camera.position.y = CAMERA_DISTANCE * Math.sin(rad);
     camera.position.z = CAMERA_DISTANCE * Math.cos(rad) + camBase.lookAt[2];
 
-    if (_cameraMode === 'riding') {
-      // Heading-tracking camera (Story 6.8 AC-3): follow character rotation with rate clamp
-      _targetCamYaw = Math.max(-Math.PI / 4, Math.min(Math.PI / 4, character.rotation.y * 0.7));
-      _currentCamYaw += Math.max(-0.02, Math.min(0.02, _targetCamYaw - _currentCamYaw));
+    if (_cinematicExit) {
+      const e = _cinematicExit;
+      const p = Math.min(1, (nowMs - e.startMs) / e.durMs);
+      character.position.x = e.fromX + (e.targetX - e.fromX) * p;
+      camera.rotation.y = e.fromCamYaw * (1 - p);
+      character.rotation.y = e.fromCharYaw * (1 - p);
+      _currentCamYaw = camera.rotation.y;
+      _targetCamYaw = _currentCamYaw;
+      camera.lookAt(character.position.x, 0, camBase.lookAt[2]);
+      if (p >= 1) {
+        _cinematicExit = null;
+        _currentCamYaw = 0;
+        _targetCamYaw = 0;
+      }
+    } else if (_cameraMode === 'riding') {
+      // Rate-clamped ease toward target yaw set by main.js on corner detection.
+      _currentCamYaw += Math.max(-CAMERA_YAW_RATE, Math.min(CAMERA_YAW_RATE, _targetCamYaw - _currentCamYaw));
       camera.rotation.y = _currentCamYaw;
-      const lookAheadX = character.position.x + Math.sin(_currentCamYaw) * LOOK_AHEAD_DIST;
-      const lookAheadZ = character.position.z + Math.cos(_currentCamYaw) * LOOK_AHEAD_DIST + camBase.lookAt[2];
-      camera.lookAt(lookAheadX, 0, lookAheadZ);
+      camera.lookAt(character.position.x, 0, camBase.lookAt[2]);
     } else if (_cameraResetStartMs > 0) {
       // Ease yaw back to 0 after riding phase ends
       const t = Math.min(1, (nowMs - _cameraResetStartMs) / CAMERA_RESET_DURATION_MS);
@@ -772,6 +775,54 @@ export function createScene(canvas) {
     onVariantMissedCb = cb;
   }
 
+  // Disables the variant miss callback without removing the safe zone mesh
+  // (Story 6.8 AC-2). The mesh continues to scroll away naturally.
+  function disableVariantMissCallback() {
+    onVariantMissedCb = null;
+    lastVariantTickMs = 0;
+  }
+
+  function isOutgoingCornerAtPlayer() {
+    if (!variantProposePiece) return false;
+    return variantProposePiece.mesh.position.z >= STRAIGHT_LEN / 2;
+  }
+
+  function snapCharacterYaw(yaw) {
+    character.rotation.y = yaw;
+  }
+
+  function setCharacterX(x) {
+    character.position.x = x;
+  }
+
+  function setRidingCameraTarget(yaw) {
+    _targetCamYaw = yaw;
+  }
+
+  // Synchronized exit lerp (Story 6.8 AC-6).
+  function startCinematicExit(targetX, durationMs) {
+    _cinematicExit = {
+      startMs: performance.now(),
+      durMs: durationMs,
+      fromCamYaw: _currentCamYaw,
+      fromCharYaw: character.rotation.y,
+      fromX: character.position.x,
+      targetX,
+    };
+  }
+
+  function getActiveSafeZones() {
+    const zones = [];
+    if (variantSafeZoneMesh) {
+      zones.push({
+        note: variantSafeZoneMesh.userData.variantNote ?? null,
+        z: variantSafeZoneMesh.position.z,
+        isVariant: true,
+      });
+    }
+    return zones;
+  }
+
   // Clear variant safe zone and miss callback without disturbing traversal or geometry.
   // Called on accept so the safe zone can't trigger a false miss during riding.
   function clearVariantSafeZone() {
@@ -822,6 +873,13 @@ export function createScene(canvas) {
     setTargetCameraX,
     setOnVariantMissed,
     clearVariantSafeZone,
+    disableVariantMissCallback,
+    isOutgoingCornerAtPlayer,
+    snapCharacterYaw,
+    setCharacterX,
+    setRidingCameraTarget,
+    startCinematicExit,
+    getActiveSafeZones,
     clearWavesForTesting() { clearWaves(); },
     resize(w, h) {
       if (w <= 0 || h <= 0) return;

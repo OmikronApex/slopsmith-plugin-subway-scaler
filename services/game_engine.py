@@ -470,7 +470,15 @@ class GameEngine:
             "variant.accept session=%s variant=%s",
             session.session_id, variant.variant_id,
         )
-        return {"success": True, "variant_id": variant.variant_id, "state": "accepted"}
+        # variant_lane_index: 0-indexed lane within the new scale where the character
+        # lands (Story 6.8 AC-7). 0 = outermost (landing position). Default 0 — backend
+        # can be extended later to return the variant note's actual lane within new scale.
+        return {
+            "success": True,
+            "variant_id": variant.variant_id,
+            "state": "accepted",
+            "variant_lane_index": 0,
+        }
 
     def _commit_variant_swap(self, session, variant, instrument) -> dict:
         """Perform the scale swap for a previously accepted variant. Called by promote_variant."""
