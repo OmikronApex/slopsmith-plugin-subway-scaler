@@ -198,7 +198,7 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
 
   // Root label
   const rootLabel = el('div', { class: 'form-group' });
-  rootLabel.appendChild(el('label', {}, 'Root: randomised fret 5–8'));
+  rootLabel.appendChild(el('label', {}, 'Root: 5th fret of lowest string'));
   form.appendChild(rootLabel);
 
   // Debug logging checkbox
@@ -255,7 +255,7 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
       const selectedInst = instruments.find(i => i.id === currentInstrumentId);
       if (!selectedInst) throw new Error('Invalid instrument selection');
 
-      const rootMidi = selectedInst.tuning[0] + 5;
+      const rootMidi = selectedInst?.tuning?.[0] != null ? selectedInst.tuning[0] + 5 : 60;
 
       // Save to localStorage (but not root_midi)
       saveSettings({

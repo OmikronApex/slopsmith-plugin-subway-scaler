@@ -207,6 +207,8 @@ export function createScene(canvas) {
     if (window.__gameState?.scene) window.__gameState.scene.transitionRideProgress = undefined;
     for (const pt of _pendingTracks) { scene.remove(pt.mesh); }
     _pendingTracks = [];
+    for (const rt of _retiringTracks) { scene.remove(rt.mesh); }
+    _retiringTracks = [];
     _tracksLandedCb = null;
     _tracksLandedFired = false;
     succeeded = false;
@@ -667,6 +669,13 @@ export function createScene(canvas) {
           if (onVariantMissedCb) onVariantMissedCb();
         }
         if (_variantMissFired && variantSafeZoneMesh && z > SZ_OFFSCREEN_Z) {
+          // Dispose child sprite material + texture to prevent per-propose accumulation
+          variantSafeZoneMesh.traverse(c => {
+            if (c.isSprite && c.material) {
+              c.material.map?.dispose();
+              c.material.dispose();
+            }
+          });
           scene.remove(variantSafeZoneMesh);
           variantSafeZoneMesh.geometry?.dispose();
           variantSafeZoneMesh.material?.dispose();
@@ -720,7 +729,7 @@ export function createScene(canvas) {
     // Pending tracks — scroll new-scale track meshes from SPAWN_Z to rest position (Story 6.4).
     if (_pendingTracks.length > 0) {
       for (const pt of _pendingTracks) {
-        pt.mesh.position.z -= pt.speedPxMs * 0.5 * (dt * 1000);
+        pt.mesh.position.z += pt.speedPxMs * 0.5 * (dt * 1000);
         if (pt.mesh.position.z <= pt.targetZ) {
           pt.mesh.position.z = pt.targetZ;
         }

@@ -40,13 +40,12 @@ def test_promote_without_accept_rejected(client):
     assert r["error"] == "variant_not_accepted"
 
 
-def test_promote_without_active_variant_rejected(client):
+def test_promote_without_active_variant_returns_no_active_variant_error(client):
     s = _start(client)
     r = client.post(f"{BASE}/{s['session_id']}/variant/promote").json()
-    # Idempotent: no active_variant → return current scale state as success
-    assert r["success"] is True
-    assert "root_midi" in r
-    assert "notes" in r
+    # No propose/accept/promote ever happened → no_active_variant error
+    assert r["success"] is False
+    assert r["error"] == "no_active_variant"
 
 
 def test_promote_after_accept_returns_full_scale_data(client):
@@ -94,14 +93,34 @@ def test_promote_idempotent_double_call(client):
     assert r1["root_midi"] == r2["root_midi"]
 
 
-def test_promote_after_dismiss_rejected(client):
+def test_promote_after_dismiss_returns_no_active_variant_error(client):
     s = _start(client)
     _force_milestone(client, s["session_id"])
     client.post(f"{BASE}/{s['session_id']}/variant/propose", json={"now_ms": 1000})
     client.post(f"{BASE}/{s['session_id']}/variant/dismiss")
     r = client.post(f"{BASE}/{s['session_id']}/variant/promote").json()
-    # active_variant cleared by dismiss → idempotent success
-    assert r["success"] is True
+    # Dismissed but never accepted/promoted → no_active_variant error
+    assert r["success"] is False
+    assert r["error"] == "no_active_variant"
+
+
+def test_promote_with_paused_session_returns_game_not_running(client):
+    """A session with an ACCEPTED variant that gets paused before promote returns game_not_running."""
+    from services.game_router import engine
+    s = _start(client)
+    _force_milestone(client, s["session_id"])
+    # Propose to create active_variant
+    p = client.post(f"{BASE}/{s['session_id']}/variant/propose", json={"now_ms": 1000}).json()
+    assert p["success"] is True
+    # Set variant state to ACCEPTED (bypass route to avoid server-time issues with synthetic timestamps)
+    sess = engine.get_session(s["session_id"])
+    sess.active_variant.state = "ACCEPTED"
+    # Pause the session
+    client.post(f"{BASE}/{s['session_id']}/pause")
+    # Promote should report game_not_running (variant is ACCEPTED but session is not running)
+    r = client.post(f"{BASE}/{s['session_id']}/variant/promote").json()
+    assert r["success"] is False
+    assert r["error"] == "game_not_running"
 
 
 def test_poll_outgoing_scale_served_between_accept_and_promote(client):

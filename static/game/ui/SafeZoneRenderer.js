@@ -78,11 +78,21 @@ export class SafeZoneRenderer {
       // Preserve cachedX across userData rewrite so post-variant waves don't
       // re-snap to the new offset on subsequent frames.
       const cachedX = mesh.userData.cachedX;
-      mesh.userData = { spawn_time_ms: wave.spawn_time_ms, speed_px_per_ms: wave.speed_px_per_ms, safe_midi: wave.safe_midi, safe_fret: wave.safe_fret, cachedX };
+      // Use property assignment (not full object replacement) so other code
+      // that stores data on mesh.userData doesn't get silently destroyed (D1).
+      mesh.userData.spawn_time_ms = wave.spawn_time_ms;
+      mesh.userData.speed_px_per_ms = wave.speed_px_per_ms;
+      mesh.userData.safe_midi = wave.safe_midi;
+      mesh.userData.safe_fret = wave.safe_fret;
+      mesh.userData.cachedX = cachedX;
 
       if (wave.safe_fret != null && wave.safe_fret !== prevFret) {
         const old = mesh.getObjectByName('sz-label');
-        if (old) mesh.remove(old);
+        if (old) {
+          old.material?.map?.dispose();
+          old.material?.dispose();
+          mesh.remove(old);
+        }
         const label = makeLabel(wave.safe_fret.toString());
         label.name = 'sz-label';
         mesh.add(label);
@@ -92,7 +102,8 @@ export class SafeZoneRenderer {
       // returns offset-adjusted coordinates, but already-in-flight safe zones must
       // stay at their original X — only newly-spawned waves get the new offset.
       if (isNew || mesh.userData.cachedX == null) {
-        mesh.userData.cachedX = laneXFn(wave.safe_track);
+        const rawX = laneXFn(wave.safe_track);
+        mesh.userData.cachedX = (rawX != null && isFinite(rawX)) ? rawX : 0;
       }
       const x = mesh.userData.cachedX;
       const elapsed = Math.max(0, nowMs - gameStartTime - wave.spawn_time_ms);
@@ -120,6 +131,12 @@ export class SafeZoneRenderer {
 
   reset() {
     for (const mesh of this.zones.values()) {
+      // Dispose label sprite material + texture to prevent GPU memory leak (P1).
+      const label = mesh.getObjectByName('sz-label');
+      if (label) {
+        label.material?.map?.dispose();
+        label.material?.dispose();
+      }
       this.scene.remove(mesh);
     }
     this.zones.clear();

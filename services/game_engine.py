@@ -22,6 +22,8 @@ SCALES_PER_VARIANT = 2
 DEFAULT_WINDOW_MS = 120_000  # 2-minute safety net; frontend proximity logic drives dismiss timing
 # Variant root offset: 2 frets above highest scale note (RIGHT) or below root (LEFT).
 VARIANT_SHIFT_DOWN = 2
+# Breather duration after bend traversal before new tracks scroll in (frontend reads timing_params).
+VARIANT_BREATHER_MS = 3000
 
 class GameSession(BaseModel):
     session_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -63,6 +65,9 @@ class GameEngine:
             instrument = Instrument(id="default", name="Default", kind="guitar", stringCount=6, tuning=[40, 45, 50, 55, 59, 64], maxFret=24)
 
         notes, asc_count = self._build_full_scale_notes(scale_id, root_midi, instrument)
+
+        if not notes or asc_count <= 0:
+            raise ValueError(f"no playable notes generated for scale={scale_id} root={root_midi} instrument={instrument_id}")
 
         scale_frets = [n.fret for n in notes if n.fret is not None]
         base_fret = min(scale_frets) if scale_frets else 0
@@ -109,7 +114,8 @@ class GameEngine:
 
         # Generate ascending MIDI values
         asc_raw = expand(scale_id, root_midi, octaves=octaves, descending=False)
-        asc_midis = [n.midi for n in asc_raw if n.midi <= max_midi]
+        # Include all generated MIDIs — the position loop naturally skips unplayable notes.
+        asc_midis = [n.midi for n in asc_raw]
 
         # Find root's starting string (lowest string where root fits in frets 1-12)
         root_string_idx = 0
@@ -199,12 +205,13 @@ class GameEngine:
             new_idx = session.current_note_index
             # Detect ascending pass (apex reached — last ascending note → first descending).
             if (session.ascending_note_count > 0
+                    and session.ascending_note_count < len(session.notes)
                     and prev_idx == session.ascending_note_count - 1
                     and new_idx == session.ascending_note_count):
                 session.scale_passes_completed += 1
                 session.last_pass_direction = "UP"
             # Detect descending pass (root reached — last note wraps to index 0).
-            elif new_idx == 0 and prev_idx == len(session.notes) - 1:
+            elif len(session.notes) > 1 and new_idx == 0 and prev_idx == len(session.notes) - 1:
                 session.scale_passes_completed += 1
                 session.last_pass_direction = "DOWN"
 
@@ -314,6 +321,8 @@ class GameEngine:
                 num_lanes = target_num_lanes
                 if base_fret + num_lanes - 1 > instrument.maxFret:
                     num_lanes = max(3, instrument.maxFret - base_fret + 1)
+                    if num_lanes < 3:
+                        return None
                 base_string = instrument.stringCount - idx  # 1-based from HIGH
                 return base_fret, num_lanes, 0, base_string
             return None
@@ -352,6 +361,10 @@ class GameEngine:
             notes, asc_count = self._build_full_scale_notes(scale_id, candidate, instrument)
             if notes and asc_count > 0 and asc_count < len(notes) and notes[asc_count - 1].midi == target_highest:
                 return candidate, notes, asc_count
+        logger.warning(
+            "_find_root_for_highest no match for target_highest=%d scale=%s — falling back to current root",
+            target_highest, scale_id,
+        )
         return None, None, None
 
     def _fret_in_window(self, midi: int, instrument: Instrument, base_fret: int, num_lanes: int):
@@ -448,13 +461,16 @@ class GameEngine:
             return {"success": False, "error": "no_active_variant"}
 
         now_ms = now_ms if now_ms is not None else int(time.time() * 1000)
+        # NOTE: now_ms is client-supplied (test override). In single-player local mode the
+        # client is the player so tampering only hurts their own experience. If this game
+        # ever moves to a networked model, validate now_ms against server time here.
         if now_ms > session.active_window.deadline_ms:
             return {"success": False, "error": "window_expired"}
         if midi != session.active_window.trigger_midi:
             return {"success": False, "error": "wrong_midi"}
 
         variant = session.active_variant
-        if variant.state == "ACCEPTED":
+        if variant.state in ("ACCEPTED", "PROMOTED"):
             return {"success": False, "error": "variant_already_accepted"}
 
         variant.state = "ACCEPTED"
@@ -556,21 +572,24 @@ class GameEngine:
         session = self.get_session(session_id)
         if not session:
             return {"success": False, "error": "session_not_found"}
-        if session.status != "running":
-            return {"success": False, "error": "game_not_running"}
         # Idempotency: if already promoted (active_variant cleared), return current scale state.
         if not session.active_variant:
-            return {
-                "success": True,
-                "root_midi": session.root_midi,
-                "base_fret": session.base_fret,
-                "num_lanes": session.num_lanes,
-                "notes": [n.model_dump() for n in session.notes],
-                "ascending_note_count": session.ascending_note_count,
-                "current_note_index": session.current_note_index,
-            }
+            already_promoted = any(h.get("decision") == "PROMOTED" for h in session.variant_history)
+            if already_promoted:
+                return {
+                    "success": True,
+                    "root_midi": session.root_midi,
+                    "base_fret": session.base_fret,
+                    "num_lanes": session.num_lanes,
+                    "notes": [n.model_dump() for n in session.notes],
+                    "ascending_note_count": session.ascending_note_count,
+                    "current_note_index": session.current_note_index,
+                }
+            return {"success": False, "error": "no_active_variant"}
+        if session.status != "running":
+            return {"success": False, "error": "game_not_running"}
         variant = session.active_variant
-        if variant.state != "ACCEPTED":
+        if variant.state not in ("ACCEPTED",):
             return {"success": False, "error": "variant_not_accepted"}
 
         instrument = get_instrument(session.instrument_id) or Instrument(

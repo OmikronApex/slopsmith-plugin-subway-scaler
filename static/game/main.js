@@ -366,7 +366,10 @@ export async function bootstrap(root) {
   async function start() {
     if (run && run.state === 'running') return;
     feedbackEl.textContent = '';
-    
+    // Reset phase machine early so a failure before register/listener setup
+    // doesn't leave stale listeners from the previous game (P7).
+    resetTransitionPhase();
+
     try {
       const notesResp = await gameClient.start(state.scaleId, state.difficulty, {
         rootMidi: state.rootMidi,
@@ -446,7 +449,6 @@ export async function bootstrap(root) {
       // Transition phase machine (Story 6.1) — reset on each game start, then register
       // default listeners that drive the synchronous accept waterfall. Later stories
       // replace individual listeners with async, animation-driven variants.
-      resetTransitionPhase();
       if (window.__gameState?.variant) {
         window.__gameState.variant.transitionPhase = 'idle';
       }
@@ -565,7 +567,9 @@ export async function bootstrap(root) {
         if (!resp || !resp.success) {
           scene.clearCinematicExit?.();
           scene.setCameraMode('default');
-          waveScheduler.resumeQueueing(notesResp.notes, run?.cursor ?? 0);
+          waveScheduler.clearWavesForTesting();
+          const gameNow = _now() - gameStartTime;
+          waveScheduler.resumeQueueing(notesResp.notes, run?.cursor ?? 0, null, null, gameNow);
           setTransitionPhase('idle', ctx);
           return;
         }
@@ -667,7 +671,7 @@ export async function bootstrap(root) {
         gameClient.promoteVariant().then((resp) => {
           if (!resp || !resp.success) {
             console.error('[main] promote failed', resp);
-            waveScheduler.resumeQueueing(notesResp.notes, run?.cursor ?? 0);
+            waveScheduler.resumeQueueing(notesResp.notes, run?.cursor ?? 0, null, null, _now() - gameStartTime);
             setTransitionPhase('idle', ctx);
             return;
           }
@@ -700,7 +704,7 @@ export async function bootstrap(root) {
           setTransitionPhase('active', ctx);
         }).catch((err) => {
           console.error('[main] promote error', err);
-          waveScheduler.resumeQueueing(notesResp.notes, run?.cursor ?? 0);
+          waveScheduler.resumeQueueing(notesResp.notes, run?.cursor ?? 0, null, null, _now() - gameStartTime);
           setTransitionPhase('idle', ctx);
         });
       });
@@ -820,23 +824,30 @@ export async function bootstrap(root) {
           // proposed because !activeVariant gates the next proposal.
           if (!targetWave && variantPendingSpawn.queuedAtMs != null
               && performance.now() - variantPendingSpawn.queuedAtMs > 15000) {
-            if (_debugLogger) _debugLogger.log('variant.spawn.timeout', { targetNoteIndex: targetIdx });
-            gameClient.dismissVariant().catch(() => {});
-            if (waveScheduler.queueingPaused) {
-              waveScheduler.resumeQueueing(run.sequence, run.cursor);
+            // Guard: only timeout if still in proposed phase — a concurrent accept
+            // may have already advanced past it (P8).
+            if (currentTransitionPhase() !== 'proposed') {
+              variantPendingSpawn = null;
+              variantSpawnedForWave = null;
+            } else {
+              if (_debugLogger) _debugLogger.log('variant.spawn.timeout', { targetNoteIndex: targetIdx });
+              gameClient.dismissVariant().catch(() => {});
+              if (waveScheduler.queueingPaused) {
+                waveScheduler.resumeQueueing(run.sequence, run.cursor, null, null, _now() - gameStartTime);
+              }
+              setTransitionPhase('idle', { reason: 'spawn-timeout' });
+              shownVariantId = null;
+              activeVariant = null;
+              activeWindow = null;
+              variantPendingSpawn = null;
+              variantSpawnedForWave = null;
+              if (window.__gameState) {
+                window.__gameState.variant.id = null;
+                window.__gameState.variant.timerRunning = false;
+                window.__gameState.variant.timerMs = 0;
+              }
+              updateVariantHud();
             }
-            setTransitionPhase('idle', { reason: 'spawn-timeout' });
-            shownVariantId = null;
-            activeVariant = null;
-            activeWindow = null;
-            variantPendingSpawn = null;
-            variantSpawnedForWave = null;
-            if (window.__gameState) {
-              window.__gameState.variant.id = null;
-              window.__gameState.variant.timerRunning = false;
-              window.__gameState.variant.timerMs = 0;
-            }
-            updateVariantHud();
           } else if (targetWave && targetWave.wave_id !== variantSpawnedForWave) {
             // Anchor note = note at wave.note_index - 1 (apex for RIGHT, root for LEFT).
             const anchorIdx = targetWave.note_index - 1;
@@ -884,7 +895,8 @@ export async function bootstrap(root) {
       // countdownStart must be captured AFTER audio setup so any async delay
       // doesn't skew gameStartTime and cause waves to appear early.
       const countdownStart = _now();
-      gameStartTime = countdownStart + 3500;
+      gameStartTime = countdownStart + 3500; // Do NOT overwrite after countdown — set once so
+      // wave scheduler ticks during countdown use a consistent clock (P1).
       scene.setGameStartTime(gameStartTime);
       if (_debugLogger) _debugLogger.setGameStartTime(gameStartTime);
 
@@ -898,9 +910,7 @@ export async function bootstrap(root) {
       showOverlay('GO!', false);
       await new Promise(resolve => setTimeout(resolve, 500));
 
-      // Actually start the game
-      gameStartTime = performance.now();
-      scene.setGameStartTime(gameStartTime);
+      // Actually start the game — gameStartTime already set above; start the run clock.
       run.start(gameStartTime);
 
       overlay.classList.add('hidden');
@@ -916,7 +926,7 @@ export async function bootstrap(root) {
         if (activeVariant) {
           gameClient.dismissVariant().catch(() => {});
           if (waveScheduler.queueingPaused) {
-            waveScheduler.resumeQueueing(run.sequence, run.cursor);
+            waveScheduler.resumeQueueing(run.sequence, run.cursor, null, null, _now() - gameStartTime);
           }
           setTransitionPhase('idle', { reason: 'missed' });
           shownVariantId = null;
@@ -950,9 +960,9 @@ export async function bootstrap(root) {
               return;
             }
             if (waveScheduler.queueingPaused) {
-              waveScheduler.resumeQueueing(run.sequence, run.cursor);
-            }
-            setTransitionPhase('idle', { reason: 'accept-failed' });
+                waveScheduler.resumeQueueing(run.sequence, run.cursor, null, null, _now() - gameStartTime);
+              }
+              setTransitionPhase('idle', { reason: 'accept-failed' });
             shownVariantId = null;
             activeVariant = null;
             activeWindow = null;
@@ -976,7 +986,7 @@ export async function bootstrap(root) {
             return;
           }
           if (waveScheduler.queueingPaused) {
-            waveScheduler.resumeQueueing(run.sequence, run.cursor);
+            waveScheduler.resumeQueueing(run.sequence, run.cursor, null, null, _now() - gameStartTime);
           }
           setTransitionPhase('idle', { reason: 'accept-rejected' });
           shownVariantId = null;
@@ -1086,7 +1096,7 @@ export async function bootstrap(root) {
         // Polling-driven dismiss: backend cleared the variant without frontend initiating it.
         if (prevVariant && !activeVariant && currentTransitionPhase() === 'proposed') {
           if (waveScheduler.queueingPaused) {
-            waveScheduler.resumeQueueing(run.sequence, run.cursor);
+            waveScheduler.resumeQueueing(run.sequence, run.cursor, null, null, _now() - gameStartTime);
           }
           setTransitionPhase('idle', { reason: 'dismissed' });
           shownVariantId = null;
@@ -1125,6 +1135,12 @@ export async function bootstrap(root) {
   }
 
   function cleanup() {
+    // Clear test-mode interval first (P4) — prevents orphaned interval writing to
+    // stale __gameState.variant after cleanup has replaced the object.
+    if (window.__TEST_MODE && typeof window.__variantTimer !== 'undefined') {
+      clearInterval(window.__variantTimer);
+      window.__variantTimer = null;
+    }
     gameClient.stopPolling();
     if (rafId) cancelAnimationFrame(rafId);
     rafId = null;
@@ -1190,9 +1206,8 @@ export async function bootstrap(root) {
       },
       resetGame: () => { if (run) { run.abandon(); cleanup(); } },
       setVariant: (() => {
-        let _timer = null;
         return (id, durationMs = 10000) => {
-          if (_timer) { clearInterval(_timer); _timer = null; }
+          if (window.__variantTimer) { clearInterval(window.__variantTimer); window.__variantTimer = null; }
           if (!id) {
             window.__gameState.variant = { id: null, timerMs: 0, timerRunning: false, timerExpired: false };
             return;
@@ -1202,7 +1217,7 @@ export async function bootstrap(root) {
           window.__gameState.variant.timerRunning = true;
           window.__gameState.variant.timerExpired = false;
           const start = Date.now();
-          _timer = setInterval(() => {
+          window.__variantTimer = setInterval(() => {
             const elapsed = Date.now() - start;
             const remaining = Math.max(0, durationMs - elapsed);
             window.__gameState.variant.timerMs = remaining;
@@ -1210,8 +1225,8 @@ export async function bootstrap(root) {
               window.__gameState.variant.timerExpired = true;
               window.__gameState.variant.timerRunning = false;
               window.__gameState.variant.id = null;
-              clearInterval(_timer);
-              _timer = null;
+              clearInterval(window.__variantTimer);
+              window.__variantTimer = null;
             }
           }, 50);
         };

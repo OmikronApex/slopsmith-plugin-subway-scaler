@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from services.schemas import Track, GameState, SpeedMultiplier, Note
-from services.game_engine import GameEngine
+from services.game_engine import GameEngine, VARIANT_BREATHER_MS
 from services.scales import SCALES, midi_to_name
 from services.instruments import INSTRUMENTS
 from services.tabulator import Tabulator
@@ -147,7 +147,7 @@ async def start_game(payload: dict):
         "wave_spacing_factor": 0.4,
         "wave_lookahead_ms": 10000,
         "speed_increment_per_note": 0.05,
-        "variant_breather_ms": 3000,
+        "variant_breather_ms": VARIANT_BREATHER_MS,
     }
 
     return {

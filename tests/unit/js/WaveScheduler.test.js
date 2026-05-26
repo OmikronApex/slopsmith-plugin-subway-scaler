@@ -222,10 +222,9 @@ describe('WaveScheduler', () => {
       scheduler.resumeQueueing(recoveryNotes, cursor);
       // Pre-pause in-flight waves still present (not cleared by resumeQueueing).
       const nowIds = new Set(scheduler.waves.map(w => w.wave_id));
-      for (const id of preIds) {
-        // Waves may have been pruned by time, but scheduler is functional.
-        // Key assertion: cursor restored.
-      }
+      // At least some pre-pause waves survive resumeQueueing (may be fewer if pruned).
+      const survivors = preIds.filter(id => nowIds.has(id));
+      expect(survivors.length).toBeGreaterThan(0);
       expect(scheduler.queueingPaused).toBe(false);
       // Tick to verify new waves spawn from cursor.
       scheduler.tick(performance.now() + BASE_TIMING.wave_lookahead_ms, 1.0);
