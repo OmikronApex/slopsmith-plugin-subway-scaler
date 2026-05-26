@@ -323,6 +323,7 @@ export async function bootstrap(root) {
   let audio = null;
   let _pauseReason = 'normal';
   let rafId = null;
+  let _onDetection = null;           // set by start(); exposed to _test.playNote hook
   let _runAcceptTransitionFn = null; // set by start(); exposed to _test hooks
   let _waveScheduler = null;         // set by start(); exposed to _test.clearSceneWaves() (Story 6.7)
   let _perFrameHook = null;          // called each RAF frame; used by breather phase (Story 6.4)
@@ -849,7 +850,6 @@ export async function bootstrap(root) {
         }
       });
 
-      let _onDetection = null;
       const detectionHandler = async (det) => {
         if (!run || run.state !== 'running') return;
         _onDetection = detectionHandler;
