@@ -595,12 +595,23 @@ export function createScene(canvas) {
         if (window.__gameState?.variant) {
           window.__gameState.variant.safeZoneZ = z;
         }
-        // Miss: back edge has passed player (AC-2)
+        // Miss: back edge has passed player (AC-2).
+        // Post-accept the miss callback is disabled (Story 6.8): in that case do NOT
+        // tear down variant geom — the propose piece is the cinematic ride and must
+        // keep scrolling so isOutgoingCornerAtPlayer() can fire. Just remove the SZ
+        // mesh quietly (it's well past the player and serves no further purpose).
         if (z > VARIANT_SZ_DEPTH / 2) {
           const cb = onVariantMissedCb;
-          clearVariantGeom();
           lastVariantTickMs = 0;
-          if (cb) cb();
+          if (cb) {
+            clearVariantGeom();
+            cb();
+          } else {
+            scene.remove(variantSafeZoneMesh);
+            variantSafeZoneMesh.geometry?.dispose();
+            variantSafeZoneMesh.material?.dispose();
+            variantSafeZoneMesh = null;
+          }
         }
       }
     } else {
