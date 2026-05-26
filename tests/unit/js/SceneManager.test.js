@@ -330,10 +330,10 @@ describe('createScene — Story 6.8 cinematic refinement', () => {
   it('camera in riding mode eases yaw toward target — camera orbits character (position shifts -X with +yaw)', () => {
     sceneApi.setCameraMode('riding');
     sceneApi.setRidingCameraTarget(0.5);
-    // Default ease duration is LATERAL_MS (120ms). Advance the fake clock past
-    // its end so the eased lerp fully resolves and we can assert the orbit
-    // result. Camera at +yaw shifts in -X (sin(yaw)*camRadius with camRadius=11).
-    nowMs = 200;
+    // Default ease duration is 400ms. Advance the fake clock past its end so
+    // the eased lerp fully resolves and we can assert the orbit result.
+    // Camera at +yaw shifts in -X (sin(yaw)*camRadius with camRadius=11).
+    nowMs = 500;
     sceneApi.render(nowMs);
     expect(mockCamera.position.x).toBeLessThan(0); // moved in -X
     // sin(0.5) * 11 ≈ 5.27 — first-order check the shift is in the expected band.
