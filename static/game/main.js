@@ -790,11 +790,30 @@ export async function bootstrap(root) {
           const targetWave = waves
             .filter(w => w.note_index === targetIdx && w.spawn_time_ms + w.duration_ms >= game_now)
             .sort((a, b) => a.spawn_time_ms - b.spawn_time_ms)[0] ?? null;
-          // Defensive timeout: if no matching wave appears within 30s, give up so a
-          // tiny-sequence / scheduler-edge case can't strand the variant forever.
+          // Defensive timeout: if no matching wave appears within 15s, dismiss the
+          // variant gracefully — clearing variantPendingSpawn alone strands the variant
+          // in "proposed" forever (activeVariant stays set, no SZ ever spawns, so the
+          // proximity-miss path can't fire either). Subsequent variants would never be
+          // proposed because !activeVariant gates the next proposal.
           if (!targetWave && variantPendingSpawn.queuedAtMs != null
-              && performance.now() - variantPendingSpawn.queuedAtMs > 30000) {
+              && performance.now() - variantPendingSpawn.queuedAtMs > 15000) {
+            if (_debugLogger) _debugLogger.log('variant.spawn.timeout', { targetNoteIndex: targetIdx });
+            gameClient.dismissVariant().catch(() => {});
+            if (waveScheduler.queueingPaused) {
+              waveScheduler.resumeQueueing(run.sequence, run.cursor);
+            }
+            setTransitionPhase('idle', { reason: 'spawn-timeout' });
+            shownVariantId = null;
+            activeVariant = null;
+            activeWindow = null;
             variantPendingSpawn = null;
+            variantSpawnedForWave = null;
+            if (window.__gameState) {
+              window.__gameState.variant.id = null;
+              window.__gameState.variant.timerRunning = false;
+              window.__gameState.variant.timerMs = 0;
+            }
+            updateVariantHud();
           } else if (targetWave && targetWave.wave_id !== variantSpawnedForWave) {
             // Anchor note = note at wave.note_index - 1 (apex for RIGHT, root for LEFT).
             const anchorIdx = targetWave.note_index - 1;
