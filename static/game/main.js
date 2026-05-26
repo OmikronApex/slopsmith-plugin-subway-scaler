@@ -496,10 +496,9 @@ export async function bootstrap(root) {
           const waveSpeed = scene.getLastWaveSpeed() || 0.05;
           const dynamicDiagMs = DIAG_LEN / (waveSpeed * 0.5);
 
-          // Character snap + camera target (AC-4). Camera pivot now uses the same
-          // duration as the regular per-lane move (LATERAL_MS — SceneManager
-          // default) so the 45° pivot completes quickly and matches the feel of
-          // the character traversal onto the variant lane.
+          // Character snap + camera target (AC-4). Camera 45° pivot uses the
+          // SceneManager default (250ms) — slow enough to read as a deliberate
+          // camera move, fast enough to land before the diagonal scrolls far.
           scene.snapCharacterYaw(sign * MAX_BEND_YAW);
           scene.setRidingCameraTarget(sign * MAX_BEND_YAW);
 
