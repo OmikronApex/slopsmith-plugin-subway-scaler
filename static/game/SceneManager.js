@@ -683,15 +683,22 @@ export function createScene(canvas) {
     camera.position.y = CAMERA_DISTANCE * Math.sin(rad);
     camera.position.z = CAMERA_DISTANCE * Math.cos(rad) + camBase.lookAt[2];
 
+    // Cinematic exit and riding both express yaw by lookAt'ing a point projected
+    // along the yaw direction — directly assigning camera.rotation.y is wiped by
+    // lookAt(). LOOK_AHEAD_DIST gives the camera a believable pivot around the
+    // player so the diagonal movement reads as a direction change, not a slide.
+    const LOOK_AHEAD_DIST = 10;
     if (_cinematicExit) {
       const e = _cinematicExit;
       const p = Math.min(1, (nowMs - e.startMs) / e.durMs);
       character.position.x = e.fromX + (e.targetX - e.fromX) * p;
-      camera.rotation.y = e.fromCamYaw * (1 - p);
+      const yaw = e.fromCamYaw * (1 - p);
       character.rotation.y = e.fromCharYaw * (1 - p);
-      _currentCamYaw = camera.rotation.y;
-      _targetCamYaw = _currentCamYaw;
-      camera.lookAt(character.position.x, 0, camBase.lookAt[2]);
+      _currentCamYaw = yaw;
+      _targetCamYaw = yaw;
+      const laX = character.position.x + Math.sin(yaw) * LOOK_AHEAD_DIST;
+      const laZ = character.position.z - Math.cos(yaw) * LOOK_AHEAD_DIST + camBase.lookAt[2];
+      camera.lookAt(laX, 0, laZ);
       if (p >= 1) {
         _cinematicExit = null;
         _currentCamYaw = 0;
@@ -700,8 +707,9 @@ export function createScene(canvas) {
     } else if (_cameraMode === 'riding') {
       // Rate-clamped ease toward target yaw set by main.js on corner detection.
       _currentCamYaw += Math.max(-CAMERA_YAW_RATE, Math.min(CAMERA_YAW_RATE, _targetCamYaw - _currentCamYaw));
-      camera.rotation.y = _currentCamYaw;
-      camera.lookAt(character.position.x, 0, camBase.lookAt[2]);
+      const laX = character.position.x + Math.sin(_currentCamYaw) * LOOK_AHEAD_DIST;
+      const laZ = character.position.z - Math.cos(_currentCamYaw) * LOOK_AHEAD_DIST + camBase.lookAt[2];
+      camera.lookAt(laX, 0, laZ);
     } else if (_cameraResetStartMs > 0) {
       // Ease yaw back to 0 after riding phase ends
       const t = Math.min(1, (nowMs - _cameraResetStartMs) / CAMERA_RESET_DURATION_MS);
@@ -822,6 +830,14 @@ export function createScene(canvas) {
     };
   }
 
+  // Force-finalize the cinematic exit so subsequent render frames don't clobber
+  // character.position.x set by main.js after the exit's nominal duration.
+  function clearCinematicExit() {
+    _cinematicExit = null;
+    _currentCamYaw = 0;
+    _targetCamYaw = 0;
+  }
+
   function getActiveSafeZones() {
     const zones = [];
     if (variantSafeZoneMesh) {
@@ -890,6 +906,7 @@ export function createScene(canvas) {
     setCharacterX,
     setRidingCameraTarget,
     startCinematicExit,
+    clearCinematicExit,
     getActiveSafeZones,
     clearWavesForTesting() { clearWaves(); },
     resize(w, h) {

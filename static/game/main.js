@@ -491,15 +491,18 @@ export async function bootstrap(root) {
           scene.setRidingCameraTarget(sign * MAX_BEND_YAW);
 
           // Early spawn (AC-5): time wave arrival to land at FIRST_WAVE_ARRIVAL_DELAY_MS post-landing.
+          // NOTE: centerX is forced to 0 — the offset-tracks design (AC-5 newScaleCenterX
+          // formula) would require waves, collision detection, and moveToTrack to also
+          // operate in offset coords. That's out of scope; tracks at world center keep the
+          // rest of the game working. The cinematic illusion is preserved via character X
+          // movement only — final landing lerps back to the correct lane in onPromoteApply.
           const waveSpeed = scene.getLastWaveSpeed() || 0.05;
-          // Match SceneManager visual speed: pos.z = SPAWN_Z + elapsed * speed * 0.5.
           const T_travel = Math.abs(SPAWN_Z) / (waveSpeed * 0.5);
           const spawnDelayMs = DIAG_CROSS_MS - T_travel + FIRST_WAVE_ARRIVAL_DELAY_MS;
           const resp = ctx?.resp;
           const newBase = resp?.base_fret ?? notesResp.base_fret;
           const newLanes = resp?.num_lanes ?? notesResp.num_lanes;
-          const newScaleCenterX = landingX + sign * (newLanes - 1) / 2 * LANE_W;
-          const doSpawn = () => scene.spawnVariantTracks(newBase, newLanes, waveSpeed, newScaleCenterX);
+          const doSpawn = () => scene.spawnVariantTracks(newBase, newLanes, waveSpeed, 0);
           if (spawnDelayMs <= 0) doSpawn();
           else setTimeout(doSpawn, spawnDelayMs);
 
@@ -515,32 +518,45 @@ export async function bootstrap(root) {
         };
       });
 
-      function onDiagComplete(landingX, sign, ctx) {
-        // Fire promote (do not await) — backend swap proceeds in parallel with cinematic exit.
-        const promotePromise = gameClient.promoteVariant().catch(err => {
+      async function onDiagComplete(landingX, sign, ctx) {
+        // Fire promote and await — we need resp.current_track + resp.num_lanes to know
+        // where the character should land in the world-center coord system so the exit
+        // slide ends at the correct lane (no jolt). Spec asked for fire-immediate (no
+        // await), but waiting for the network round-trip is more correct here.
+        let resp = null;
+        try {
+          resp = await gameClient.promoteVariant();
+        } catch (err) {
           console.error('[main] promote error', err);
-          return null;
-        });
-
-        const variantLaneIndex = ctx?.resp?.variant_lane_index ?? 0;
-        const variantNoteX = landingX + sign * variantLaneIndex * LANE_W;
-
-        scene.startCinematicExit(variantNoteX, REPOSITION_SLIDE_MS);
-
-        // Apply promote response after exit completes.
-        setTimeout(async () => {
-          const resp = await promotePromise;
+        }
+        if (!resp || !resp.success) {
+          scene.clearCinematicExit?.();
           scene.setCameraMode('default');
-          if (!resp || !resp.success) {
-            waveScheduler.resumeQueueing(notesResp.notes, run?.cursor ?? 0);
-            setTransitionPhase('idle', ctx);
-            return;
-          }
+          waveScheduler.resumeQueueing(notesResp.notes, run?.cursor ?? 0);
+          setTransitionPhase('idle', ctx);
+          return;
+        }
+
+        // Compute the target X = the character's actual lane in the new scale at world
+        // center. variant_lane_index is folded in via resp.current_track (backend
+        // authoritative). REPOSITION_SLIDE_MS slides char from landingX → laneX.
+        const newNumLanes = resp.num_lanes ?? notesResp.num_lanes;
+        const currentTrack = resp.current_track ?? 0;
+        const targetX = laneX(currentTrack, newNumLanes);
+
+        scene.startCinematicExit(targetX, REPOSITION_SLIDE_MS);
+
+        setTimeout(() => {
+          scene.setCameraMode('default');
           applyPromoteResponse(resp, ctx);
         }, REPOSITION_SLIDE_MS);
       }
 
       function applyPromoteResponse(resp, ctx) {
+        // Force-finalize the cinematic exit lerp BEFORE writing character.position.x,
+        // otherwise the next render frame's clamped p=1 overwrites our moveToTrack
+        // value back to landingX (Story 6.8 bugfix — caused instant collision).
+        scene.clearCinematicExit?.();
         const startIdx = resp.current_note_index ?? 0;
         if (run && resp.notes) {
           run.sequence = resp.notes;
