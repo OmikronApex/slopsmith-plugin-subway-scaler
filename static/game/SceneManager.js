@@ -146,6 +146,10 @@ export function createScene(canvas) {
   let _pendingTracks = [];         // [{ mesh, targetZ, speedPxMs }]
   let _tracksLandedCb = null;
   let _tracksLandedFired = false;
+  // Pre-variant lane meshes kept visible during the cinematic; removed at the
+  // finalize step (post-promote) so the old + new track sets coexist during
+  // the ride rather than blinking out the moment new tracks start scrolling in.
+  let _retiringTracks = [];
 
   function clearWaves() {
     for (const w of activeWaves.values()) {
@@ -159,6 +163,11 @@ export function createScene(canvas) {
       scene.remove(t.mesh);
     }
     tracks = [];
+    for (const t of _retiringTracks) {
+      scene.remove(t.mesh);
+      t.mesh.geometry?.dispose?.();
+    }
+    _retiringTracks = [];
     clearWaves();
   }
 
@@ -267,7 +276,11 @@ export function createScene(canvas) {
 
   // Spawn new-scale track meshes at SPAWN_Z and scroll them toward rest position (Story 6.4).
   function spawnVariantTracks(newBaseFret, newNumLanes, speedPxMs, centerX = 0) {
-    clearTracks();
+    // Defer old-track removal to finalizeVariantTransition() — old lanes stay
+    // visible until the cinematic completes. Move current tracks into a holding
+    // list; `tracks` only collects the new pending ones once they land.
+    _retiringTracks = _retiringTracks.concat(tracks);
+    tracks = [];
     _pendingTracks = [];
     _tracksLandedFired = false;
     _worldOffsetX = centerX;
@@ -296,16 +309,33 @@ export function createScene(canvas) {
     const sign = side === 'RIGHT' ? 1 : -1;
     // Place variant 2 lanes outside the anchor note's lane. No clamp:
     // the variant must sit beyond the main track range (1-track gap expected).
+    // _worldOffsetX folded in so subsequent variants spawn in the current frame.
     if (anchorNoteLane != null) {
-      return laneX(anchorNoteLane + sign * 2, numLanes);
+      return laneX(anchorNoteLane + sign * 2, numLanes) + _worldOffsetX;
     }
     if (anchorFret != null) {
       const lane = (anchorFret - baseFret) + sign * 2;
-      return laneX(lane, numLanes);
+      return laneX(lane, numLanes) + _worldOffsetX;
     }
     // Fallback when wave not yet known: 2 lane widths beyond the edge.
     const edgeLane = side === 'RIGHT' ? numLanes - 1 : 0;
-    return laneX(edgeLane, numLanes) + sign * 2 * LANE_X_SCALE;
+    return laneX(edgeLane, numLanes) + sign * 2 * LANE_X_SCALE + _worldOffsetX;
+  }
+
+  // Drop retiring (pre-variant) lane meshes and all ghosted wave meshes at the
+  // end of the cinematic. Called from main.js applyPromoteResponse.
+  function finalizeVariantTransition() {
+    for (const t of _retiringTracks) {
+      scene.remove(t.mesh);
+      t.mesh.geometry?.dispose?.();
+    }
+    _retiringTracks = [];
+    for (const [id, w] of Array.from(activeWaves.entries())) {
+      if (w.ghost) {
+        scene.remove(w.mesh);
+        activeWaves.delete(id);
+      }
+    }
   }
 
   function proposeVariantTracks(variant, transitionWave, anchorNote, anchorWave) {
@@ -924,6 +954,7 @@ export function createScene(canvas) {
     ghostExistingWaves() {
       for (const w of activeWaves.values()) w.ghost = true;
     },
+    finalizeVariantTransition,
     clearWavesForTesting() { clearWaves(); },
     resize(w, h) {
       if (w <= 0 || h <= 0) return;

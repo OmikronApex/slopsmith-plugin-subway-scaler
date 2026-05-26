@@ -567,6 +567,12 @@ export async function bootstrap(root) {
         // world frame and would otherwise collide with the character who is now in
         // the new frame.
         scene.ghostExistingWaves?.();
+        // Tear down retiring tracks + remove all ghost wave meshes (carts) in one
+        // shot now that the cinematic has landed. Old safezones go with them via
+        // safeZoneRenderer.reset() — safe because there are no surviving old waves
+        // for their cachedX to apply to, and brand-new waves will rebuild fresh.
+        scene.finalizeVariantTransition?.();
+        safeZoneRenderer.reset();
         const startIdx = resp.current_note_index ?? 0;
         if (run && resp.notes) {
           run.sequence = resp.notes;
