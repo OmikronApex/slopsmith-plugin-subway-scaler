@@ -442,7 +442,10 @@ export function createScene(canvas) {
           group.add(cart);
         }
         scene.add(group);
-        w = { mesh: group, data: waveData };
+        // Capture offset + lane count at creation so collision uses the same
+        // world geometry the carts were positioned in (post-variant lanes/offset
+        // changes must not retro-warp in-flight waves).
+        w = { mesh: group, data: waveData, offsetX: _worldOffsetX, numLanes };
         activeWaves.set(waveData.wave_id, w);
       }
       w.data = waveData; // Update data (speed might change)
@@ -503,9 +506,10 @@ export function createScene(canvas) {
       // Carts are 1.3 deep, character is ~0.5 deep.
       // Sum of half-depths = 0.65 + 0.25 = 0.9.
       if (Math.abs(charZ - waveZ) < 0.8) {
-        // Potential collision! Check if we are in the safe lane.
-        const safeX = laneX(w.data.safe_track, numLanes) + _worldOffsetX;
-        // Lanes are 1.6 apart. If we are > 0.6 away from safe center, we are hitting a cart.
+        // Use the wave's captured offset + numLanes (set at wave creation), not
+        // the current scene values — post-variant the world geometry has shifted
+        // but in-flight waves still live in their original frame.
+        const safeX = laneX(w.data.safe_track, w.numLanes) + w.offsetX;
         if (Math.abs(charX - safeX) > 0.6) {
           _lastCollisionDebug = {
             charX: Math.round(charX * 100) / 100,
@@ -514,7 +518,7 @@ export function createScene(canvas) {
             safeTrack: w.data.safe_track,
             waveId: w.data.wave_id,
             waveNoteIndex: w.data.note_index,
-            numLanes,
+            numLanes: w.numLanes,
             baseFret,
           };
           return true;

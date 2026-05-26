@@ -66,14 +66,19 @@ export class SafeZoneRenderer {
     // Add/Update current waves
     waves.forEach(wave => {
       let mesh = this.zones.get(wave.wave_id);
+      let isNew = false;
       if (!mesh) {
         mesh = new THREE.Mesh(this.geometry, this.material.clone());
         mesh.rotation.x = -Math.PI / 2;
         this.scene.add(mesh);
         this.zones.set(wave.wave_id, mesh);
+        isNew = true;
       }
       const prevFret = mesh.userData.safe_fret;
-      mesh.userData = { spawn_time_ms: wave.spawn_time_ms, speed_px_per_ms: wave.speed_px_per_ms, safe_midi: wave.safe_midi, safe_fret: wave.safe_fret };
+      // Preserve cachedX across userData rewrite so post-variant waves don't
+      // re-snap to the new offset on subsequent frames.
+      const cachedX = mesh.userData.cachedX;
+      mesh.userData = { spawn_time_ms: wave.spawn_time_ms, speed_px_per_ms: wave.speed_px_per_ms, safe_midi: wave.safe_midi, safe_fret: wave.safe_fret, cachedX };
 
       if (wave.safe_fret != null && wave.safe_fret !== prevFret) {
         const old = mesh.getObjectByName('sz-label');
@@ -83,11 +88,17 @@ export class SafeZoneRenderer {
         mesh.add(label);
       }
 
-      const x = laneXFn(wave.safe_track);
+      // Capture X exactly once on creation. After a variant transition the laneXFn
+      // returns offset-adjusted coordinates, but already-in-flight safe zones must
+      // stay at their original X — only newly-spawned waves get the new offset.
+      if (isNew || mesh.userData.cachedX == null) {
+        mesh.userData.cachedX = laneXFn(wave.safe_track);
+      }
+      const x = mesh.userData.cachedX;
       const elapsed = Math.max(0, nowMs - gameStartTime - wave.spawn_time_ms);
       const z = SPAWN_Z + (elapsed * wave.speed_px_per_ms * 0.5) + (SAFE_ZONE_DEPTH / 2);
-      
-      mesh.position.set(x, 0.05, z); 
+
+      mesh.position.set(x, 0.05, z);
       mesh.visible = elapsed > 0;
       
       // Safe zone color corresponds to the string used

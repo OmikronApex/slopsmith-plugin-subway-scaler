@@ -396,10 +396,13 @@ export async function bootstrap(root) {
 
       // Apply selected instrument before the run starts; reset resolver history.
       applyInstrument();
+      // reset BEFORE setBaseFret so _worldOffsetX (cleared by reset) is 0 when
+      // setBaseFret rebuilds tracks — otherwise restart inherits the prior game's
+      // variant offset and tracks spawn off-center.
+      scene.reset();
       if (notesResp.base_fret !== undefined) {
         scene.setBaseFret(notesResp.base_fret, notesResp.num_lanes);
       }
-      scene.reset();
       safeZoneRenderer.reset();
       if (notesResp.initial_track !== undefined) {
         scene.moveToTrack(notesResp.initial_track, true);
