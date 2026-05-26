@@ -822,7 +822,7 @@ export function createScene(canvas) {
   let _bendMidpointCb = null;
   let _bendMidpointFired = false;
 
-  function setCharacterTargetX(targetX, durMs = 400) {
+  function setCharacterTargetX(targetX, durMs = LATERAL_MS) {
     _charTraversal = {
       startX: character.position.x,
       targetX,
