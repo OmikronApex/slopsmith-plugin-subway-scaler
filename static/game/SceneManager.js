@@ -731,9 +731,15 @@ export function createScene(canvas) {
 
     // Cinematic exit and riding both express yaw by lookAt'ing a point projected
     // along the yaw direction — directly assigning camera.rotation.y is wiped by
-    // lookAt(). LOOK_AHEAD_DIST gives the camera a believable pivot around the
-    // player so the diagonal movement reads as a direction change, not a slide.
-    const LOOK_AHEAD_DIST = 10;
+    // lookAt(). At yaw=0 this formula yields exactly the default-mode lookAt
+    // target (camera.position.x, 0, camBase.lookAt[2]) so entering/leaving these
+    // branches doesn't snap the camera.
+    //
+    // Horizontal distance from camera to its natural lookAt point:
+    //   camera.position.z - camBase.lookAt[2] = CAMERA_DISTANCE * cos(pitch).
+    // Rotating the horizontal forward vector (0, -1) by yaw about Y gives
+    //   (sin(yaw), -cos(yaw)), so lookAt is camera.position + that * horzDist.
+    const horzDist = camera.position.z - camBase.lookAt[2];
     if (_cinematicExit) {
       const e = _cinematicExit;
       const p = Math.min(1, (nowMs - e.startMs) / e.durMs);
@@ -742,8 +748,8 @@ export function createScene(canvas) {
       character.rotation.y = e.fromCharYaw * (1 - p);
       _currentCamYaw = yaw;
       _targetCamYaw = yaw;
-      const laX = character.position.x + Math.sin(yaw) * LOOK_AHEAD_DIST;
-      const laZ = character.position.z - Math.cos(yaw) * LOOK_AHEAD_DIST + camBase.lookAt[2];
+      const laX = camera.position.x + Math.sin(yaw) * horzDist;
+      const laZ = camera.position.z - Math.cos(yaw) * horzDist;
       camera.lookAt(laX, 0, laZ);
       if (p >= 1) {
         _cinematicExit = null;
@@ -753,8 +759,8 @@ export function createScene(canvas) {
     } else if (_cameraMode === 'riding') {
       // Rate-clamped ease toward target yaw set by main.js on corner detection.
       _currentCamYaw += Math.max(-CAMERA_YAW_RATE, Math.min(CAMERA_YAW_RATE, _targetCamYaw - _currentCamYaw));
-      const laX = character.position.x + Math.sin(_currentCamYaw) * LOOK_AHEAD_DIST;
-      const laZ = character.position.z - Math.cos(_currentCamYaw) * LOOK_AHEAD_DIST + camBase.lookAt[2];
+      const laX = camera.position.x + Math.sin(_currentCamYaw) * horzDist;
+      const laZ = camera.position.z - Math.cos(_currentCamYaw) * horzDist;
       camera.lookAt(laX, 0, laZ);
     } else if (_cameraResetStartMs > 0) {
       // Ease yaw back to 0 after riding phase ends
