@@ -563,6 +563,10 @@ export async function bootstrap(root) {
         // Park the default-mode camera at the new world offset so it stays with the
         // offset tracks once cinematic exit hands control back (Story 6.8 AC-5).
         scene.setTargetCameraX?.(scene.getWorldOffsetX?.() ?? 0);
+        // Demote in-flight pre-variant waves to visual-only — they live in the old
+        // world frame and would otherwise collide with the character who is now in
+        // the new frame.
+        scene.ghostExistingWaves?.();
         const startIdx = resp.current_note_index ?? 0;
         if (run && resp.notes) {
           run.sequence = resp.notes;
@@ -586,7 +590,9 @@ export async function bootstrap(root) {
         }
         pushGameEvent('variant.promote', { base_fret: resp.base_fret, num_lanes: resp.num_lanes, note_index: startIdx });
         if (_debugLogger) _debugLogger.log('variant.promote', { base_fret: resp.base_fret, num_lanes: resp.num_lanes, note_index: startIdx, current_track: resp.current_track });
-        safeZoneRenderer.reset();
+        // Do NOT call safeZoneRenderer.reset() — it wipes the cached-X per-wave
+        // mesh state we rely on so in-flight old-scale safe zones stay at their
+        // original X. They despawn naturally as their wave passes.
         setTransitionPhase('active', ctx);
       }
 

@@ -501,6 +501,7 @@ export function createScene(canvas) {
     const charZ = character.position.z;
 
     for (const w of activeWaves.values()) {
+      if (w.ghost) continue; // demoted to visual-only after variant promote
       const waveZ = w.mesh.position.z;
 
       // Carts are 1.3 deep, character is ~0.5 deep.
@@ -920,6 +921,9 @@ export function createScene(canvas) {
     getActiveSafeZones,
     getWorldOffsetX() { return _worldOffsetX; },
     getNumLanes() { return numLanes; },
+    ghostExistingWaves() {
+      for (const w of activeWaves.values()) w.ghost = true;
+    },
     clearWavesForTesting() { clearWaves(); },
     resize(w, h) {
       if (w <= 0 || h <= 0) return;
