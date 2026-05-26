@@ -1167,29 +1167,43 @@ export async function bootstrap(root) {
   }
 
   // Test-mode keyboard injection (Story 6.8 T12).
-  // Q = fire correct note for nearest regular safe zone; W = fire correct note for variant.
+  // Q = play the next required scale note. W = play the variant trigger note.
+  // Burst-injects for ~500ms to mimic continuous audio detection — single keypress
+  // would only get one frame's chance at the spatial-adjacency gate inside the
+  // detection handler, which is what made the keys feel flaky (only fired at SZ
+  // center). The detection handler's own spatial gates are the sole gating.
+  const _BURST_MS = 500;
+  const _BURST_INTERVAL_MS = 30;
   if (TEST_MODE) {
     window.addEventListener('keydown', (ev) => {
+      if (ev.repeat) return; // browser auto-repeat triggers the burst already; ignore
       const k = ev.key?.toLowerCase();
       if (k !== 'q' && k !== 'w') return;
-      const zones = scene.getActiveSafeZones?.() || [];
-      if (k === 'w') {
-        const vz = zones.find(z => z.isVariant);
-        if (!vz) return;
-        // activeWindow.trigger_midi is the variant safe zone's expected note (backend-authoritative).
-        const midi = activeWindow?.trigger_midi;
-        if (midi == null) return;
-        _injectTestNote(midi);
-      } else if (k === 'q') {
-        const exp = run?.currentExpected?.();
-        if (!exp?.note?.midi) return;
-        _injectTestNote(exp.note.midi);
+      let midi = null;
+      if (k === 'q') {
+        midi = run?.currentExpected?.()?.note?.midi ?? null;
+      } else if (k === 'w') {
+        midi = activeWindow?.trigger_midi ?? null;
       }
+      if (midi == null) return;
+      _burstInjectNote(midi);
     });
   }
   function _injectTestNote(midi) {
     const fn = window.__gameState?._test?.playNote;
     if (typeof fn === 'function') fn(midi);
+  }
+  function _burstInjectNote(midi) {
+    const startCursor = run?.cursor ?? -1;
+    const startMs = performance.now();
+    const tick = () => {
+      _injectTestNote(midi);
+      const advanced = run && run.cursor !== startCursor;
+      if (advanced) return;
+      if (performance.now() - startMs >= _BURST_MS) return;
+      setTimeout(tick, _BURST_INTERVAL_MS);
+    };
+    tick();
   }
 
   pauseBtn.addEventListener('click', () => {
