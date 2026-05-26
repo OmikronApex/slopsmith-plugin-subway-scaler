@@ -785,12 +785,19 @@ export function createScene(canvas) {
     // Pivot around the natural lookAt point at (currentCameraX, 0, lookAtZ).
     // horzDist = CAMERA_DISTANCE * cos(pitch) — the horizontal cam→lookAt span.
     // At effectiveYaw=0 this evaluates to the original rest position exactly.
+    //
+    // Z-orbit is dampened (CAM_Z_ORBIT_FACTOR) so the forward translation
+    // doesn't overshoot — full orbital alignment moved the camera ~3.8 units
+    // forward at yaw=π/4 which read as too much in playtest. X-orbit stays
+    // full so the lateral pivot still reads as a direction change.
     const pitchRad = (CAMERA_PITCH * Math.PI) / 180;
     const horzDist = CAMERA_DISTANCE * Math.cos(pitchRad);
     const lookAtZ = camBase.lookAt[2];
+    const CAM_Z_ORBIT_FACTOR = 0.7;
+    const zCos = 1 - CAM_Z_ORBIT_FACTOR + CAM_Z_ORBIT_FACTOR * Math.cos(effectiveYaw);
     camera.position.x = currentCameraX - Math.sin(effectiveYaw) * horzDist;
     camera.position.y = CAMERA_DISTANCE * Math.sin(pitchRad);
-    camera.position.z = lookAtZ + Math.cos(effectiveYaw) * horzDist;
+    camera.position.z = lookAtZ + zCos * horzDist;
     camera.lookAt(currentCameraX, 0, lookAtZ);
 
     renderer.render(scene, camera);
