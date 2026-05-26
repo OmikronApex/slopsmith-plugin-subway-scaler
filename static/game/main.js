@@ -586,6 +586,11 @@ export async function bootstrap(root) {
           rootNote = resp.notes[0] ?? null;
           apexNote = ascendingNoteCount > 0 ? resp.notes[ascendingNoteCount - 1] : null;
           const gameNow = _now() - gameStartTime;
+          // Drop the scheduler's in-flight outgoing-scale waves — their meshes
+          // were just removed by scene.finalizeVariantTransition(); if we leave
+          // them in the scheduler list, setWaves will rebuild them next tick at
+          // the new world offset and collide with the character.
+          waveScheduler.clearWavesForTesting();
           waveScheduler.resumeQueueing(resp.notes, startIdx, resp.base_fret, resp.num_lanes, gameNow);
         }
         if (resp.current_track != null) {
