@@ -907,7 +907,7 @@ export function createScene(canvas) {
   // window with easeInOutCubic instead of the constant-velocity rate clamp.
   let _camEase = null; // { startMs, durMs, fromYaw, toYaw }
 
-  function setRidingCameraTarget(yaw, durMs = null) {
+  function setRidingCameraTarget(yaw, durMs = LATERAL_MS) {
     _targetCamYaw = yaw;
     if (durMs != null && durMs > 0) {
       _camEase = { startMs: performance.now(), durMs, fromYaw: _currentCamYaw, toYaw: yaw };

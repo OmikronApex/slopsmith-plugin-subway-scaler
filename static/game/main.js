@@ -496,10 +496,12 @@ export async function bootstrap(root) {
           const waveSpeed = scene.getLastWaveSpeed() || 0.05;
           const dynamicDiagMs = DIAG_LEN / (waveSpeed * 0.5);
 
-          // Character snap + camera target (AC-4). Camera eases over half the
-          // diagonal so it reaches 45° around mid-cinematic (matches spec).
+          // Character snap + camera target (AC-4). Camera pivot now uses the same
+          // duration as the regular per-lane move (LATERAL_MS — SceneManager
+          // default) so the 45° pivot completes quickly and matches the feel of
+          // the character traversal onto the variant lane.
           scene.snapCharacterYaw(sign * MAX_BEND_YAW);
-          scene.setRidingCameraTarget(sign * MAX_BEND_YAW, dynamicDiagMs / 2);
+          scene.setRidingCameraTarget(sign * MAX_BEND_YAW);
 
           // Early spawn (AC-5): time wave arrival to land at FIRST_WAVE_ARRIVAL_DELAY_MS post-landing.
           // newScaleCenterX: near edge of new scale at landingX (AC-5 formula).
