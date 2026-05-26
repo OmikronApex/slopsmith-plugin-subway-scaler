@@ -782,23 +782,27 @@ export function createScene(canvas) {
       }
     }
 
-    // Pivot around the natural lookAt point at (currentCameraX, 0, lookAtZ).
-    // horzDist = CAMERA_DISTANCE * cos(pitch) — the horizontal cam→lookAt span.
-    // At effectiveYaw=0 this evaluates to the original rest position exactly.
+    // Pivot around the CHARACTER (currentCameraX, 0, 0) — not the lookAt point —
+    // and rotate both the camera-position offset and the lookAt-point offset by
+    // effectiveYaw. The look-direction (lookAt − camera) then lies exactly along
+    // the diagonal, the camera body sits 11 units back from the character along
+    // that diagonal, and the lookAt point sits 2 units in front of the character.
     //
-    // Z-orbit is dampened (CAM_Z_ORBIT_FACTOR) so the forward translation
-    // doesn't overshoot — full orbital alignment moved the camera ~3.8 units
-    // forward at yaw=π/4 which read as too much in playtest. X-orbit stays
-    // full so the lateral pivot still reads as a direction change.
+    //   camRadius   = camera.z at rest, relative to character (= 11)
+    //   lookFwdDist = |camBase.lookAt[2]| (= 2) — how far the lookAt point sits
+    //                 in front of the character along the look direction.
+    //
+    // Default rest position (effectiveYaw=0) evaluates to the exact original
+    // (currentCameraX, height, camBase.z) / lookAt(currentCameraX, 0, lookAtZ).
     const pitchRad = (CAMERA_PITCH * Math.PI) / 180;
-    const horzDist = CAMERA_DISTANCE * Math.cos(pitchRad);
-    const lookAtZ = camBase.lookAt[2];
-    const CAM_Z_ORBIT_FACTOR = 0.7;
-    const zCos = 1 - CAM_Z_ORBIT_FACTOR + CAM_Z_ORBIT_FACTOR * Math.cos(effectiveYaw);
-    camera.position.x = currentCameraX - Math.sin(effectiveYaw) * horzDist;
+    const camRadius = CAMERA_DISTANCE * Math.cos(pitchRad) + camBase.lookAt[2]; // 11
+    const lookFwdDist = -camBase.lookAt[2];                                     // 2
+    const sY = Math.sin(effectiveYaw);
+    const cY = Math.cos(effectiveYaw);
+    camera.position.x = currentCameraX - sY * camRadius;
     camera.position.y = CAMERA_DISTANCE * Math.sin(pitchRad);
-    camera.position.z = lookAtZ + zCos * horzDist;
-    camera.lookAt(currentCameraX, 0, lookAtZ);
+    camera.position.z = cY * camRadius;
+    camera.lookAt(currentCameraX + sY * lookFwdDist, 0, -cY * lookFwdDist);
 
     renderer.render(scene, camera);
   }
