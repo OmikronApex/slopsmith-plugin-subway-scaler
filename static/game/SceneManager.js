@@ -613,14 +613,20 @@ export function createScene(canvas) {
 
     if (succeeded) character.rotation.y += dt * 2;
 
-    // Variant propose piece — Z-scroll only (AC-8)
+    // Variant propose piece — Z-scroll only (AC-8). Despawn deferred 500ms past
+    // the geometric end-of-diagonal so the piece is visibly out of frame before
+    // it's removed (rather than blinking out at the moment of arrival).
     if (variantProposePiece) {
       const elapsed = Math.max(0, nowMs - gameStartTime - variantProposePiece.spawnTimeMs);
       variantProposePiece.mesh.position.z = SPAWN_Z + elapsed * variantProposePiece.speedPxMs * 0.5;
       if (variantProposePiece.mesh.position.z > STRAIGHT_LEN / 2 + DIAG_LEN) {
-        scene.remove(variantProposePiece.mesh);
-        variantProposePiece.mesh.traverse(c => { if (c.isMesh) c.geometry?.dispose(); });
-        variantProposePiece = null;
+        if (variantProposePiece.despawnAtMs == null) {
+          variantProposePiece.despawnAtMs = nowMs + 500;
+        } else if (nowMs >= variantProposePiece.despawnAtMs) {
+          scene.remove(variantProposePiece.mesh);
+          variantProposePiece.mesh.traverse(c => { if (c.isMesh) c.geometry?.dispose(); });
+          variantProposePiece = null;
+        }
       }
     }
 
