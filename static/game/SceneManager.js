@@ -579,17 +579,18 @@ export function createScene(canvas) {
       if (t >= 1) tween = null;
     }
 
-    // Z-bound character traversal: lerp X from main lane to variant lane (Story 6.2).
-    if (_charTraversal && variantProposePiece) {
-      const straightZ = variantProposePiece.mesh.position.z;
-      const frontEdgeZ = straightZ + STRAIGHT_LEN / 2 + DIAG_LEN;
-      const midpointZ = straightZ + STRAIGHT_LEN / 2 + DIAG_LEN / 2;
-      const range = frontEdgeZ - midpointZ;
-      const progress = range > 0 ? Math.max(0, Math.min(1, (frontEdgeZ - 0) / range)) : 1;
-      character.position.x = _charTraversal.startX + (_charTraversal.targetX - _charTraversal.startX) * progress;
-      if (progress >= 1) {
-        _charTraversal = null;
-      }
+    // Time-based eased traversal onto the variant lane (Story 6-8 polish).
+    // The original geometric variant (Story 6.2 — bound to incoming diagonal
+    // Z-progress) clamped to progress=1 instantly on accept because the
+    // incoming diagonal had already passed the player, producing a hard snap.
+    // Switching to a time-based easeInOutCubic gives a smooth slide that the
+    // camera's 0.1 X lerp can track without lag-jumping.
+    if (_charTraversal) {
+      const t = _charTraversal;
+      const tRaw = Math.min(1, (nowMs - t.startMs) / t.durMs);
+      const e = _easeInOutCubic(tRaw);
+      character.position.x = t.startX + (t.targetX - t.startX) * e;
+      if (tRaw >= 1) _charTraversal = null;
     }
 
     // Bend midpoint reached callback — fires once when incoming diagonal midpoint hits player (z ≥ 0).
@@ -821,8 +822,13 @@ export function createScene(canvas) {
   let _bendMidpointCb = null;
   let _bendMidpointFired = false;
 
-  function setCharacterTargetX(targetX) {
-    _charTraversal = { startX: character.position.x, targetX };
+  function setCharacterTargetX(targetX, durMs = 400) {
+    _charTraversal = {
+      startX: character.position.x,
+      targetX,
+      startMs: performance.now(),
+      durMs,
+    };
   }
 
   function setOnBendMidpointReached(cb) {
