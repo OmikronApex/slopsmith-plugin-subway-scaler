@@ -108,6 +108,7 @@ export function createScene(canvas) {
   let lastWaveSpeed = 0.05;         // captured from setWaves; used for piece scrolling
   let onVariantMissedCb = null;     // registered from main.js (story 5-8, AC-2)
   let _savedMissCb = null;          // remembered original handler — re-armed on next propose (Story 6-8)
+  let _variantMissFired = false;    // cb fires once at SZ-pass; cleanup deferred until off-frame
   let lastVariantTickMs = 0;        // last render tick that saw a variant SZ — for tab-resume guard
 
   let tween = null;
@@ -180,7 +181,9 @@ export function createScene(canvas) {
         new THREE.BoxGeometry(1.4, 0.06, TRACK_DEPTH),
         trackMat
       );
-      mesh.position.set(x, -0.05, -TRACK_DEPTH / 2 + 5);
+      // Front edge at z=20 — well past the camera (camera.z ≈ 11) so the near end
+      // is out of frame and tracks read as continuous.
+      mesh.position.set(x, -0.05, -TRACK_DEPTH / 2 + 20);
       scene.add(mesh);
 
       tracks.push({ mesh });
@@ -290,7 +293,7 @@ export function createScene(canvas) {
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.06, TRACK_DEPTH), trackMat);
       mesh.position.set(x, -0.05, SPAWN_Z);
       scene.add(mesh);
-      _pendingTracks.push({ mesh, targetZ: -TRACK_DEPTH / 2 + 5, speedPxMs });
+      _pendingTracks.push({ mesh, targetZ: -TRACK_DEPTH / 2 + 20, speedPxMs });
     }
     baseFret = newBaseFret;
     numLanes = newNumLanes;
@@ -341,6 +344,7 @@ export function createScene(canvas) {
 
   function proposeVariantTracks(variant, transitionWave, anchorNote, anchorWave) {
     clearVariantGeom();
+    _variantMissFired = false;
     // Re-arm the missed callback in case a prior transition's
     // disableVariantMissCallback() nulled it — without this, dismissing the new
     // variant only removes the SZ mesh and leaves the propose-piece orphaned.
@@ -641,23 +645,33 @@ export function createScene(canvas) {
         if (window.__gameState?.variant) {
           window.__gameState.variant.safeZoneZ = z;
         }
-        // Miss: back edge has passed player (AC-2).
-        // Post-accept the miss callback is disabled (Story 6.8): in that case do NOT
-        // tear down variant geom — the propose piece is the cinematic ride and must
-        // keep scrolling so isOutgoingCornerAtPlayer() can fire. Just remove the SZ
-        // mesh quietly (it's well past the player and serves no further purpose).
-        if (z > VARIANT_SZ_DEPTH / 2) {
-          const cb = onVariantMissedCb;
+        // Miss handling (Story 6.8 polish):
+        // - Fire the cb ONCE when the back edge passes the player (z > 10). State
+        //   transitions (phase → idle, etc.) happen in main.js immediately.
+        // - Defer mesh removal until the geometry is visually off-frame so the
+        //   dismiss animation looks like the SZ + track piece scrolling away
+        //   naturally rather than blinking out at the player plane.
+        // - Post-accept path (cb null) is unchanged: remove SZ mesh quietly so
+        //   variantProposePiece can continue scrolling as the cinematic ride.
+        const SZ_OFFSCREEN_Z = 25; // SZ mesh fully past camera viewport
+        if (z > VARIANT_SZ_DEPTH / 2 && !_variantMissFired) {
+          _variantMissFired = true;
           lastVariantTickMs = 0;
-          if (cb) {
-            clearVariantGeom();
-            cb();
+          if (onVariantMissedCb) {
+            onVariantMissedCb();
           } else {
+            // No cb (post-accept disable) → remove SZ now; nothing else to fire.
             scene.remove(variantSafeZoneMesh);
             variantSafeZoneMesh.geometry?.dispose();
             variantSafeZoneMesh.material?.dispose();
             variantSafeZoneMesh = null;
           }
+        } else if (_variantMissFired && variantSafeZoneMesh && z > SZ_OFFSCREEN_Z) {
+          // Late SZ cleanup after dismiss-fire when the mesh is off-frame.
+          scene.remove(variantSafeZoneMesh);
+          variantSafeZoneMesh.geometry?.dispose();
+          variantSafeZoneMesh.material?.dispose();
+          variantSafeZoneMesh = null;
         }
       }
     } else {

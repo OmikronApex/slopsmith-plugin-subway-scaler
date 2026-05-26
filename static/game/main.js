@@ -21,7 +21,7 @@ import { laneX, SPAWN_Z } from './TrackSystem.js';
 const MAX_BEND_YAW = Math.PI / 4;
 const DIAG_CROSS_MS = 1200;
 const FIRST_WAVE_ARRIVAL_DELAY_MS = 500;
-const REPOSITION_SLIDE_MS = 200;
+const REPOSITION_SLIDE_MS = 400;
 const DIAG_LEN = 45;
 const LANE_W = 1.4;
 
