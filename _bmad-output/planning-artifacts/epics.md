@@ -292,3 +292,67 @@ switch: visually distinct, correctly timed, and seamlessly animated.
 | 5-6 | Full String Range — Wave Spawning Across All Strings | todo | 5-5 |
 | 5-7 | Variant Visual Spec — Track Coloring, Spawn Timing, Transition Animation | todo | 5-6 |
 
+---
+
+## Epic 6: Variant Transition Cinematic & Handoff
+
+Accepting a variant feels like a real railway switch: the character physically rides the bend,
+the camera follows with cinematic ease, in-flight waves from the old scale clear naturally,
+the new scale arrives from the horizon, and gameplay resumes seamlessly on the new lane after
+a short breather that gives the player time to reposition fingers on the fretboard.
+
+**User Outcomes:**
+- Accepting a variant (playing the transition note) triggers a continuous, polished animation
+  rather than an instant scale swap
+- The character moves onto the variant track and rides the 45° bend with the camera following
+- Outgoing-scale waves already in flight continue travelling until they exit the frame —
+  no abrupt freeze, no pop-out
+- A short "breather" on the straight variant section lets the player reposition before
+  new waves arrive
+- Remaining tracks of the new scale arrive from the horizon and slot into position before
+  wave spawning resumes
+- Backend scale state is promoted only after the new tracks are in position, so waves never
+  spawn into empty or transitioning track geometry
+
+**Depends on:** Epic 5 (5-6, 5-7) — variant proposal and visual baseline must be in place.
+
+**Architectural decisions:**
+- **Two-phase backend protocol:** Variant acceptance (note hit) and scale promotion (tracks
+  landed) are separate events. New `POST /variant/promote` endpoint commits the scale swap;
+  until promoted, backend continues to serve the outgoing scale. This decouples the cinematic
+  timeline from backend state and prevents premature wave spawning on the new scale.
+- **Soft halt:** `WaveScheduler` stops *queuing* new outgoing-scale waves at accept time, but
+  in-flight waves continue rendering and travelling until off-frame. No hard freeze.
+- **Breather duration:** Default ~3s on the straight section, tunable via `timing_params`
+  (consistent with 4-T timing refactor). Floor gated on "all outgoing waves have cleared the
+  frame" so the breather never starts while old-scale waves are still visible.
+- **Camera:** Eased lerp with look-ahead through the bend, restoring to forward-facing once
+  on the straight variant section.
+
+**Stories:**
+
+| Story | Title | Status | Depends on |
+|---|---|---|---|
+| 6-1 | Accept-Gate State Machine & Soft Halt of Outgoing Scale | todo | 5-7 |
+| 6-2 | Character Lateral Traversal Onto Variant Track | todo | 6-1 |
+| 6-3 | 45° Bend Camera Follow (Eased Lerp + Look-Ahead) | todo | 6-2 |
+| 6-4 | Post-Bend Breather + New Scale Track Approach | todo | 6-3 |
+| 6-5 | Backend `POST /variant/promote` Endpoint & Scale Swap | todo | 6-4 |
+| 6-6 | Variant Scale Wave Spawn Activation | todo | 6-5 |
+| 6-7 | E2E Transition Sequence Coverage | todo | 6-6 |
+
+**Story summaries:**
+
+- **6-1** — Introduce transition state machine (`idle | proposed | accepted | riding | breather | promoting | active`). On transition-note hit: set `accepted`, instruct `WaveScheduler` to stop queuing new outgoing-scale waves. In-flight waves keep rendering until off-frame.
+- **6-2** — Animate character X from main lane onto variant lane bound to bend-segment Z-progress (not wall-clock). Hand-off triggers on entering the incoming diagonal.
+- **6-3** — Camera follows character through the 45° turn using eased lerp with a look-ahead offset along the track tangent. Restores to forward-facing once character is on the straight section.
+- **6-4** — Once on straight section AND all outgoing waves have cleared frame: start breather timer (default ~3s, `timing_params.variantBreatherMs`). At breather end: spawn the remaining variant-scale tracks at the horizon and scroll them toward the play anchor.
+- **6-5** — New `POST /variant/promote` route. Request schema includes variant id; response confirms new primary scale. Backend rejects promote if variant not in `accepted` state. Existing acceptance call no longer mutates primary scale.
+- **6-6** — Client calls `/variant/promote` once new tracks reach play anchor. On success, `WaveScheduler` begins queuing waves for the new scale. State transitions `promoting → active`.
+- **6-7** — Playwright spec: inject audio for transition note → assert state-machine phase progression, camera transform per phase, in-flight outgoing waves not frozen, no new outgoing-scale waves queued post-accept, `/variant/promote` fired only after tracks landed, new-scale waves only after promote success, no console errors.
+
+**Open questions deferred to story creation:**
+- Exact easing curve and look-ahead distance for 6-3 (tune in-engine)
+- Whether breather should be skippable by player input (default: no)
+- Whether `/variant/promote` should also return updated `timing_params` snapshot
+

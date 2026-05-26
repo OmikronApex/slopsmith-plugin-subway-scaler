@@ -22,6 +22,8 @@ SCALES_PER_VARIANT = 2
 DEFAULT_WINDOW_MS = 120_000  # 2-minute safety net; frontend proximity logic drives dismiss timing
 # Variant root offset: 2 frets above highest scale note (RIGHT) or below root (LEFT).
 VARIANT_SHIFT_DOWN = 2
+# Breather duration after bend traversal before new tracks scroll in (frontend reads timing_params).
+VARIANT_BREATHER_MS = 3000
 
 class GameSession(BaseModel):
     session_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -63,6 +65,9 @@ class GameEngine:
             instrument = Instrument(id="default", name="Default", kind="guitar", stringCount=6, tuning=[40, 45, 50, 55, 59, 64], maxFret=24)
 
         notes, asc_count = self._build_full_scale_notes(scale_id, root_midi, instrument)
+
+        if not notes or asc_count <= 0:
+            raise ValueError(f"no playable notes generated for scale={scale_id} root={root_midi} instrument={instrument_id}")
 
         scale_frets = [n.fret for n in notes if n.fret is not None]
         base_fret = min(scale_frets) if scale_frets else 0
@@ -109,7 +114,8 @@ class GameEngine:
 
         # Generate ascending MIDI values
         asc_raw = expand(scale_id, root_midi, octaves=octaves, descending=False)
-        asc_midis = [n.midi for n in asc_raw if n.midi <= max_midi]
+        # Include all generated MIDIs — the position loop naturally skips unplayable notes.
+        asc_midis = [n.midi for n in asc_raw]
 
         # Find root's starting string (lowest string where root fits in frets 1-12)
         root_string_idx = 0
@@ -199,12 +205,13 @@ class GameEngine:
             new_idx = session.current_note_index
             # Detect ascending pass (apex reached — last ascending note → first descending).
             if (session.ascending_note_count > 0
+                    and session.ascending_note_count < len(session.notes)
                     and prev_idx == session.ascending_note_count - 1
                     and new_idx == session.ascending_note_count):
                 session.scale_passes_completed += 1
                 session.last_pass_direction = "UP"
             # Detect descending pass (root reached — last note wraps to index 0).
-            elif new_idx == 0 and prev_idx == len(session.notes) - 1:
+            elif len(session.notes) > 1 and new_idx == 0 and prev_idx == len(session.notes) - 1:
                 session.scale_passes_completed += 1
                 session.last_pass_direction = "DOWN"
 
@@ -299,7 +306,7 @@ class GameEngine:
 
         Independent of tabulator (which wraps pitch-class mod 12 and can yield
         wildly wide spans). Anchor the variant at the lowest string where the
-        root sits in fret 1-12 and reserve a tight window matching target_num_lanes.
+        root sits in fret 1-18 and reserve a tight window matching target_num_lanes.
         The variant base note is therefore always at lane 0 of the variant set,
         which makes the "play the new root to switch" prompt visually obvious.
         Returns (base_fret, num_lanes, base_lane_index, base_string_1based_from_high)
@@ -308,12 +315,14 @@ class GameEngine:
         def try_idx(idx):
             open_midi = instrument.tuning[idx]
             fret = root_midi - open_midi
-            if 1 <= fret <= 12:
+            if 1 <= fret <= 18:
                 base_fret = fret
                 # Match target_num_lanes, clamped to the fretboard.
                 num_lanes = target_num_lanes
                 if base_fret + num_lanes - 1 > instrument.maxFret:
                     num_lanes = max(3, instrument.maxFret - base_fret + 1)
+                    if num_lanes < 3:
+                        return None
                 base_string = instrument.stringCount - idx  # 1-based from HIGH
                 return base_fret, num_lanes, 0, base_string
             return None
@@ -352,6 +361,10 @@ class GameEngine:
             notes, asc_count = self._build_full_scale_notes(scale_id, candidate, instrument)
             if notes and asc_count > 0 and asc_count < len(notes) and notes[asc_count - 1].midi == target_highest:
                 return candidate, notes, asc_count
+        logger.warning(
+            "_find_root_for_highest no match for target_highest=%d scale=%s — falling back to current root",
+            target_highest, scale_id,
+        )
         return None, None, None
 
     def _fret_in_window(self, midi: int, instrument: Instrument, base_fret: int, num_lanes: int):
@@ -448,36 +461,58 @@ class GameEngine:
             return {"success": False, "error": "no_active_variant"}
 
         now_ms = now_ms if now_ms is not None else int(time.time() * 1000)
+        # NOTE: now_ms is client-supplied (test override). In single-player local mode the
+        # client is the player so tampering only hurts their own experience. If this game
+        # ever moves to a networked model, validate now_ms against server time here.
         if now_ms > session.active_window.deadline_ms:
             return {"success": False, "error": "window_expired"}
         if midi != session.active_window.trigger_midi:
             return {"success": False, "error": "wrong_midi"}
 
         variant = session.active_variant
-        variant.state = "SWITCH_TRIGGERED"
-        session.active_window.state = "SWITCHED"
+        if variant.state in ("ACCEPTED", "PROMOTED"):
+            return {"success": False, "error": "variant_already_accepted"}
 
-        instrument = get_instrument(session.instrument_id) or Instrument(
-            id="default", name="Default", kind="guitar",
-            stringCount=6, tuning=[40, 45, 50, 55, 59, 64], maxFret=24,
+        variant.state = "ACCEPTED"
+        session.active_window.state = "ACCEPTED"
+        session.variant_history.append({
+            "variant_id": variant.variant_id,
+            "root_midi": variant.root_midi,
+            "side": variant.side,
+            "decision": "ACCEPTED",
+            "at_ms": now_ms,
+        })
+        logger.info(
+            "variant.accept session=%s variant=%s",
+            session.session_id, variant.variant_id,
         )
+        # variant_lane_index: 0-indexed lane within the new scale where the character
+        # lands (Story 6.8 AC-7). 0 = outermost (landing position). Default 0 — backend
+        # can be extended later to return the variant note's actual lane within new scale.
+        return {
+            "success": True,
+            "variant_id": variant.variant_id,
+            "state": "accepted",
+            "variant_lane_index": 0,
+        }
+
+    def _commit_variant_swap(self, session, variant, instrument) -> dict:
+        """Perform the scale swap for a previously accepted variant. Called by promote_variant."""
+        now_ms = int(time.time() * 1000)
 
         if variant.side == "LEFT":
             new_notes, new_asc_count = self._build_full_scale_notes(
                 session.scale_id_for_variant, variant.root_midi, instrument
             )
             session.root_midi = variant.root_midi
-            # Player just played the new root (trigger note); start at index 1.
             session.current_note_index = 1 if new_notes and len(new_notes) > 1 else 0
             session.total_notes_played = 1
         else:  # RIGHT
-            # variant.root_midi = old_highest + 2 = target apex; find actual root (AC-4).
             candidate, new_notes, new_asc_count = self._find_root_for_highest(
                 session.scale_id_for_variant, variant.root_midi, instrument
             )
             if candidate is not None:
                 session.root_midi = candidate
-                # Start at first descending note — player just played the new apex.
                 session.current_note_index = new_asc_count if new_notes and new_asc_count < len(new_notes) else 0
                 session.total_notes_played = 1
             else:
@@ -489,42 +524,79 @@ class GameEngine:
 
         session.notes = new_notes
         session.ascending_note_count = new_asc_count
-        # Recompute lane geometry from the new note set.
         scale_frets = [n.fret for n in new_notes if n.fret is not None]
         session.base_fret = min(scale_frets) if scale_frets else variant.base_fret
         new_max_fret = max(scale_frets) if scale_frets else session.base_fret
         session.num_lanes = max(3, min(instrument.maxFret, (new_max_fret - session.base_fret) + 1))
-        session.current_track = variant.base_lane
+        # Position character at the note the player just played (trigger note).
+        # LEFT: trigger = root (notes[0]). RIGHT: trigger = apex (notes[asc_count - 1]).
+        if variant.side == "RIGHT":
+            _trigger_idx = (new_asc_count - 1) if new_notes and new_asc_count < len(new_notes) else 0
+        else:
+            _trigger_idx = 0
+        if new_notes and 0 <= _trigger_idx < len(new_notes) and new_notes[_trigger_idx].fret is not None:
+            session.current_track = max(0, min(session.num_lanes - 1, new_notes[_trigger_idx].fret - session.base_fret))
+        else:
+            session.current_track = 0
         session.scale_passes_completed = 0
         session.last_pass_direction = None
-
-        # Reset speed to difficulty base (multiplier 1.0) to give the player a breather.
         session.speed_multiplier = 1.0
 
-        # Finalize variant state.
-        variant.state = "SWITCHED"
+        variant.state = "PROMOTED"
+        session.active_window.state = "CLOSED"
         session.variant_history.append({
             "variant_id": variant.variant_id,
             "root_midi": variant.root_midi,
             "side": variant.side,
-            "decision": "SWITCHED",
+            "decision": "PROMOTED",
             "at_ms": now_ms,
         })
         session.active_variant = None
         session.active_window = None
         logger.info(
-            "variant.accept session=%s variant=%s new_root=%d base_fret=%d num_lanes=%d",
-            session.session_id, variant.variant_id, variant.root_midi, variant.base_fret, variant.num_lanes,
+            "variant.promote session=%s variant=%s new_root=%d base_fret=%d num_lanes=%d",
+            session.session_id, variant.variant_id, session.root_midi, session.base_fret, session.num_lanes,
         )
         return {
             "success": True,
             "root_midi": session.root_midi,
             "base_fret": session.base_fret,
             "num_lanes": session.num_lanes,
+            "current_track": session.current_track,
             "notes": [n.model_dump() for n in session.notes],
             "ascending_note_count": session.ascending_note_count,
             "current_note_index": session.current_note_index,
         }
+
+    def promote_variant(self, session_id: str) -> dict:
+        session = self.get_session(session_id)
+        if not session:
+            return {"success": False, "error": "session_not_found"}
+        # Idempotency: if already promoted (active_variant cleared), return current scale state.
+        if not session.active_variant:
+            already_promoted = any(h.get("decision") == "PROMOTED" for h in session.variant_history)
+            if already_promoted:
+                return {
+                    "success": True,
+                    "root_midi": session.root_midi,
+                    "base_fret": session.base_fret,
+                    "num_lanes": session.num_lanes,
+                    "notes": [n.model_dump() for n in session.notes],
+                    "ascending_note_count": session.ascending_note_count,
+                    "current_note_index": session.current_note_index,
+                }
+            return {"success": False, "error": "no_active_variant"}
+        if session.status != "running":
+            return {"success": False, "error": "game_not_running"}
+        variant = session.active_variant
+        if variant.state not in ("ACCEPTED",):
+            return {"success": False, "error": "variant_not_accepted"}
+
+        instrument = get_instrument(session.instrument_id) or Instrument(
+            id="default", name="Default", kind="guitar",
+            stringCount=6, tuning=[40, 45, 50, 55, 59, 64], maxFret=24,
+        )
+        return self._commit_variant_swap(session, variant, instrument)
 
     def dismiss_variant(self, session_id: str) -> dict:
         """Proximity-based dismiss: clear the active variant without checking the deadline."""

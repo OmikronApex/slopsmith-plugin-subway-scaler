@@ -72,6 +72,16 @@ def test_full_variant_accept_flow_via_http(client):
         f"{BASE}/{sid}/variant/accept", json={"midi": new_root, "now_ms": 1500}
     ).json()
     assert accept["success"] is True
+    assert accept["state"] == "accepted"
+
+    # After accept: variant still active (state=ACCEPTED), scale not yet swapped.
+    state2b = client.get(f"{BASE}/{sid}").json()
+    assert state2b["active_variant"] is not None
+    assert state2b["active_variant"]["state"] == "ACCEPTED"
+
+    # Promote: commits the scale swap.
+    promote = client.post(f"{BASE}/{sid}/variant/promote").json()
+    assert promote["success"] is True
 
     # Variant cleared; session reseated on new scale.
     state3 = client.get(f"{BASE}/{sid}").json()
@@ -82,14 +92,14 @@ def test_full_variant_accept_flow_via_http(client):
     sess = engine.get_session(sid)
     if side == "LEFT":
         # LEFT: root_midi == trigger; start at index 1 (player just played root)
-        assert accept["root_midi"] == new_root
+        assert promote["root_midi"] == new_root
         assert sess.current_note_index == 1
-        assert state3["next_expected_note"]["midi"] == accept["notes"][1]["midi"]
+        assert state3["next_expected_note"]["midi"] == promote["notes"][1]["midi"]
     else:
         # RIGHT: root_midi is computed candidate root; start descending
-        assert accept["root_midi"] != new_root
+        assert promote["root_midi"] != new_root
         assert sess.current_note_index == sess.ascending_note_count
-        assert state3["next_expected_note"]["midi"] == accept["notes"][sess.ascending_note_count]["midi"]
+        assert state3["next_expected_note"]["midi"] == promote["notes"][sess.ascending_note_count]["midi"]
 
 
 def test_full_variant_timeout_flow_via_http(client):
@@ -174,30 +184,39 @@ def test_poll_after_propose_shows_active_variant(client):
     assert aw["deadline_ms"] > now_ms
 
 
-def test_poll_after_accept_clears_variant(client):
-    """AC-3: Poll after accept returns active_variant: null; root updated per direction."""
+def test_poll_after_accept_shows_accepted_variant(client):
+    """AC-3 (6-5): Poll after accept returns active_variant with state=ACCEPTED; scale unchanged.
+    Poll after promote returns active_variant: null; root updated per direction."""
     s = _start(client)
     sid = s["session_id"]
+    original_root = s["root_note"]["midi"]
     _play_passes(client, sid, passes=3)
 
     propose = client.post(f"{BASE}/{sid}/variant/propose", json={"now_ms": 1000}).json()
     assert propose["success"] is True
-    new_root = propose["variant"]["root_midi"]
-    side = propose["variant"]["side"]
     trigger = propose["window"]["trigger_midi"]
 
     accept = client.post(f"{BASE}/{sid}/variant/accept", json={"midi": trigger, "now_ms": 1500}).json()
     assert accept["success"] is True
-    if side == "LEFT":
-        assert accept["root_midi"] == new_root
-    else:
-        # RIGHT: returned root_midi is the candidate root, not the trigger apex
-        assert accept["root_midi"] != new_root
+    assert accept["state"] == "accepted"
 
-    state = client.get(f"{BASE}/{sid}").json()
-    assert state["active_variant"] is None
-    assert state["active_window"] is None
-    assert state["status"] == "running"
+    # Between accept and promote: outgoing scale still served.
+    state_gap = client.get(f"{BASE}/{sid}").json()
+    assert state_gap["active_variant"] is not None
+    assert state_gap["active_variant"]["state"] == "ACCEPTED"
+    # Verify outgoing scale notes unchanged (scale not yet swapped).
+    from services.game_router import engine as _engine
+    gap_sess = _engine.get_session(sid)
+    assert gap_sess.root_midi == original_root
+
+    # Promote commits the swap.
+    promote = client.post(f"{BASE}/{sid}/variant/promote").json()
+    assert promote["success"] is True
+
+    state_after = client.get(f"{BASE}/{sid}").json()
+    assert state_after["active_variant"] is None
+    assert state_after["active_window"] is None
+    assert state_after["status"] == "running"
 
 
 def test_poll_after_timeout_clears_variant(client):

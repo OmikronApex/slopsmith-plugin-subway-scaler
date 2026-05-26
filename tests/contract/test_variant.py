@@ -94,7 +94,26 @@ def test_accept_after_deadline_rejected(client):
     assert r.json()["error"] == "window_expired"
 
 
-def test_accept_switches_root_and_regenerates_notes(client):
+def test_accept_returns_lightweight_confirmation(client):
+    """After 6-5: accept returns {success, variant_id, state} — no scale data."""
+    s = _start(client)
+    _force_milestone(client, s["session_id"])
+    p = client.post(f"{BASE}/{s['session_id']}/variant/propose", json={"now_ms": 1000}).json()
+    new_root = p["variant"]["root_midi"]
+    r = client.post(
+        f"{BASE}/{s['session_id']}/variant/accept",
+        json={"midi": new_root, "now_ms": 1500},
+    ).json()
+    assert r["success"] is True
+    assert r["state"] == "accepted"
+    assert "variant_id" in r
+    # Scale data NOT in accept response
+    assert "notes" not in r
+    assert "base_fret" not in r
+    assert "root_midi" not in r
+
+
+def test_accept_then_promote_switches_root_and_regenerates_notes(client):
     from services.game_router import engine
     s = _start(client)
     original_root = 60  # passed in _start
@@ -102,35 +121,43 @@ def test_accept_switches_root_and_regenerates_notes(client):
     p = client.post(f"{BASE}/{s['session_id']}/variant/propose", json={"now_ms": 1000}).json()
     new_root = p["variant"]["root_midi"]
     side = p["variant"]["side"]
-    # RIGHT: 2 above highest scale note; LEFT: root - 2
     sess_before = engine.get_session(s["session_id"])
     if side == "RIGHT":
         expected_root = max(n.midi for n in sess_before.notes) + 2
     else:
         expected_root = original_root - 2
     assert new_root == expected_root
-    r = client.post(
+    accept = client.post(
         f"{BASE}/{s['session_id']}/variant/accept",
         json={"midi": new_root, "now_ms": 1500},
     ).json()
+    assert accept["success"] is True
+    # Promote to commit scale swap
+    r = client.post(f"{BASE}/{s['session_id']}/variant/promote").json()
     assert r["success"] is True
     assert r["base_fret"] >= 0
     assert r["num_lanes"] >= 3
     assert len(r["notes"]) > 0
     sess_after = engine.get_session(s["session_id"])
     if side == "LEFT":
-        # LEFT: root_midi = variant.root_midi; start at index 1 (player just played root)
         assert r["root_midi"] == new_root
         assert r["notes"][0]["midi"] == new_root
         assert sess_after.current_note_index == 1
     else:
-        # RIGHT: root_midi is the computed actual root (not the trigger apex)
         assert r["root_midi"] != new_root
         assert r["root_midi"] == sess_after.root_midi
-        # Apex of new scale = trigger note
         assert sess_after.notes[sess_after.ascending_note_count - 1].midi == new_root
-        # Start descending: first note is first step below apex
         assert sess_after.current_note_index == sess_after.ascending_note_count
+
+
+def test_accept_already_accepted_rejected(client):
+    s = _start(client)
+    _force_milestone(client, s["session_id"])
+    p = client.post(f"{BASE}/{s['session_id']}/variant/propose", json={"now_ms": 1000}).json()
+    new_root = p["variant"]["root_midi"]
+    client.post(f"{BASE}/{s['session_id']}/variant/accept", json={"midi": new_root, "now_ms": 1500})
+    r2 = client.post(f"{BASE}/{s['session_id']}/variant/accept", json={"midi": new_root, "now_ms": 1600}).json()
+    assert r2["error"] == "variant_already_accepted"
 
 
 def test_timeout_clears_variant_and_records_history(client):

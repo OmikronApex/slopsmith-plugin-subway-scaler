@@ -107,6 +107,8 @@ export function createScene(canvas) {
   let variantAcceptState = null;    // { newPrimary, acceptX, characterMoved } — tracks accept animation
   let lastWaveSpeed = 0.05;         // captured from setWaves; used for piece scrolling
   let onVariantMissedCb = null;     // registered from main.js (story 5-8, AC-2)
+  let _savedMissCb = null;          // remembered original handler — re-armed on next propose (Story 6-8)
+  let _variantMissFired = false;    // cb fires once at SZ-pass; cleanup deferred until off-frame
   let lastVariantTickMs = 0;        // last render tick that saw a variant SZ — for tab-resume guard
 
   let tween = null;
@@ -115,6 +117,41 @@ export function createScene(canvas) {
   let gameStartTime = 0;
   let baseFret = 0;
   let numLanes = 6;
+
+  // Camera constants (Story 6.3)
+  const CAMERA_BEND_YAW_MAX = 12 * Math.PI / 180;
+  const CAMERA_LOOK_AHEAD_Z = 5;
+  const CAMERA_RESET_DURATION_MS = 500;
+
+  // Cinematic refinement constants (Story 6.8 rewrite)
+  const MAX_BEND_YAW = Math.PI / 4;          // 45° — character snap & camera target
+  const DIAG_CROSS_MS = 1200;                // X crossing duration (breather window)
+  const FIRST_WAVE_ARRIVAL_DELAY_MS = 500;   // ms after landing before first new-scale wave
+  const REPOSITION_SLIDE_MS = 200;           // quick slide to variant note fret after landing
+  const CAMERA_YAW_RATE = 0.02;              // rad/frame camera ease rate
+
+  let _cameraMode = 'default';
+  let _cameraResetStartMs = 0;
+  let _cameraResetStartYaw = 0;
+  let _targetCamYaw = 0;
+  let _currentCamYaw = 0;
+
+  // Cinematic exit (Story 6.8 AC-6): synchronized time-based lerp.
+  let _cinematicExit = null; // { startMs, durMs, fromCamYaw, fromCharYaw, fromX, targetX }
+
+  // World-space X offset applied to lane positions, cart positions, collision safeX,
+  // and moveToTrack targets after a variant transition (Story 6.8 AC-5). Set by
+  // spawnVariantTracks(centerX). Reset to 0 on scene reset / setInstrument.
+  let _worldOffsetX = 0;
+
+  // Pending tracks — new-scale track meshes scrolling in from horizon (Story 6.4)
+  let _pendingTracks = [];         // [{ mesh, targetZ, speedPxMs }]
+  let _tracksLandedCb = null;
+  let _tracksLandedFired = false;
+  // Pre-variant lane meshes kept visible during the cinematic; removed at the
+  // finalize step (post-promote) so the old + new track sets coexist during
+  // the ride rather than blinking out the moment new tracks start scrolling in.
+  let _retiringTracks = [];
 
   function clearWaves() {
     for (const w of activeWaves.values()) {
@@ -128,31 +165,55 @@ export function createScene(canvas) {
       scene.remove(t.mesh);
     }
     tracks = [];
+    for (const t of _retiringTracks) {
+      scene.remove(t.mesh);
+      t.mesh.geometry?.dispose?.();
+    }
+    _retiringTracks = [];
     clearWaves();
   }
 
   function rebuildTracks() {
     const count = numLanes;
     for (let i = 0; i < count; i++) {
-      const x = laneX(i, count);
+      const x = laneX(i, count) + _worldOffsetX;
       const mesh = new THREE.Mesh(
         new THREE.BoxGeometry(1.4, 0.06, TRACK_DEPTH),
         trackMat
       );
-      mesh.position.set(x, -0.05, -TRACK_DEPTH / 2 + 5);
+      // Front edge at z=20 — well past the camera (camera.z ≈ 11) so the near end
+      // is out of frame and tracks read as continuous.
+      mesh.position.set(x, -0.05, -TRACK_DEPTH / 2 + 20);
       scene.add(mesh);
 
       tracks.push({ mesh });
     }
-    targetCameraX = 0;
-    currentCameraX = 0;
+    targetCameraX = _worldOffsetX;
+    currentCameraX = _worldOffsetX;
   }
 
   function reset() {
     clearWaves();
     clearVariantGeom();
     tween = null;
+    _charTraversal = null;
+    _bendMidpointCb = null;
+    _bendMidpointFired = false;
+    _cameraMode = 'default';
+    _cameraResetStartMs = 0;
+    _cameraResetStartYaw = 0;
+    _targetCamYaw = 0;
+    _currentCamYaw = 0;
+    if (window.__gameState?.scene) window.__gameState.scene.transitionRideProgress = undefined;
+    for (const pt of _pendingTracks) { scene.remove(pt.mesh); }
+    _pendingTracks = [];
+    for (const rt of _retiringTracks) { scene.remove(rt.mesh); }
+    _retiringTracks = [];
+    _tracksLandedCb = null;
+    _tracksLandedFired = false;
     succeeded = false;
+    _worldOffsetX = 0;
+    _cinematicExit = null;
     character.position.set(laneX(0, numLanes), CHAR_Y, FRONT_Z + 0.1);
     character.rotation.set(0, 0, 0);
     targetCameraX = 0;
@@ -206,26 +267,90 @@ export function createScene(canvas) {
     }
     variantAcceptState = null;
     variantInfo = null;
+    _charTraversal = null;
+    _bendMidpointCb = null;
+    _bendMidpointFired = false;
+    character.position.z = FRONT_Z + 0.1;
+    character.rotation.y = 0;
+  }
+
+  // Remove only track lane meshes — preserves activeWaves (in-flight old-scale wave meshes).
+  function clearTracks() {
+    for (const t of tracks) { scene.remove(t.mesh); }
+    tracks = [];
+  }
+
+  // Spawn new-scale track meshes at SPAWN_Z and scroll them toward rest position (Story 6.4).
+  function spawnVariantTracks(newBaseFret, newNumLanes, speedPxMs, centerX = 0) {
+    // Defer old-track removal to finalizeVariantTransition() — old lanes stay
+    // visible until the cinematic completes. Move current tracks into a holding
+    // list; `tracks` only collects the new pending ones once they land.
+    _retiringTracks = _retiringTracks.concat(tracks);
+    tracks = [];
+    _pendingTracks = [];
+    _tracksLandedFired = false;
+    _worldOffsetX = centerX;
+    for (let i = 0; i < newNumLanes; i++) {
+      const x = laneX(i, newNumLanes) + centerX;
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.06, TRACK_DEPTH), trackMat);
+      mesh.position.set(x, -0.05, SPAWN_Z);
+      scene.add(mesh);
+      _pendingTracks.push({ mesh, targetZ: -TRACK_DEPTH / 2 + 20, speedPxMs });
+    }
+    baseFret = newBaseFret;
+    numLanes = newNumLanes;
+  }
+
+  function areTracksLanded() {
+    if (_pendingTracks.length === 0) return false;
+    return _pendingTracks.every(pt => pt.mesh.position.z <= pt.targetZ + 1);
+  }
+
+  function setOnTracksLanded(cb) {
+    _tracksLandedCb = cb;
+    _tracksLandedFired = false;
   }
 
   function _variantLaneX(side, anchorFret, anchorNoteLane) {
     const sign = side === 'RIGHT' ? 1 : -1;
     // Place variant 2 lanes outside the anchor note's lane. No clamp:
     // the variant must sit beyond the main track range (1-track gap expected).
+    // _worldOffsetX folded in so subsequent variants spawn in the current frame.
     if (anchorNoteLane != null) {
-      return laneX(anchorNoteLane + sign * 2, numLanes);
+      return laneX(anchorNoteLane + sign * 2, numLanes) + _worldOffsetX;
     }
     if (anchorFret != null) {
       const lane = (anchorFret - baseFret) + sign * 2;
-      return laneX(lane, numLanes);
+      return laneX(lane, numLanes) + _worldOffsetX;
     }
     // Fallback when wave not yet known: 2 lane widths beyond the edge.
     const edgeLane = side === 'RIGHT' ? numLanes - 1 : 0;
-    return laneX(edgeLane, numLanes) + sign * 2 * LANE_X_SCALE;
+    return laneX(edgeLane, numLanes) + sign * 2 * LANE_X_SCALE + _worldOffsetX;
+  }
+
+  // Drop retiring (pre-variant) lane meshes and all ghosted wave meshes at the
+  // end of the cinematic. Called from main.js applyPromoteResponse.
+  function finalizeVariantTransition() {
+    for (const t of _retiringTracks) {
+      scene.remove(t.mesh);
+      t.mesh.geometry?.dispose?.();
+    }
+    _retiringTracks = [];
+    for (const [id, w] of Array.from(activeWaves.entries())) {
+      if (w.ghost) {
+        scene.remove(w.mesh);
+        activeWaves.delete(id);
+      }
+    }
   }
 
   function proposeVariantTracks(variant, transitionWave, anchorNote, anchorWave) {
     clearVariantGeom();
+    _variantMissFired = false;
+    // Re-arm the missed callback in case a prior transition's
+    // disableVariantMissCallback() nulled it — without this, dismissing the new
+    // variant only removes the SZ mesh and leaves the propose-piece orphaned.
+    if (_savedMissCb && !onVariantMissedCb) onVariantMissedCb = _savedMissCb;
     // Anchor note: note at wave.note_index - 1 (apex for RIGHT, root for LEFT).
     // Color matches the anchor note's string. Position is 2 lanes from anchor.
     const anchorFret = anchorNote?.fret ?? transitionWave?.safe_fret;
@@ -269,6 +394,11 @@ export function createScene(canvas) {
     szMesh.rotation.x = -Math.PI / 2;
     szMesh.userData.spawnMs = spawnMs;
     szMesh.userData.speedPxMs = speedPxMs;
+    // Variant note value the safe zone expects — used by getActiveSafeZones (Story 6.8 T12).
+    if (anchorFret != null) {
+      const fretOffset = variant.side === 'RIGHT' ? 2 : -2;
+      szMesh.userData.variantNote = anchorFret + fretOffset;
+    }
     const szElapsed = Math.max(0, nowGameMs - spawnMs);
     // Match SafeZoneRenderer Z: SPAWN_Z + elapsed*speed*0.5 + DEPTH/2.
     // Without the +DEPTH/2 offset the variant safezone trails the anchor's by half a depth.
@@ -310,6 +440,8 @@ export function createScene(canvas) {
     }
     // startIndex: which note the player will play next (used to snap character to the
     // note they just played, i.e. startIndex - 1 for RIGHT / 0 for LEFT).
+    // NOTE: variantProposePiece is NOT cleared here — it becomes the ride piece in Epic 6
+    // and continues scrolling until it naturally exits the frame.
     variantAcceptState = { newPrimary, acceptX, characterMoved: false, notes, startIndex };
   }
 
@@ -347,11 +479,14 @@ export function createScene(canvas) {
         for (let i = 0; i < numLanes; i++) {
           if (i === waveData.safe_track) continue;
           const cart = makeCart(bodyMaterial(0x888888));
-          cart.position.x = laneX(i, numLanes);
+          cart.position.x = laneX(i, numLanes) + _worldOffsetX;
           group.add(cart);
         }
         scene.add(group);
-        w = { mesh: group, data: waveData };
+        // Capture offset + lane count at creation so collision uses the same
+        // world geometry the carts were positioned in (post-variant lanes/offset
+        // changes must not retro-warp in-flight waves).
+        w = { mesh: group, data: waveData, offsetX: _worldOffsetX, numLanes };
         activeWaves.set(waveData.wave_id, w);
       }
       w.data = waveData; // Update data (speed might change)
@@ -359,7 +494,7 @@ export function createScene(canvas) {
   }
 
   function moveToTrack(trackIdx, immediate = false) {
-    const toX = laneX(trackIdx, numLanes);
+    const toX = laneX(trackIdx, numLanes) + _worldOffsetX;
     if (immediate) {
       character.position.x = toX;
       tween = null;
@@ -388,6 +523,18 @@ export function createScene(canvas) {
     rebuildTracks();
   }
 
+  // Lightweight lane geometry update without clearing scene (post-promote).
+  function setLaneGeometry(f, nL) {
+    baseFret = f;
+    numLanes = nL;
+  }
+
+  let _lastCollisionDebug = null;
+
+  function getLastCollisionDebug() {
+    return _lastCollisionDebug;
+  }
+
   function checkCollision() {
     if (!instrument || succeeded) return false;
 
@@ -395,15 +542,27 @@ export function createScene(canvas) {
     const charZ = character.position.z;
 
     for (const w of activeWaves.values()) {
+      if (w.ghost) continue; // demoted to visual-only after variant promote
       const waveZ = w.mesh.position.z;
 
       // Carts are 1.3 deep, character is ~0.5 deep.
       // Sum of half-depths = 0.65 + 0.25 = 0.9.
       if (Math.abs(charZ - waveZ) < 0.8) {
-        // Potential collision! Check if we are in the safe lane.
-        const safeX = laneX(w.data.safe_track, numLanes);
-        // Lanes are 1.6 apart. If we are > 0.6 away from safe center, we are hitting a cart.
+        // Use the wave's captured offset + numLanes (set at wave creation), not
+        // the current scene values — post-variant the world geometry has shifted
+        // but in-flight waves still live in their original frame.
+        const safeX = laneX(w.data.safe_track, w.numLanes) + w.offsetX;
         if (Math.abs(charX - safeX) > 0.6) {
+          _lastCollisionDebug = {
+            charX: Math.round(charX * 100) / 100,
+            charZ: Math.round(charZ * 100) / 100,
+            safeX: Math.round(safeX * 100) / 100,
+            safeTrack: w.data.safe_track,
+            waveId: w.data.wave_id,
+            waveNoteIndex: w.data.note_index,
+            numLanes: w.numLanes,
+            baseFret,
+          };
           return true;
         }
       }
@@ -422,6 +581,28 @@ export function createScene(canvas) {
       if (t >= 1) tween = null;
     }
 
+    // Time-based eased traversal onto the variant lane (Story 6-8 polish).
+    // The original geometric variant (Story 6.2 — bound to incoming diagonal
+    // Z-progress) clamped to progress=1 instantly on accept because the
+    // incoming diagonal had already passed the player, producing a hard snap.
+    // Switching to a time-based easeInOutCubic gives a smooth slide that the
+    // camera's 0.1 X lerp can track without lag-jumping.
+    if (_charTraversal) {
+      const t = _charTraversal;
+      const tRaw = Math.min(1, (nowMs - t.startMs) / t.durMs);
+      const e = _easeInOutCubic(tRaw);
+      character.position.x = t.startX + (t.targetX - t.startX) * e;
+      if (tRaw >= 1) _charTraversal = null;
+    }
+
+    // Bend midpoint reached callback — fires once when incoming diagonal midpoint hits player (z ≥ 0).
+    if (_bendMidpointCb && !_bendMidpointFired && isBendMidpointReached()) {
+      _bendMidpointFired = true;
+      const cb = _bendMidpointCb;
+      _bendMidpointCb = null;
+      cb();
+    }
+
     // Update wave positions
     for (const w of activeWaves.values()) {
       const elapsed = Math.max(0, nowMs - gameStartTime - w.data.spawn_time_ms);
@@ -434,14 +615,20 @@ export function createScene(canvas) {
 
     if (succeeded) character.rotation.y += dt * 2;
 
-    // Variant propose piece — Z-scroll only (AC-8)
+    // Variant propose piece — Z-scroll only (AC-8). Despawn deferred 500ms past
+    // the geometric end-of-diagonal so the piece is visibly out of frame before
+    // it's removed (rather than blinking out at the moment of arrival).
     if (variantProposePiece) {
       const elapsed = Math.max(0, nowMs - gameStartTime - variantProposePiece.spawnTimeMs);
       variantProposePiece.mesh.position.z = SPAWN_Z + elapsed * variantProposePiece.speedPxMs * 0.5;
       if (variantProposePiece.mesh.position.z > STRAIGHT_LEN / 2 + DIAG_LEN) {
-        scene.remove(variantProposePiece.mesh);
-        variantProposePiece.mesh.traverse(c => { if (c.isMesh) c.geometry?.dispose(); });
-        variantProposePiece = null;
+        if (variantProposePiece.despawnAtMs == null) {
+          variantProposePiece.despawnAtMs = nowMs + 500;
+        } else if (nowMs >= variantProposePiece.despawnAtMs) {
+          scene.remove(variantProposePiece.mesh);
+          variantProposePiece.mesh.traverse(c => { if (c.isMesh) c.geometry?.dispose(); });
+          variantProposePiece = null;
+        }
       }
     }
 
@@ -467,12 +654,32 @@ export function createScene(canvas) {
         if (window.__gameState?.variant) {
           window.__gameState.variant.safeZoneZ = z;
         }
-        // Miss: back edge has passed player (AC-2)
-        if (z > VARIANT_SZ_DEPTH / 2) {
-          const cb = onVariantMissedCb;
-          clearVariantGeom();
+        // Miss handling (Story 6.8 polish):
+        // - Fire the cb ONCE when the back edge passes the player (z > 10). State
+        //   transitions (phase → idle, etc.) happen in main.js immediately.
+        // - Defer mesh removal until the geometry is visually off-frame so the
+        //   SZ scrolls away naturally rather than blinking out at the player.
+        // - Post-accept path (cb null) gets the same treatment — the SZ scrolls
+        //   past with the rest of the variant geometry instead of vanishing the
+        //   moment the player accepts.
+        const SZ_OFFSCREEN_Z = 25; // SZ mesh fully past camera viewport
+        if (z > VARIANT_SZ_DEPTH / 2 && !_variantMissFired) {
+          _variantMissFired = true;
           lastVariantTickMs = 0;
-          if (cb) cb();
+          if (onVariantMissedCb) onVariantMissedCb();
+        }
+        if (_variantMissFired && variantSafeZoneMesh && z > SZ_OFFSCREEN_Z) {
+          // Dispose child sprite material + texture to prevent per-propose accumulation
+          variantSafeZoneMesh.traverse(c => {
+            if (c.isSprite && c.material) {
+              c.material.map?.dispose();
+              c.material.dispose();
+            }
+          });
+          scene.remove(variantSafeZoneMesh);
+          variantSafeZoneMesh.geometry?.dispose();
+          variantSafeZoneMesh.material?.dispose();
+          variantSafeZoneMesh = null;
         }
       }
     } else {
@@ -519,12 +726,90 @@ export function createScene(canvas) {
       }
     }
 
+    // Pending tracks — scroll new-scale track meshes from SPAWN_Z to rest position (Story 6.4).
+    if (_pendingTracks.length > 0) {
+      for (const pt of _pendingTracks) {
+        pt.mesh.position.z += pt.speedPxMs * 0.5 * (dt * 1000);
+        if (pt.mesh.position.z <= pt.targetZ) {
+          pt.mesh.position.z = pt.targetZ;
+        }
+      }
+      if (!_tracksLandedFired && areTracksLanded()) {
+        _tracksLandedFired = true;
+        // Promote pending to main tracks array
+        for (const pt of _pendingTracks) { tracks.push({ mesh: pt.mesh }); }
+        _pendingTracks = [];
+        const cb = _tracksLandedCb;
+        _tracksLandedCb = null;
+        if (cb) cb();
+      }
+    }
+
     currentCameraX += (targetCameraX - currentCameraX) * 0.1;
-    const rad = (CAMERA_PITCH * Math.PI) / 180;
-    camera.position.x = currentCameraX;
-    camera.position.y = CAMERA_DISTANCE * Math.sin(rad);
-    camera.position.z = CAMERA_DISTANCE * Math.cos(rad) + camBase.lookAt[2];
-    camera.lookAt(currentCameraX, 0, camBase.lookAt[2]);
+
+    // Compute the effective camera yaw from whichever mode owns the camera.
+    // We then orbit the camera around its lookAt point — keeping the lookAt
+    // position fixed, the camera body translates in -X/-Z (for +yaw) so the
+    // camera ends up *behind the character along the diagonal axis* rather
+    // than staying at the rest-position Z while only its head rotates. The
+    // diagonal track now appears as a straight line into the distance.
+    let effectiveYaw = 0;
+    if (_cinematicExit) {
+      const e = _cinematicExit;
+      const tRaw = Math.min(1, (nowMs - e.startMs) / e.durMs);
+      const t = _easeInOutCubic(tRaw);
+      character.position.x = e.fromX + (e.targetX - e.fromX) * t;
+      effectiveYaw = e.fromCamYaw * (1 - t);
+      character.rotation.y = e.fromCharYaw * (1 - t);
+      _currentCamYaw = effectiveYaw;
+      _targetCamYaw = effectiveYaw;
+      if (tRaw >= 1) {
+        _cinematicExit = null;
+        _currentCamYaw = 0;
+        _targetCamYaw = 0;
+      }
+    } else if (_cameraMode === 'riding') {
+      if (_camEase) {
+        const tRaw = Math.min(1, (nowMs - _camEase.startMs) / _camEase.durMs);
+        _currentCamYaw = _camEase.fromYaw + (_camEase.toYaw - _camEase.fromYaw) * _easeInOutCubic(tRaw);
+        if (tRaw >= 1) _camEase = null;
+      } else {
+        _currentCamYaw += Math.max(-CAMERA_YAW_RATE, Math.min(CAMERA_YAW_RATE, _targetCamYaw - _currentCamYaw));
+      }
+      effectiveYaw = _currentCamYaw;
+    } else if (_cameraResetStartMs > 0) {
+      const t = Math.min(1, (nowMs - _cameraResetStartMs) / CAMERA_RESET_DURATION_MS);
+      const e = 1 - (1 - t) * (1 - t);
+      effectiveYaw = _cameraResetStartYaw * (1 - e);
+      if (t >= 1) {
+        _cameraResetStartMs = 0;
+        _currentCamYaw = 0;
+        _targetCamYaw = 0;
+        effectiveYaw = 0;
+      }
+    }
+
+    // Pivot around the CHARACTER (currentCameraX, 0, 0) — not the lookAt point —
+    // and rotate both the camera-position offset and the lookAt-point offset by
+    // effectiveYaw. The look-direction (lookAt − camera) then lies exactly along
+    // the diagonal, the camera body sits 11 units back from the character along
+    // that diagonal, and the lookAt point sits 2 units in front of the character.
+    //
+    //   camRadius   = camera.z at rest, relative to character (= 11)
+    //   lookFwdDist = |camBase.lookAt[2]| (= 2) — how far the lookAt point sits
+    //                 in front of the character along the look direction.
+    //
+    // Default rest position (effectiveYaw=0) evaluates to the exact original
+    // (currentCameraX, height, camBase.z) / lookAt(currentCameraX, 0, lookAtZ).
+    const pitchRad = (CAMERA_PITCH * Math.PI) / 180;
+    const camRadius = CAMERA_DISTANCE * Math.cos(pitchRad) + camBase.lookAt[2]; // 11
+    const lookFwdDist = -camBase.lookAt[2];                                     // 2
+    const sY = Math.sin(effectiveYaw);
+    const cY = Math.cos(effectiveYaw);
+    camera.position.x = currentCameraX - sY * camRadius;
+    camera.position.y = CAMERA_DISTANCE * Math.sin(pitchRad);
+    camera.position.z = cY * camRadius;
+    camera.lookAt(currentCameraX + sY * lookFwdDist, 0, -cY * lookFwdDist);
 
     renderer.render(scene, camera);
   }
@@ -534,8 +819,154 @@ export function createScene(canvas) {
     return Math.abs(variantSafeZoneMesh.position.z) <= VARIANT_SZ_DEPTH / 2;
   }
 
+  // Returns true when the incoming diagonal's midpoint has reached z = 0 (player position).
+  function isBendMidpointReached() {
+    if (!variantProposePiece) return false;
+    const straightZ = variantProposePiece.mesh.position.z;
+    return straightZ + STRAIGHT_LEN / 2 + DIAG_LEN / 2 >= 0;
+  }
+
+  // Character traversal state — lateral lerp bound to variant propose piece Z-progress.
+  let _charTraversal = null; // { startX, targetX }
+  let _bendMidpointCb = null;
+  let _bendMidpointFired = false;
+
+  function setCharacterTargetX(targetX, durMs = LATERAL_MS) {
+    _charTraversal = {
+      startX: character.position.x,
+      targetX,
+      startMs: performance.now(),
+      durMs,
+    };
+  }
+
+  function setOnBendMidpointReached(cb) {
+    _bendMidpointCb = cb;
+    _bendMidpointFired = false;
+  }
+
+  function clearBendMidpointCallback() {
+    _bendMidpointCb = null;
+    _bendMidpointFired = false;
+  }
+
+  function getVariantInfo() {
+    return variantInfo ? { variantX: variantInfo.variantX, side: variantInfo.side } : null;
+  }
+
+  function setCameraMode(mode) {
+    if (mode === 'default' && _cameraMode === 'riding') {
+      _cameraResetStartMs = performance.now();
+      _cameraResetStartYaw = camera.rotation.y;
+    }
+    _cameraMode = mode;
+  }
+
+  function setTargetCameraX(x) {
+    targetCameraX = x;
+  }
+
+  function getCharacterX() {
+    return character.position.x;
+  }
+
+  function getTraversalProgress() {
+    if (!_charTraversal || !variantProposePiece) return null;
+    const straightZ = variantProposePiece.mesh.position.z;
+    const frontEdgeZ = straightZ + STRAIGHT_LEN / 2 + DIAG_LEN;
+    const midpointZ = straightZ + STRAIGHT_LEN / 2 + DIAG_LEN / 2;
+    const range = frontEdgeZ - midpointZ;
+    return range > 0 ? Math.max(0, Math.min(1, (frontEdgeZ - 0) / range)) : 1;
+  }
+
   function setOnVariantMissed(cb) {
     onVariantMissedCb = cb;
+    _savedMissCb = cb; // remember so we can re-arm after a transition disables it
+  }
+
+  // Disables the variant miss callback without removing the safe zone mesh
+  // (Story 6.8 AC-2). The mesh continues to scroll away naturally.
+  function disableVariantMissCallback() {
+    onVariantMissedCb = null;
+    lastVariantTickMs = 0;
+  }
+
+  function isOutgoingCornerAtPlayer() {
+    if (!variantProposePiece) return false;
+    return variantProposePiece.mesh.position.z >= STRAIGHT_LEN / 2;
+  }
+
+  function snapCharacterYaw(yaw) {
+    character.rotation.y = yaw;
+  }
+
+  function setCharacterX(x) {
+    character.position.x = x;
+  }
+
+  // easeInOutCubic — slow start, fast middle, slow end.
+  function _easeInOutCubic(t) {
+    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  }
+
+  // Camera ease state for riding mode (Story 6-8 polish). When durMs is provided,
+  // the riding render branch eases _currentCamYaw from start→target over that
+  // window with easeInOutCubic instead of the constant-velocity rate clamp.
+  let _camEase = null; // { startMs, durMs, fromYaw, toYaw }
+
+  function setRidingCameraTarget(yaw, durMs = 400) {
+    _targetCamYaw = yaw;
+    if (durMs != null && durMs > 0) {
+      _camEase = { startMs: performance.now(), durMs, fromYaw: _currentCamYaw, toYaw: yaw };
+    } else {
+      _camEase = null;
+    }
+  }
+
+  // Synchronized exit lerp (Story 6.8 AC-6).
+  function startCinematicExit(targetX, durationMs) {
+    _cinematicExit = {
+      startMs: performance.now(),
+      durMs: durationMs,
+      fromCamYaw: _currentCamYaw,
+      fromCharYaw: character.rotation.y,
+      fromX: character.position.x,
+      targetX,
+    };
+  }
+
+  // Force-finalize the cinematic exit so subsequent render frames don't clobber
+  // character.position.x set by main.js after the exit's nominal duration.
+  function clearCinematicExit() {
+    _cinematicExit = null;
+    _camEase = null;
+    _currentCamYaw = 0;
+    _targetCamYaw = 0;
+  }
+
+  function getActiveSafeZones() {
+    const zones = [];
+    if (variantSafeZoneMesh) {
+      zones.push({
+        note: variantSafeZoneMesh.userData.variantNote ?? null,
+        z: variantSafeZoneMesh.position.z,
+        isVariant: true,
+      });
+    }
+    return zones;
+  }
+
+  // Clear variant safe zone and miss callback without disturbing traversal or geometry.
+  // Called on accept so the safe zone can't trigger a false miss during riding.
+  function clearVariantSafeZone() {
+    if (variantSafeZoneMesh) {
+      scene.remove(variantSafeZoneMesh);
+      variantSafeZoneMesh.geometry?.dispose();
+      variantSafeZoneMesh.material?.dispose();
+      variantSafeZoneMesh = null;
+    }
+    onVariantMissedCb = null;
+    lastVariantTickMs = 0;
   }
 
   return {
@@ -546,15 +977,56 @@ export function createScene(canvas) {
     showSuccess,
     setGameStartTime,
     setBaseFret,
+    setLaneGeometry,
     checkCollision,
     getWaveCount() { return activeWaves.size; },
+    getActiveWaveCount() { return activeWaves.size; },
+    getLastCollisionDebug,
+    getLastWaveSpeed() { return lastWaveSpeed; },
     reset,
     render,
     proposeVariantTracks,
     dismissVariantTracks,
     acceptVariantTracks,
+    clearTracks,
+    spawnVariantTracks,
+    areTracksLanded,
+    setOnTracksLanded,
     isVariantSafeZoneAdjacent,
+    isBendMidpointReached,
+    setCharacterTargetX,
+    setOnBendMidpointReached,
+    clearBendMidpointCallback,
+    getVariantInfo,
+    getCharacterX,
+    getCharacterZ() { return character.position.z; },
+    getTraversalProgress,
+    isTraversalActive() { return _charTraversal !== null; },
+    setCameraMode,
+    setTargetCameraX,
     setOnVariantMissed,
+    clearVariantSafeZone,
+    disableVariantMissCallback,
+    isOutgoingCornerAtPlayer,
+    snapCharacterYaw,
+    setCharacterX,
+    setRidingCameraTarget,
+    startCinematicExit,
+    clearCinematicExit,
+    getActiveSafeZones,
+    getWorldOffsetX() { return _worldOffsetX; },
+    getNumLanes() { return numLanes; },
+    ghostExistingWaves() {
+      // Only ghost waves whose captured offset doesn't match the current world
+      // offset — those are the leftover pre-variant waves. New-frame waves
+      // (pre-staged during the cinematic) share the current offset and must
+      // remain collidable.
+      for (const w of activeWaves.values()) {
+        if (w.offsetX !== _worldOffsetX) w.ghost = true;
+      }
+    },
+    finalizeVariantTransition,
+    clearWavesForTesting() { clearWaves(); },
     resize(w, h) {
       if (w <= 0 || h <= 0) return;
       renderer.setSize(w, h, false);

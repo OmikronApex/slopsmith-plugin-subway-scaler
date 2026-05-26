@@ -157,8 +157,8 @@ class GameState(BaseModel):
     speed_multiplier: SpeedMultiplier
 
 VariantSide = Literal["LEFT", "RIGHT"]
-VariantStateLit = Literal["SPAWNING", "ACTIVE", "SWITCH_TRIGGERED", "SWITCHED", "TIMEOUT", "DISMISSED"]
-WindowStateLit = Literal["OPEN", "SWITCHED", "CLOSED"]
+VariantStateLit = Literal["SPAWNING", "ACTIVE", "ACCEPTED", "PROMOTED", "TIMEOUT", "DISMISSED"]
+WindowStateLit = Literal["OPEN", "ACCEPTED", "CLOSED"]
 
 
 class VariantTrackSet(BaseModel):

@@ -8,18 +8,21 @@ export class WaveScheduler {
     this._nextDeadlineMs = 0;
     this._nextWaveNoteIndex = 0;
     this._totalWavesSpawned = 0;
+    this._queueingPaused = false;
   }
 
   tick(game_now, speedMultiplier) {
     const { base_duration_ms, wave_spacing_factor, wave_lookahead_ms } = this._timingParams;
 
-    while (this._nextDeadlineMs < game_now + wave_lookahead_ms) {
-      const gap = (base_duration_ms * wave_spacing_factor) / speedMultiplier;
-      this._nextDeadlineMs += gap;
-      const note = this._notes[this._nextWaveNoteIndex];
-      this._waves.push(this._buildWave(note, this._nextDeadlineMs, speedMultiplier));
-      this._nextWaveNoteIndex = (this._nextWaveNoteIndex + 1) % this._notes.length;
-      this._totalWavesSpawned++;
+    if (!this._queueingPaused) {
+      while (this._nextDeadlineMs < game_now + wave_lookahead_ms) {
+        const gap = (base_duration_ms * wave_spacing_factor) / speedMultiplier;
+        this._nextDeadlineMs += gap;
+        const note = this._notes[this._nextWaveNoteIndex];
+        this._waves.push(this._buildWave(note, this._nextDeadlineMs, speedMultiplier));
+        this._nextWaveNoteIndex = (this._nextWaveNoteIndex + 1) % this._notes.length;
+        this._totalWavesSpawned++;
+      }
     }
 
     const pruneThreshold = game_now - 10000;
@@ -28,12 +31,30 @@ export class WaveScheduler {
     );
   }
 
+  pauseQueueing() {
+    this._queueingPaused = true;
+  }
+
+  resumeQueueing(notes, startIndex = 0, baseFret = null, numLanes = null, gameNow = null) {
+    this._notes = notes;
+    this._nextWaveNoteIndex = notes.length > 0 ? startIndex % notes.length : 0;
+    this._nextDeadlineMs = gameNow != null ? gameNow : 0;
+    this._queueingPaused = false;
+    if (baseFret != null) this._baseFret = baseFret;
+    if (numLanes != null) this._numLanes = numLanes;
+    // Preserve in-flight outgoing-scale waves — they coexist with new-scale waves.
+  }
+
+  get queueingPaused() {
+    return this._queueingPaused;
+  }
+
   _buildWave(note, deadlineMs, speedMultiplier) {
     const { base_duration_ms } = this._timingParams;
     const basePxPerMs = 100.0 / base_duration_ms;
     const safeTrack = Math.max(0, Math.min(this._numLanes - 1, note.fret - this._baseFret));
     const durationMs = base_duration_ms / speedMultiplier;
-    return {
+    const wave = {
       wave_id: `w-${this._totalWavesSpawned}`,
       wave_index: this._totalWavesSpawned,
       note_index: this._nextWaveNoteIndex,
@@ -47,10 +68,18 @@ export class WaveScheduler {
       duration_ms: durationMs,
       cleared: false,
     };
+    if (typeof window !== 'undefined' && window.pushGameEvent) {
+      window.pushGameEvent('wave.spawn', { wave_id: wave.wave_id, note_index: wave.note_index, safe_track: wave.safe_track, safe_midi: wave.safe_midi });
+    }
+    return wave;
   }
 
   get waves() {
     return this._waves;
+  }
+
+  clearWavesForTesting() {
+    this._waves = [];
   }
 
   reset(notes, startIndex = 0) {

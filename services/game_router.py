@@ -1,10 +1,15 @@
 from fastapi import APIRouter, HTTPException
 from services.schemas import Track, GameState, SpeedMultiplier, Note
-from services.game_engine import GameEngine
+from services.game_engine import GameEngine, VARIANT_BREATHER_MS
 from services.scales import SCALES, midi_to_name
 from services.instruments import INSTRUMENTS
 from services.tabulator import Tabulator
 from services.errors import error_response
+import os
+import json
+from datetime import datetime
+
+LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'logs')
 
 router = APIRouter(prefix="/api/plugins/subway-scaler/game", tags=["game"])
 engine = GameEngine()
@@ -142,6 +147,7 @@ async def start_game(payload: dict):
         "wave_spacing_factor": 0.4,
         "wave_lookahead_ms": 10000,
         "speed_increment_per_note": 0.05,
+        "variant_breather_ms": VARIANT_BREATHER_MS,
     }
 
     return {
@@ -256,6 +262,15 @@ async def accept_variant(session_id: str, payload: dict):
     return result
 
 
+@router.post("/{session_id}/variant/promote")
+async def promote_variant_route(session_id: str):
+    """Commit the scale swap after the cinematic transition completes."""
+    result = engine.promote_variant(session_id)
+    if not result["success"] and result.get("error") == "session_not_found":
+        raise HTTPException(status_code=404, detail="Session not found")
+    return result
+
+
 @router.post("/{session_id}/variant/dismiss")
 async def dismiss_variant_route(session_id: str):
     """Dismiss the active variant (proximity-based miss, no deadline check)."""
@@ -263,6 +278,43 @@ async def dismiss_variant_route(session_id: str):
     if not result["success"] and result.get("error") == "session_not_found":
         raise HTTPException(status_code=404, detail="Session not found")
     return result
+
+
+@router.get("/{session_id}/debug")
+async def debug_state(session_id: str):
+    """Expose full engine state for E2E test diagnostics."""
+    session = engine.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {
+        "status": session.status,
+        "current_note_index": session.current_note_index,
+        "current_track": session.current_track,
+        "base_fret": session.base_fret,
+        "num_lanes": session.num_lanes,
+        "scale_passes_completed": session.scale_passes_completed,
+        "speed_multiplier": session.speed_multiplier,
+        "active_variant_state": session.active_variant.state if session.active_variant else None,
+        "active_window_state": session.active_window.state if session.active_window else None,
+        "notes_total": len(session.notes),
+    }
+
+
+@router.post("/logs")
+async def write_debug_log(payload: dict):
+    """Append structured log entries to a file in /logs/."""
+    entries = payload.get("entries", [])
+    if not entries:
+        return {"written": 0}
+    session_id = payload.get("session_id", "unknown")
+    short_id = session_id[:8] if session_id else "unknown"
+    os.makedirs(LOG_DIR, exist_ok=True)
+    filename = f"debug_{short_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+    filepath = os.path.join(LOG_DIR, filename)
+    with open(filepath, 'a') as f:
+        for entry in entries:
+            f.write(json.dumps(entry) + '\n')
+    return {"written": len(entries)}
 
 
 @router.post("/{session_id}/variant/timeout")

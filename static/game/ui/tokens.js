@@ -34,9 +34,11 @@ export const STRING_COLORS = [
 
 // Look up a string color by low→high index, clamping to instrument.stringCount.
 export function colourForString(stringIdx, instrument) {
+  if (stringIdx == null || typeof stringIdx !== 'number' || isNaN(stringIdx)) return STRING_COLORS[0];
   const stringCount = instrument?.stringCount ?? STRING_COLORS.length;
+  if (stringCount <= 0) return STRING_COLORS[0];
   const cap = Math.min(stringCount, STRING_COLORS.length);
-  const i = Math.max(0, Math.min(stringIdx, cap - 1));
+  const i = Math.max(0, Math.min(Math.floor(stringIdx), cap - 1));
   return STRING_COLORS[i];
 }
 
@@ -56,6 +58,8 @@ export function injectTokens() {
   // String colors, low→high pitch (0..N-1).
   for (let i = 0; i < STRING_COLORS.length; i++) {
     root.style.setProperty(`--color-string-${i}`, hexToCss(STRING_COLORS[i]));
+    // Emit legacy 1-indexed names for backward compatibility (P6).
+    root.style.setProperty(`--color-string-${i + 1}`, hexToCss(STRING_COLORS[i]));
   }
 }
 

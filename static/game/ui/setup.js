@@ -198,8 +198,26 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
 
   // Root label
   const rootLabel = el('div', { class: 'form-group' });
-  rootLabel.appendChild(el('label', {}, 'Root: randomised fret 5–8'));
+  rootLabel.appendChild(el('label', {}, 'Root: 5th fret of lowest string'));
   form.appendChild(rootLabel);
+
+  // Debug logging checkbox
+  const storedDebug = stored.debug_logging === true;
+  let currentDebugLogging = storedDebug;
+  const debugGroup = el('div', { class: 'form-group full-width' });
+  const debugLabel = el('label', {}, 'Debug logging');
+  const debugCheckbox = el('input', {
+    type: 'checkbox',
+    id: 'debug-logging',
+    class: 'debug-checkbox',
+    ...(storedDebug ? { checked: 'checked' } : {}),
+  });
+  debugCheckbox.addEventListener('change', (e) => {
+    currentDebugLogging = e.target.checked;
+  });
+  debugGroup.appendChild(debugLabel);
+  debugGroup.appendChild(debugCheckbox);
+  form.appendChild(debugGroup);
 
   // Error message (hidden by default)
   const errorMsg = el('div', {
@@ -237,13 +255,14 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
       const selectedInst = instruments.find(i => i.id === currentInstrumentId);
       if (!selectedInst) throw new Error('Invalid instrument selection');
 
-      const rootMidi = selectedInst.tuning[0] + 5;
+      const rootMidi = selectedInst?.tuning?.[0] != null ? selectedInst.tuning[0] + 5 : 60;
 
       // Save to localStorage (but not root_midi)
       saveSettings({
         scale_id: currentScaleId,
         difficulty: currentDifficulty,
-        instrument_id: currentInstrumentId
+        instrument_id: currentInstrumentId,
+        debug_logging: currentDebugLogging,
       });
 
       // Call session-config endpoint with timeout
@@ -262,7 +281,7 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
       errorMsg.classList.remove('visible');
       errorMsg.textContent = '';
       startBtn.disabled = false;
-      onGameStart(response);
+      onGameStart({ ...response, debug_logging: currentDebugLogging });
     } catch (err) {
       // Show error message with context
       const errMsg = err.name === 'AbortError'
