@@ -162,6 +162,13 @@ export function createScene(canvas) {
   // Last known world offset applied to the active building pool — used to detect transitions.
   let _bldgTrackedOffsetX = 0;
 
+  // Pre-transition variant-track building pool.  Spawned at proposal time at the variant world
+  // offset so buildings are already populated when the player lands on the new track.
+  // Adopted as the main pool on acceptance (_worldOffsetX change); despawned on dismissal.
+  let variantLeftBuildings  = [];
+  let variantRightBuildings = [];
+  let _variantBldgOffsetX   = 0;
+
   // Small random gap between buildings — just enough to avoid perfectly uniform marching.
   const BLDG_GAP_MIN = 0.3;
   const BLDG_GAP_MAX = 1.2;
@@ -199,6 +206,32 @@ export function createScene(canvas) {
         arr.push(g);
       }
     }
+  }
+
+  // Pre-transition variant-track building pool: spawned at proposal time so the variant
+  // skyline is populated before the player lands.  Adopted as main pool on acceptance.
+  function createVariantBuildingPool(offsetX) {
+    clearVariantBuildingPool();
+    _variantBldgOffsetX = offsetX;
+    for (const [arr, side] of [[variantLeftBuildings, 'left'], [variantRightBuildings, 'right']]) {
+      let cursor = BLDG_NEAR_CUTOFF;
+      for (let i = 0; i < BLDG_POOL_SIZE; i++) {
+        const g = makeBuildingGroup();
+        cursor = placeBuildingBehindPool(g, side, arr, cursor);
+        g.position.x = g.userData.baseX + offsetX;
+        scene.add(g);
+        arr.push(g);
+      }
+    }
+  }
+
+  function clearVariantBuildingPool() {
+    for (const g of [...variantLeftBuildings, ...variantRightBuildings]) {
+      scene.remove(g);
+      for (const child of g.children) child.geometry.dispose();
+    }
+    variantLeftBuildings = [];
+    variantRightBuildings = [];
   }
 
   createBuildingPool();
@@ -395,7 +428,8 @@ export function createScene(canvas) {
       scene.remove(g);
       for (const child of g.children) child.geometry.dispose();
     }
-    // Also dispose any retiring buildings (mid-transition state).
+    // Also dispose variant pre-transition pool and any retiring buildings.
+    clearVariantBuildingPool();
     for (const g of retiringBuildings) {
       scene.remove(g);
       for (const child of g.children) child.geometry.dispose();
@@ -448,6 +482,7 @@ export function createScene(canvas) {
   }
 
   function clearVariantGeom() {
+    clearVariantBuildingPool();
     if (variantProposePiece) {
       scene.remove(variantProposePiece.mesh);
       variantProposePiece.mesh.traverse(c => { if (c.isMesh) c.geometry?.dispose(); });
@@ -579,6 +614,10 @@ export function createScene(canvas) {
     scene.add(mesh);
     variantProposePiece = { mesh, spawnTimeMs: spawnMs, speedPxMs };
     variantInfo = { side: variant.side, variantX: vx, speedPxMs };
+
+    // Pre-populate buildings at the variant world offset so the skyline is ready when
+    // the player lands.  Despawned on dismissal; adopted as main pool on acceptance.
+    createVariantBuildingPool(vx);
 
     // Palette index for variant safe zone colours (story 7-0).
     // Uses STRING_SAFE_ZONE_FILLS for fill and STRING_COLORS for the neon border.
@@ -1002,9 +1041,18 @@ export function createScene(canvas) {
       if (_worldOffsetX !== _bldgTrackedOffsetX) {
         // Push active pools into retiring list — X positions stay frozen at old offset.
         retiringBuildings.push(...leftBuildings, ...rightBuildings);
-        // Spawn fresh pools at new offset.
-        createBuildingPool();
-        // Apply new offset immediately so new buildings appear in the right place.
+        if (variantLeftBuildings.length > 0 &&
+            Math.abs(_variantBldgOffsetX - _worldOffsetX) < 0.01) {
+          // Variant buildings already pre-populated at this offset — adopt them as main pool.
+          leftBuildings  = variantLeftBuildings;
+          rightBuildings = variantRightBuildings;
+          variantLeftBuildings  = [];
+          variantRightBuildings = [];
+        } else {
+          // No variant pool (or wrong offset) — spawn fresh.
+          createBuildingPool();
+        }
+        // Ensure X is correct for the new offset.
         for (const g of [...leftBuildings, ...rightBuildings]) {
           g.position.x = g.userData.baseX + _worldOffsetX;
         }
@@ -1110,6 +1158,21 @@ export function createScene(canvas) {
             : rearFaceZ;
           placeBuildingBehindPool(g, 'right', rightBuildings, targetZ);
           g.position.x = g.userData.baseX + _worldOffsetX;
+        }
+      }
+
+      // Scroll and recycle variant buildings (pre-transition pool at _variantBldgOffsetX).
+      // No gap restrictions here — dismiss piece gap is handled once they're adopted as main.
+      for (const [arr, side] of [[variantLeftBuildings, 'left'], [variantRightBuildings, 'right']]) {
+        for (const g of arr) {
+          g.position.z += bldgDelta;
+          g.position.x = g.userData.baseX + _variantBldgOffsetX;
+          if (g.position.z > BLDG_CULL_Z) {
+            const rear = arr.reduce((a, b) => a.position.z < b.position.z ? a : b);
+            const rearFaceZ = rear.position.z - rear.children[0].geometry.parameters.depth / 2;
+            placeBuildingBehindPool(g, side, arr, rearFaceZ);
+            g.position.x = g.userData.baseX + _variantBldgOffsetX;
+          }
         }
       }
 
