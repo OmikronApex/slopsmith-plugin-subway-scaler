@@ -1049,7 +1049,11 @@ export function createScene(canvas) {
       // Gradual zone drain: one building per side per piece per frame.
       for (const piece of activePieces) {
         const pieceZ    = piece.mesh.position.z;
-        const fwdCutoff = pieceZ + STRAIGHT_LEN / 2;
+        // Propose: player hasn't moved yet — preserve buildings close to player.
+        // Dismiss: character traverses the full diagonal — clear the entire path.
+        const fwdCutoff = piece === variantDismissPiece
+          ? pieceZ + STRAIGHT_LEN / 2 + DIAG_LEN + 5
+          : pieceZ + STRAIGHT_LEN / 2;
         for (const [arr, side, clear] of [
           [leftBuildings,  'left',  leftClear],
           [rightBuildings, 'right', rightClear],
