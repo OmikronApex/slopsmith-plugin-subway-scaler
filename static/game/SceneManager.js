@@ -1090,21 +1090,22 @@ export function createScene(canvas) {
 
       // Rear clearance — returns null (no gap) for the wrong side.
       //
-      // Propose piece: diagonal sweeps from main track toward variantX.
-      //   Gap needed on the VARIANT side (same as variantInfo.side).
-      // Dismiss piece: diagonal sweeps from variantX away from the new track.
-      //   Seen from the new track the gap is needed on the INNER side (opposite).
+      // The outgoing diagonal extends STRAIGHT_LEN/2 + DIAG_LEN behind the piece centre.
+      // clearance must cover that full Z extent so rearLimit sits behind the diagonal rear.
+      //
+      // Propose piece: incoming diagonal sweeps from main track toward variantX.
+      //   Gap on the VARIANT side (same as variantInfo.side).
+      // Dismiss piece: incoming diagonal sweeps from variantX away from the new track.
+      //   From the new track the INNER (opposite) side buildings are in the path.
       function bldgRearClearance(poolSide, piece) {
         if (!variantInfo) return null;
-        const { variantX, side: vSide } = variantInfo;
-        const sign = vSide === 'RIGHT' ? 1 : -1;
+        const { side: vSide } = variantInfo;
         const gapSide = (piece === variantDismissPiece)
           ? (vSide === 'RIGHT' ? 'LEFT' : 'RIGHT')
           : vSide;
         if (poolSide.toUpperCase() !== gapSide) return null;
-        const maxBldgX = BLDG_X_INNER + BLDG_X_SPREAD + BLDG_W_MAX / 2;
-        const dX = Math.max(0, maxBldgX - sign * variantX);
-        return STRAIGHT_LEN / 2 + dX + 10;
+        // Z clearance covers the full piece rear: straight half + full outgoing diagonal + buffer.
+        return STRAIGHT_LEN / 2 + DIAG_LEN + 5;
       }
 
       // Gradual zone drain: one building per side per piece per frame.
