@@ -88,7 +88,7 @@ development_status:
   epic-7: in-progress
   7-0-visual-conformance-tracks-carts-safe-zones: done
   7-1-floor-plane-ground-surface-beneath-tracks: done
-  7-2-procedural-building-generation-main-track-skyline: backlog
+  7-2-procedural-building-generation-main-track-skyline: ready-for-dev
   7-3-lamppost-geometry-and-point-lighting: backlog
   7-4-procedural-buildings-variant-geometry: backlog
   7-5-vertex-shader-curved-world-surface: backlog
