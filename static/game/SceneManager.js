@@ -30,6 +30,8 @@ export function createScene(canvas) {
   const scene = new THREE.Scene();
   scene.fog = new THREE.Fog(COLORS.BG_VOID, 35, 100);
 
+  const FLOOR_LAYER = 1; // floor tiles isolated on this layer — sun (layer 0) won't illuminate them
+
   const camBase = cameraForPitch(CAMERA_PITCH, CAMERA_DISTANCE);
   const camera = new THREE.PerspectiveCamera(55, (canvas.width / canvas.height) || 16 / 9, 0.1, 200);
   camera.layers.enable(FLOOR_LAYER); // see floor tiles on layer 1
@@ -45,7 +47,6 @@ export function createScene(canvas) {
   scene.add(sun);
 
   // Floor-only ambient light on layer 1 — floor receives uniform ambient only, not directional
-  const FLOOR_LAYER = 1;
   const floorAmbient = new THREE.AmbientLight(0xffffff, 0.45);
   floorAmbient.layers.set(FLOOR_LAYER);
   scene.add(floorAmbient);
