@@ -213,15 +213,18 @@ export function createScene(canvas) {
   function createVariantBuildingPool(offsetX) {
     clearVariantBuildingPool();
     _variantBldgOffsetX = offsetX;
-    for (const [arr, side] of [[variantLeftBuildings, 'left'], [variantRightBuildings, 'right']]) {
-      let cursor = BLDG_NEAR_CUTOFF;
-      for (let i = 0; i < BLDG_POOL_SIZE; i++) {
-        const g = makeBuildingGroup();
-        cursor = placeBuildingBehindPool(g, side, arr, cursor);
-        g.position.x = g.userData.baseX + offsetX;
-        scene.add(g);
-        arr.push(g);
-      }
+    // Only populate the outer side of the variant track (away from the main track).
+    // Opposite-side buildings would fall between the tracks and overlap the main skyline.
+    // variantInfo is set immediately before this call so it is always available here.
+    const outerSide = variantInfo?.side === 'RIGHT' ? 'right' : 'left';
+    const arr = outerSide === 'left' ? variantLeftBuildings : variantRightBuildings;
+    let cursor = BLDG_NEAR_CUTOFF;
+    for (let i = 0; i < BLDG_POOL_SIZE; i++) {
+      const g = makeBuildingGroup();
+      cursor = placeBuildingBehindPool(g, outerSide, arr, cursor);
+      g.position.x = g.userData.baseX + offsetX;
+      scene.add(g);
+      arr.push(g);
     }
   }
 
