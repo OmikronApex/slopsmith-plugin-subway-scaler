@@ -213,18 +213,17 @@ export function createScene(canvas) {
   function createVariantBuildingPool(offsetX) {
     clearVariantBuildingPool();
     _variantBldgOffsetX = offsetX;
-    // Only populate the outer side of the variant track (away from the main track).
-    // Opposite-side buildings would fall between the tracks and overlap the main skyline.
-    // variantInfo is set immediately before this call so it is always available here.
-    const outerSide = variantInfo?.side === 'RIGHT' ? 'right' : 'left';
-    const arr = outerSide === 'left' ? variantLeftBuildings : variantRightBuildings;
-    let cursor = BLDG_NEAR_CUTOFF;
-    for (let i = 0; i < BLDG_POOL_SIZE; i++) {
-      const g = makeBuildingGroup();
-      cursor = placeBuildingBehindPool(g, outerSide, arr, cursor);
-      g.position.x = g.userData.baseX + offsetX;
-      scene.add(g);
-      arr.push(g);
+    // Populate both sides — offsetX is the variant track centre so ±baseX places
+    // buildings symmetrically on both sides of the variant track.
+    for (const [arr, side] of [[variantLeftBuildings, 'left'], [variantRightBuildings, 'right']]) {
+      let cursor = BLDG_NEAR_CUTOFF;
+      for (let i = 0; i < BLDG_POOL_SIZE; i++) {
+        const g = makeBuildingGroup();
+        cursor = placeBuildingBehindPool(g, side, arr, cursor);
+        g.position.x = g.userData.baseX + offsetX;
+        scene.add(g);
+        arr.push(g);
+      }
     }
   }
 
@@ -618,9 +617,16 @@ export function createScene(canvas) {
     variantProposePiece = { mesh, spawnTimeMs: spawnMs, speedPxMs };
     variantInfo = { side: variant.side, variantX: vx, speedPxMs };
 
-    // Pre-populate buildings at the variant world offset so the skyline is ready when
-    // the player lands.  Despawned on dismissal; adopted as main pool on acceptance.
-    createVariantBuildingPool(vx);
+    // Pre-populate buildings at the approximate variant track centre so the skyline is
+    // ready when the player lands.  Formula mirrors main.js newScaleCenterX:
+    //   landingX = vx + sign * DIAG_LEN  (X where player lands after the diagonal)
+    //   centre   = landingX + sign * (numLanes - 1) / 2 * LANE_W
+    // Using current numLanes as a proxy for newLanes — snapped to exact _worldOffsetX
+    // on acceptance so any residual delta is invisible.
+    const _vbSign = variantInfo.side === 'RIGHT' ? 1 : -1;
+    const _vbLandingX = vx + _vbSign * DIAG_LEN;
+    const _vbCenterX = _vbLandingX + _vbSign * (numLanes - 1) / 2 * LANE_W;
+    createVariantBuildingPool(_vbCenterX);
 
     // Palette index for variant safe zone colours (story 7-0).
     // Uses STRING_SAFE_ZONE_FILLS for fill and STRING_COLORS for the neon border.
