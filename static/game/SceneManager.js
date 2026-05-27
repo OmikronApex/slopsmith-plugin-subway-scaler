@@ -1172,15 +1172,40 @@ export function createScene(canvas) {
       }
 
       // Scroll and recycle variant buildings (pre-transition pool at _variantBldgOffsetX).
-      // No gap restrictions here — dismiss piece gap is handled once they're adopted as main.
+      // Apply dismiss piece gap here too: spawnVariantTracks (which triggers adoption) may
+      // be called with a setTimeout delay, so dismiss piece can exist while buildings are
+      // still in variantLeftBuildings/variantRightBuildings and not yet in the main block.
       for (const [arr, side] of [[variantLeftBuildings, 'left'], [variantRightBuildings, 'right']]) {
+        const vClear = bldgRearClearance(side, variantDismissPiece);
+        const vPieceZ = (vClear !== null && isPieceGapActive(variantDismissPiece))
+          ? variantDismissPiece.mesh.position.z : null;
+
+        // Drain one in-zone building per side per frame.
+        if (vPieceZ !== null) {
+          const rearLimit   = vPieceZ - vClear;
+          const fwdCutoff   = vPieceZ + STRAIGHT_LEN / 2 + DIAG_LEN + 5;
+          let frontmost = null;
+          for (const g of arr) {
+            if (g.position.z > rearLimit && g.position.z < fwdCutoff) {
+              if (!frontmost || g.position.z > frontmost.position.z) frontmost = g;
+            }
+          }
+          if (frontmost) {
+            const rear = arr.reduce((a, b) => a.position.z < b.position.z ? a : b);
+            const rearFaceZ = rear.position.z - rear.children[0].geometry.parameters.depth / 2;
+            placeBuildingBehindPool(frontmost, side, arr, Math.min(rearFaceZ, rearLimit));
+            frontmost.position.x = frontmost.userData.baseX + _variantBldgOffsetX;
+          }
+        }
+
         for (const g of arr) {
           g.position.z += bldgDelta;
           g.position.x = g.userData.baseX + _variantBldgOffsetX;
           if (g.position.z > BLDG_CULL_Z) {
             const rear = arr.reduce((a, b) => a.position.z < b.position.z ? a : b);
             const rearFaceZ = rear.position.z - rear.children[0].geometry.parameters.depth / 2;
-            placeBuildingBehindPool(g, side, arr, rearFaceZ);
+            const capZ = vPieceZ !== null ? Math.min(rearFaceZ, vPieceZ - vClear) : rearFaceZ;
+            placeBuildingBehindPool(g, side, arr, capZ);
             g.position.x = g.userData.baseX + _variantBldgOffsetX;
           }
         }
