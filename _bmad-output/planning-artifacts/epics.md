@@ -1,5 +1,5 @@
 ---
-stepsCompleted: [1, 2, 3, "5-6", "5-7"]
+stepsCompleted: [1, 2, 3, 4]
 inputDocuments:
   - prds/prd-subway-scaler.md
   - architecture.md
@@ -356,3 +356,121 @@ a short breather that gives the player time to reposition fingers on the fretboa
 - Whether breather should be skippable by player input (default: no)
 - Whether `/variant/promote` should also return updated `timing_params` snapshot
 
+---
+
+## Epic 7: Visual Polish — World Environment & Procedural Scenery
+
+The game world transitions from a bare track-in-void to a lived-in night city environment with a ground plane, procedural building skyline, lamppost lighting, and a vertex-shader curved-world effect that reinforces the PS1 demake aesthetic and sells the illusion of Z-movement during gameplay.
+
+**User Outcomes:**
+- The track runs through a recognizable 3D space with a floor plane, flanking buildings, and street lighting — no longer floating in void
+- Procedurally generated buildings of varied heights create a convincing skyline on both sides of the tracks, selling forward-motion at speed
+- Buildings leave a deliberate gap where variant geometry peels off, so the side-street metaphor reads spatially
+- Lampposts in front of buildings cast warm `color-accent` light, grounding the Night City palette in the 3D scene
+- Variant track geometry also has flanking buildings — both sides of the diagonals and the outside of the straight section — maintaining environmental consistency through transitions
+- A vertex shader bends the world surface beneath the character, simulating a curved planet-like ground and adding retro-PS1 aesthetic authenticity
+
+**Depends on:** Epic 6 — variant geometry (diagonals, straight sections) must exist before buildings can be placed alongside them.
+
+**Stories:**
+
+| Story | Title | Status | Depends on |
+|---|---|---|---|
+| 7-1 | Floor Plane — Ground Surface Beneath Tracks | todo | — |
+| 7-2 | Procedural Building Generation — Main Track Skyline | todo | 7-1 |
+| 7-3 | Lamppost Geometry & Point Lighting | todo | 7-2 |
+| 7-4 | Procedural Buildings — Variant Geometry | todo | 7-2, Epic 6 |
+| 7-5 | Vertex Shader — Curved World Surface | todo | 7-1 |
+
+### Story 7-1: Floor Plane — Ground Surface Beneath Tracks
+
+As a **player**, I want a ground plane visible beneath the track geometry, so the world feels grounded rather than floating in void.
+
+**Acceptance Criteria:**
+
+**Given** the game scene loads
+**When** the initial track geometry is rendered
+**Then** a flat shaded ground plane is visible beneath all track lanes
+**And** the floor extends outward to at least 3× the track span width on each side
+**And** the floor material uses `color-bg-stage` from the Night City palette
+**And** the floor scrolls with the track (Z-texture animation consistent with cart speed)
+**And** the floor plane renders at a Z position below the lowest track surface
+**And** no floor geometry protrudes above the track surface at any camera angle
+
+### Story 7-2: Procedural Building Generation — Main Track Skyline
+
+As a **player**, I want procedurally generated buildings of varied heights flanking both sides of the main track, so the environment feels like a city and Z-movement reads convincingly.
+
+**Acceptance Criteria:**
+
+**Given** the game scene loads
+**When** the main track geometry is rendered
+**Then** procedurally generated box buildings appear on both sides of the track
+**And** buildings are positioned at least 3 track-widths from the outermost track lane
+**And** buildings vary in height (randomized within configurable min/max range)
+**And** buildings use flat-shaded low-poly materials in the Night City palette (dark silhouettes with occasional lit-window accent)
+**And** there is a clear gap in the building row where variant track geometry peels off (side-street gap)
+**And** buildings scroll in Z with the world (they are part of the moving environment)
+**And** buildings are generated in a pool and recycled (popped behind camera, re-randomized at horizon) to avoid unbounded memory growth
+**And** the building density does not impact 60fps rendering (batch geometry or instancing where beneficial)
+
+### Story 7-3: Lamppost Geometry & Point Lighting
+
+As a **player**, I want lampposts in front of the buildings emitting warm `color-accent` light, so the Night City atmosphere is reinforced and the scene has a grounded lighting source.
+
+**Acceptance Criteria:**
+
+**Given** the game scene loads
+**When** buildings are rendered on both sides of the track
+**Then** lamppost geometry is placed along the street edge (between track edge and building line)
+**And** each lamppost emits a warm `#FFB800` (`color-accent`) point or spot light
+**And** lampposts are spaced at regular intervals matching building density
+**And** lamppost light reaches the track surface (visible glow or illumination on ground plane)
+**And** lampposts scroll with the building environment (part of the same pool/recycle loop)
+**And** the light count is limited or baked (point lights per lamppost would exceed typical WebGL budgets — use spot lights with distance cutoff, or emissive geometry with a glow quad)
+
+### Story 7-4: Procedural Buildings — Variant Geometry
+
+As a **player**, I want buildings alongside the variant track sections (both sides of diagonals and the outside of straight sections), so the environment remains consistent during variant transitions.
+
+**Acceptance Criteria:**
+
+**Given** a variant is proposed
+**When** the variant track geometry appears (diagonals + variant straight section)
+**Then** procedural buildings flank both sides of the diagonal track sections
+**And** buildings flank the outside edge of the variant straight section
+**And** building density and height variance match the main track aesthetic
+**And** variant-section buildings scroll in Z with same speed as the variant track
+**And** buildings recycle into the pool when they pass behind the camera
+**And** no building geometry intersects with cart collision zones or track safe zones
+
+### Story 7-5: Vertex Shader — Curved World Surface
+
+As a **player**, I want the world surface (floor + track area) to appear slightly curved, like running on a cylindrical planet surface, adding PS1-era visual authenticity.
+
+**Acceptance Criteria:**
+
+**Given** the game scene renders
+**When** the ground plane and track geometry are drawn
+**Then** a custom vertex shader applies a cylindrical bend to the world geometry (floor, track surface, building bases)
+**And** the bend is subtle — curvature radius configurable, default such that the horizon appears ~5-10° below a flat plane within visible draw distance
+**And** building geometry above ground level remains upright (only base positions follow the curve; vertical extrusion stays perpendicular to the curve tangent)
+**And** horizon fog or background ring geometry is rendered at the lowered horizon line produced by the curve
+**And** horizon fog uses `color-bg-void` (#0D0D1A) fading to transparent toward the camera — within Night City palette, no external color
+**And** the shader does not reduce frame rate below 60fps (benchmarked with 200+ building instances)
+**And** the shader gracefully handles the scrolling/recycling of geometry (vertex positions update correctly as objects move in Z)
+**And** the curved world effect is toggleable via a constant in `tokens.js` (for debugging/comparison)
+
+---
+
+## Epic 7 Requirements Coverage Map
+
+| Requirement | Story | Coverage |
+|---|---|---|
+| FR-VP-001: Floor plane rendered beneath tracks | 7-1 | Ground surface with scrolling texture |
+| FR-VP-002: Procedural buildings flanking main tracks at 3-track distance | 7-2 | Skyline generation, pool recycling, variant gap |
+| FR-VP-003: Lampposts with `color-accent` lighting | 7-3 | Point/spot lights, pool recycling, light budget |
+| FR-VP-004: Buildings on variant geometry (diagonals + straight) | 7-4 | Variant building placement, density match |
+| FR-VP-005: Vertex shader curved world surface | 7-5 | Cylindrical bend, performance benchmark, toggle |
+| NFR-001 (60 FPS) | 7-2, 7-3, 7-4, 7-5 | Instancing, light budget, shader benchmark |
+| NFR-002 (Memory < 500MB) | 7-2, 7-3, 7-4 | Pool recycling, no unbounded growth |
