@@ -1014,13 +1014,17 @@ export function createScene(canvas) {
       // Variant-piece gap: keep a clear zone from the outgoing diagonal rear to the incoming
       // diagonal front — i.e. the full Z extent of the piece.
       //
-      // Strategy: start draining 2 s before the piece begins moving so the zone is clear
-      // when the geometry arrives.  While the piece is stationary and more than 2 s away
-      // buildings spawn normally with no cap.
-      // One-per-frame drain rate means ~24 frames (~0.4 s at 60 fps) to clear the pool.
+      // Strategy: start draining a fixed world-distance before the piece begins moving so
+      // the zone is clear when the geometry arrives.  Lead time is derived from speed so
+      // it stays proportional: BLDG_GAP_LEAD_UNITS / (speedPxMs * 0.5).
+      // At the default wave speed (0.05 px/ms) this resolves to ~2 s; faster speeds get a
+      // shorter lead, clamped to 400 ms minimum (enough to drain the 12-building half-pool).
+      const BLDG_GAP_LEAD_UNITS = 50; // world units — tuned at default speed 0.05 px/ms
       const nowGameMs = nowMs - gameStartTime;
-      const pieceGapActive = variantProposePiece !== null &&
-        nowGameMs >= variantProposePiece.spawnTimeMs - 2000;
+      const pieceGapActive = variantProposePiece !== null && (() => {
+        const leadMs = Math.max(400, BLDG_GAP_LEAD_UNITS / (variantProposePiece.speedPxMs * 0.5));
+        return nowGameMs >= variantProposePiece.spawnTimeMs - leadMs;
+      })();
       const variantPieceZ = pieceGapActive ? variantProposePiece.mesh.position.z : null;
 
       // Rear clearance: returns null for the non-variant side (no gap there).
