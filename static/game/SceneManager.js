@@ -52,10 +52,10 @@ export function createScene(canvas) {
   const FLOOR_TILE_DEPTH = 300;   // two tiles = 600 units depth, well past fog (100)
   const FLOOR_CULL_Z = 20;        // cull tiles whose front edge passes this Z (behind camera)
 
-  let floorMat = new THREE.MeshBasicMaterial({ color: COLORS.BG_VOID });
+  let floorMat = new THREE.MeshStandardMaterial({ color: COLORS.BG_VOID });
   function makeFloorTile() {
     const tile = new THREE.Mesh(
-      new THREE.PlaneGeometry(FLOOR_WIDTH, FLOOR_TILE_DEPTH),
+      new THREE.PlaneGeometry(FLOOR_WIDTH, FLOOR_TILE_DEPTH, 32, 32),
       floorMat
     );
     tile.rotation.x = -Math.PI / 2;
@@ -247,7 +247,7 @@ export function createScene(canvas) {
       tile.geometry.dispose();
     }
     floorMat.dispose();
-    floorMat = new THREE.MeshBasicMaterial({ color: COLORS.BG_VOID });
+    floorMat = new THREE.MeshStandardMaterial({ color: COLORS.BG_VOID });
     floorTiles = [makeFloorTile(), makeFloorTile()];
     floorTiles[0].position.set(0, FLOOR_Y, -(FLOOR_TILE_DEPTH / 2) + FLOOR_CULL_Z);
     floorTiles[1].position.set(0, FLOOR_Y, -(FLOOR_TILE_DEPTH * 1.5) + FLOOR_CULL_Z);
