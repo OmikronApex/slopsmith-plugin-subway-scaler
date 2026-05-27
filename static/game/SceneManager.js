@@ -89,7 +89,7 @@ export function createScene(canvas) {
   //   makes box silhouettes read as solid 3D forms rather than flat sprites.
   //   Different surface, different problem, different solution.
   // ─────────────────────────────────────────────────────────────────────────
-  const BLDG_POOL_SIZE   = 24;    // groups per side — covers BLDG_NEAR_CUTOFF to fog distance (~100 units)
+  const BLDG_POOL_SIZE   = 26;    // groups per side — covers BLDG_NEAR_CUTOFF to fog distance (~100 units)
   const BLDG_MIN_H       = 2.0;   // min height
   const BLDG_MAX_H       = 8.0;   // max height
   const BLDG_W_MIN       = 1.5;   // min width (X)
@@ -1011,19 +1011,41 @@ export function createScene(canvas) {
         _bldgTrackedOffsetX = _worldOffsetX;
       }
 
-      // Variant-piece Z range: once the peel geometry starts moving, leave a clear gap
-      // so buildings don't crowd the piece. While the piece is stationary (waiting for its
-      // target note), no gap is applied — piece is parked at SPAWN_Z (-100) and buildings
-      // fill normally. Gap only activates when elapsed > 0 (piece is actually scrolling).
+      // Variant-piece Z clearance: once the peel geometry starts moving, keep buildings
+      // behind the diagonal's rearmost reach. Gap only activates when elapsed > 0.
+      //
+      // Geometry: the outgoing diagonal runs from (variantX, -STRAIGHT_LEN/2) inward to
+      // (variantX + DIAG_LEN, -(STRAIGHT_LEN/2 + DIAG_LEN)) at 45°.
+      // A building at X = bldgX is reached by the diagonal at Z_local = -(STRAIGHT_LEN/2 + dX)
+      // where dX = bldgX − variantX.  Clearance grows linearly with outward X distance.
+      // Buildings on the OPPOSITE side of the variant never intersect the diagonal — use a
+      // small fixed clearance for the straight section only.
       const variantPieceElapsed = variantProposePiece
         ? Math.max(0, nowMs - gameStartTime - variantProposePiece.spawnTimeMs)
         : 0;
       const variantPieceZ = (variantProposePiece && variantPieceElapsed > 0)
         ? variantProposePiece.mesh.position.z
         : null;
-      const BLDG_VARIANT_CLEAR = 30; // units of Z clearance behind the peel piece
+
+      // Compute per-side clearance using worst-case (outermost) building X for that side.
+      function bldgClearanceForSide(poolSide) {
+        if (variantPieceZ === null || !variantInfo) return 0;
+        const { variantX, side: vSide } = variantInfo;
+        const sign = vSide === 'RIGHT' ? 1 : -1;
+        if (poolSide.toUpperCase() !== vSide) {
+          // Opposite side: only the straight section matters — small fixed clearance.
+          return STRAIGHT_LEN / 2 + 5;
+        }
+        // Same side: worst-case building X = outermost scatter boundary.
+        const maxBldgX = BLDG_X_INNER + BLDG_X_SPREAD + BLDG_W_MAX / 2;
+        const dX = Math.max(0, maxBldgX - sign * variantX);
+        return STRAIGHT_LEN / 2 + dX + 10; // 10 unit safety margin
+      }
 
       // Scroll and recycle active buildings — place recycled building behind the rearmost rear face.
+      const leftClear  = bldgClearanceForSide('left');
+      const rightClear = bldgClearanceForSide('right');
+
       for (const g of leftBuildings) {
         g.position.z += bldgDelta;
         g.position.x = g.userData.baseX + _worldOffsetX;
@@ -1031,7 +1053,7 @@ export function createScene(canvas) {
           const rear = leftBuildings.reduce((a, b) => a.position.z < b.position.z ? a : b);
           const rearFaceZ = rear.position.z - rear.children[0].geometry.parameters.depth / 2;
           const targetZ = variantPieceZ !== null
-            ? Math.min(rearFaceZ, variantPieceZ - BLDG_VARIANT_CLEAR)
+            ? Math.min(rearFaceZ, variantPieceZ - leftClear)
             : rearFaceZ;
           placeBuildingBehindPool(g, 'left', leftBuildings, targetZ);
           g.position.x = g.userData.baseX + _worldOffsetX;
@@ -1044,7 +1066,7 @@ export function createScene(canvas) {
           const rear = rightBuildings.reduce((a, b) => a.position.z < b.position.z ? a : b);
           const rearFaceZ = rear.position.z - rear.children[0].geometry.parameters.depth / 2;
           const targetZ = variantPieceZ !== null
-            ? Math.min(rearFaceZ, variantPieceZ - BLDG_VARIANT_CLEAR)
+            ? Math.min(rearFaceZ, variantPieceZ - rightClear)
             : rearFaceZ;
           placeBuildingBehindPool(g, 'right', rightBuildings, targetZ);
           g.position.x = g.userData.baseX + _worldOffsetX;
