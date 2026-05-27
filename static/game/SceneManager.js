@@ -162,16 +162,31 @@ export function createScene(canvas) {
   // Last known world offset applied to the active building pool — used to detect transitions.
   let _bldgTrackedOffsetX = 0;
 
+  // Small random gap between buildings — just enough to avoid perfectly uniform marching.
+  const BLDG_GAP_MIN = 0.3;
+  const BLDG_GAP_MAX = 1.2;
+
+  // Place a single building just behind the rearmost building in its pool array.
+  // On initial fill, pass the current cursor Z (updated in-place via the returned new cursor).
+  // On recycle, pass null — it will derive cursor from the pool's current minimum Z.
+  function placeBuildingBehindPool(g, side, arr, cursorZ) {
+    randomiseBuildingGroup(g, side);
+    const d = g.children[0].geometry.parameters.depth;
+    const gap = BLDG_GAP_MIN + Math.random() * (BLDG_GAP_MAX - BLDG_GAP_MIN);
+    const rearZ = cursorZ !== null ? cursorZ : Math.min(...arr.map(b => b.position.z));
+    g.position.z = rearZ - d / 2 - gap;
+    return g.position.z - d / 2; // new cursor: rear face of this building
+  }
+
   function createBuildingPool() {
-    const bldgZRange = Math.abs(BLDG_NEAR_CUTOFF - BLDG_SPAWN_Z);
     leftBuildings  = [];
     rightBuildings = [];
-    for (let i = 0; i < BLDG_POOL_SIZE; i++) {
-      for (const [arr, side] of [[leftBuildings, 'left'], [rightBuildings, 'right']]) {
+    // Chain buildings from BLDG_NEAR_CUTOFF backward for each side independently.
+    for (const [arr, side] of [[leftBuildings, 'left'], [rightBuildings, 'right']]) {
+      let cursor = BLDG_NEAR_CUTOFF; // start just in front of the near-cutoff gap
+      for (let i = 0; i < BLDG_POOL_SIZE; i++) {
         const g = makeBuildingGroup();
-        randomiseBuildingGroup(g, side);
-        // Spread evenly across Z range from SPAWN_Z to NEAR_CUTOFF — no visible pop-in at start.
-        g.position.z = BLDG_SPAWN_Z + (i / BLDG_POOL_SIZE) * bldgZRange;
+        cursor = placeBuildingBehindPool(g, side, arr, cursor);
         scene.add(g);
         arr.push(g);
       }
@@ -988,21 +1003,35 @@ export function createScene(canvas) {
         _bldgTrackedOffsetX = _worldOffsetX;
       }
 
-      // Scroll and recycle active buildings.
+      // Variant-piece Z range: when the peel geometry is scrolling in, leave a clear gap
+      // behind the rearmost building so the piece isn't visually crowded.
+      // We push the recycle spawn point further back by the piece's remaining travel distance.
+      const variantPieceZ = variantProposePiece ? variantProposePiece.mesh.position.z : null;
+      const BLDG_VARIANT_CLEAR = 30; // units of Z clearance behind the peel piece
+
+      // Scroll and recycle active buildings — place recycled building behind the rearmost.
       for (const g of leftBuildings) {
         g.position.z += bldgDelta;
         g.position.x = g.userData.baseX + _worldOffsetX;
         if (g.position.z > BLDG_CULL_Z) {
-          randomiseBuildingGroup(g, 'left');
-          g.position.z = BLDG_SPAWN_Z;
+          const rearZ = Math.min(...leftBuildings.map(b => b.position.z));
+          const targetZ = variantPieceZ !== null
+            ? Math.min(rearZ, variantPieceZ - BLDG_VARIANT_CLEAR)
+            : rearZ;
+          placeBuildingBehindPool(g, 'left', leftBuildings, targetZ);
+          g.position.x = g.userData.baseX + _worldOffsetX;
         }
       }
       for (const g of rightBuildings) {
         g.position.z += bldgDelta;
         g.position.x = g.userData.baseX + _worldOffsetX;
         if (g.position.z > BLDG_CULL_Z) {
-          randomiseBuildingGroup(g, 'right');
-          g.position.z = BLDG_SPAWN_Z;
+          const rearZ = Math.min(...rightBuildings.map(b => b.position.z));
+          const targetZ = variantPieceZ !== null
+            ? Math.min(rearZ, variantPieceZ - BLDG_VARIANT_CLEAR)
+            : rearZ;
+          placeBuildingBehindPool(g, 'right', rightBuildings, targetZ);
+          g.position.x = g.userData.baseX + _worldOffsetX;
         }
       }
 
