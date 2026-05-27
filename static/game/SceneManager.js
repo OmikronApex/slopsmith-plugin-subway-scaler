@@ -47,7 +47,7 @@ export function createScene(canvas) {
   const roofMat = new THREE.MeshStandardMaterial({ color: ROOF_COLOUR });
 
   // ─── Floor plane (story 7-1) ─────────────────────────────────────────────
-  const FLOOR_Y = -0.15;          // below track bottom (-0.08) with clearance
+  const FLOOR_Y = -0.5;           // well below track bottom (-0.08) to avoid camera-angle clipping
   const FLOOR_WIDTH = 80;         // covers ≥3× track span on each side for up to 8 strings
   const FLOOR_TILE_DEPTH = 130;   // > fog end (100) — far edge always hidden
   const FLOOR_CULL_Z = 20;        // cull tiles whose front edge passes this Z (behind camera)
