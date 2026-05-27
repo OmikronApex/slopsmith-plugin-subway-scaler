@@ -89,7 +89,7 @@ export function createScene(canvas) {
   //   makes box silhouettes read as solid 3D forms rather than flat sprites.
   //   Different surface, different problem, different solution.
   // ─────────────────────────────────────────────────────────────────────────
-  const BLDG_POOL_SIZE   = 12;    // groups per side
+  const BLDG_POOL_SIZE   = 24;    // groups per side — covers BLDG_NEAR_CUTOFF to fog distance (~100 units)
   const BLDG_MIN_H       = 2.0;   // min height
   const BLDG_MAX_H       = 8.0;   // max height
   const BLDG_W_MIN       = 1.5;   // min width (X)
