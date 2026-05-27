@@ -48,8 +48,8 @@ export function createScene(canvas) {
 
   // ─── Floor plane (story 7-1) ─────────────────────────────────────────────
   const FLOOR_Y = -0.5;           // well below track bottom (-0.08) to avoid camera-angle clipping
-  const FLOOR_WIDTH = 80;         // covers ≥3× track span on each side for up to 8 strings
-  const FLOOR_TILE_DEPTH = 130;   // > fog end (100) — far edge always hidden
+  const FLOOR_WIDTH = 400;        // extends far beyond visible world edges
+  const FLOOR_TILE_DEPTH = 300;   // two tiles = 600 units depth, well past fog (100)
   const FLOOR_CULL_Z = 20;        // cull tiles whose front edge passes this Z (behind camera)
 
   let floorMat = new THREE.MeshStandardMaterial({ color: COLORS.BG_VOID, flatShading: true });
