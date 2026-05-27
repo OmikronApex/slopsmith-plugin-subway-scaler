@@ -1011,10 +1011,16 @@ export function createScene(canvas) {
         _bldgTrackedOffsetX = _worldOffsetX;
       }
 
-      // Variant-piece Z range: when the peel geometry is scrolling in, leave a clear gap
-      // behind the rearmost building so the piece isn't visually crowded.
-      // We push the recycle spawn point further back by the piece's remaining travel distance.
-      const variantPieceZ = variantProposePiece ? variantProposePiece.mesh.position.z : null;
+      // Variant-piece Z range: once the peel geometry starts moving, leave a clear gap
+      // so buildings don't crowd the piece. While the piece is stationary (waiting for its
+      // target note), no gap is applied — piece is parked at SPAWN_Z (-100) and buildings
+      // fill normally. Gap only activates when elapsed > 0 (piece is actually scrolling).
+      const variantPieceElapsed = variantProposePiece
+        ? Math.max(0, nowMs - gameStartTime - variantProposePiece.spawnTimeMs)
+        : 0;
+      const variantPieceZ = (variantProposePiece && variantPieceElapsed > 0)
+        ? variantProposePiece.mesh.position.z
+        : null;
       const BLDG_VARIANT_CLEAR = 30; // units of Z clearance behind the peel piece
 
       // Scroll and recycle active buildings — place recycled building behind the rearmost rear face.
