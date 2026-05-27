@@ -86,7 +86,7 @@ development_status:
 
   # Epic 7 — Visual Polish: World Environment & Procedural Scenery
   epic-7: in-progress
-  7-0-visual-conformance-tracks-carts-safe-zones: review
+  7-0-visual-conformance-tracks-carts-safe-zones: done
   7-1-floor-plane-ground-surface-beneath-tracks: backlog
   7-2-procedural-building-generation-main-track-skyline: backlog
   7-3-lamppost-geometry-and-point-lighting: backlog

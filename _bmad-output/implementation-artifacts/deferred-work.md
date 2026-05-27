@@ -89,3 +89,10 @@
 - AC-9 `timerMs` not always 0 — both note-trigger and poll paths write `Math.max(0, deadline_ms - Date.now())`; AC-9 permits the deviation and E2E sync uses `safeZoneZ`.
 - AC-5 `szSpawnMs` augmented with `+ VARIANT_SZ_DEPTH / 2` offset — change-logged 2026-05-25; spec wording stale but intent preserved.
 - AC-6 mechanism replaced (`variantPendingSpawn` + render-loop watcher vs spec's `pendingVariantPropose` + `updateVariantSafeZoneWave`) — functionally equivalent; doc fix is Patch P12 in 5-8 review.
+
+## Deferred from: code review of 7-0-visual-conformance-tracks-carts-safe-zones (2026-05-27)
+
+- `SafeZoneRenderer.this.geometry` has no disposal path on permanent renderer teardown — shared `PlaneGeometry` leaks GPU allocation if the renderer is GC'd without `reset()` being called; pre-existing architecture gap [SafeZoneRenderer.js].
+- `paletteIdx=0` fallback when `anchorString` is null ignores available `transitionWave.safe_string` — variant SZ always renders with red (index 0) for null-anchor case; consider using `transitionWave.safe_string` as a better fallback [SceneManager.js:388].
+- `paletteIdx` conversion (`stringCount - string`) duplicated in both `SceneManager.js` and `SafeZoneRenderer.js` without a shared utility — if string indexing convention changes, both sites must be updated independently [SceneManager.js:388, SafeZoneRenderer.js:109].
+- Stale-zone cleanup intentionally skips `fill.geometry.dispose()` (it's the shared `this.geometry`) but no comment explains this invariant — future refactor could accidentally add the dispose call and corrupt all remaining zones [SafeZoneRenderer.js:95].

@@ -1,6 +1,6 @@
 # Story 7.0: Visual Conformance — Tracks, Carts & Safe Zones
 
-Status: review
+Status: done
 
 ## Story
 
@@ -19,19 +19,20 @@ And no track geometry constructor call contains a colour literal — all colours
 **AC-2 — NPC cart material uses `COLORS.DANGER`:**
 Given the game scene loads,
 When cart meshes are rendered,
-Then all NPC / obstacle carts use `COLORS.DANGER` (`0xFF2233`),
+Then all NPC / obstacle carts use `COLORS.DANGER` (`0xFF4411`),
 And no cart material references colour values outside `tokens.js` exports,
 And `COLORS.ACCENT` (`0xFFB800`) is not used on any cart.
 
-**AC-3 — Safe zone fill plane uses `STRING_SAFE_ZONE_FILLS[i]` at `opacity: 0.15`:**
+**AC-3 — Safe zone fill plane uses `STRING_SAFE_ZONE_FILLS[i]` at `opacity: 0.75`:**
 Given a safe zone is active on track lane at string index `i`,
 When the safe-zone indicator is rendered,
 Then a translucent plane fills the safe-zone bounds with material colour `STRING_SAFE_ZONE_FILLS[i]`, `opacity: 0.75`, `transparent: true`, `depthWrite: false`, `polygonOffset: true`, `polygonOffsetFactor: 1`, `polygonOffsetUnits: 1`.
 
-**AC-4 — Safe zone border uses `EdgesGeometry` with neon emissive:**
-And a border mesh (`EdgesGeometry` wrapping a `PlaneGeometry` matching the fill plane) surrounds the perimeter with colour `STRING_COLORS[i]`, `emissiveIntensity: EMISSIVE_SAFE_ZONE_BORDER` (`0.7`),
+**AC-4 — Safe zone border uses `EdgesGeometry` with neon colour:**
+And a border mesh (`EdgesGeometry` wrapping a `PlaneGeometry` matching the fill plane) surrounds the perimeter with `LineBasicMaterial({ color: STRING_COLORS[i] })` at full string-colour brightness,
 And the border mesh has `renderOrder` set 1 higher than the fill plane,
 And no internal diagonal edges appear (use `EdgesGeometry` on `PlaneGeometry`, not `BoxGeometry`).
+Note: `LineBasicMaterial` does not support `emissive`/`emissiveIntensity`. `EMISSIVE_SAFE_ZONE_BORDER = 0.7` is exported as a reserved constant for a future shader/material upgrade (post-7-3 lighting).
 
 **AC-5 — Safe zone group is child of lane group / scrolls correctly:**
 And the fill plane + border are managed as a two-mesh unit within `SafeZoneRenderer` — positioned in world space but scrolling correctly with the wave timing (existing Z-scroll logic preserved).
@@ -39,12 +40,12 @@ And the fill plane + border are managed as a two-mesh unit within `SafeZoneRende
 **AC-6 — Variant safe zone receives same treatment:**
 Given a variant is proposed,
 When the variant safe zone is rendered in `SceneManager.proposeVariantTracks`,
-Then the variant safe zone fill uses `opacity: 0.15`, `depthWrite: false`, `polygonOffset: true/1/1`,
-And a `EdgesGeometry` border mesh with `STRING_COLORS[paletteIdx]` emissive borders it,
+Then the variant safe zone fill uses `opacity: 0.75`, `depthWrite: false`, `polygonOffset: true/1/1`,
+And an `EdgesGeometry` border mesh with `LineBasicMaterial({ color: STRING_COLORS[paletteIdx] })` borders it,
 And the border `renderOrder` is 1 higher than the fill.
 
 **AC-7 — Tokens additions committed in `tokens.js`:**
-`COLORS.DANGER = 0xFF2233` added to the COLORS export,
+`COLORS.DANGER = 0xFF4411` added to the COLORS export (hot coral — distinct from String Red/Orange by hue),
 `STRING_SAFE_ZONE_FILLS` array (8 values, darkened variants of STRING_COLORS) exported,
 `EMISSIVE_SAFE_ZONE_BORDER = 0.7` exported (with tone-mapping warning comment).
 
@@ -61,7 +62,7 @@ All existing E2E tests pass (baseline, epic1–6 suites) with no new console err
 ## Tasks / Subtasks
 
 - [x] Task 1: Add new token exports to `tokens.js` (AC: 7)
-  - [x] 1.1 Add `DANGER: 0xFF2233` to the `COLORS` object (after `EDGE`)
+  - [x] 1.1 Add `DANGER: 0xFF4411` to the `COLORS` object (after `EDGE`) — hot coral, distinct from String Red/Orange by hue
   - [x] 1.2 Add `STRING_SAFE_ZONE_FILLS` array (8 darkened-string-colour entries) as named export
   - [x] 1.3 Add `EMISSIVE_SAFE_ZONE_BORDER = 0.7` as named export with tone-mapping warning comment
 
@@ -97,6 +98,16 @@ All existing E2E tests pass (baseline, epic1–6 suites) with no new console err
 - [x] Task 6: Run full E2E suite and confirm no regressions (AC: 8, 9)
   - [x] 6.1 E2E skipped by user request — failures confirmed pre-existing (WebGL context loss in Docker, ARIA/keyboard flakes, epic6 timing flakes unrelated to visual changes)
   - [x] 6.2 No Three.js material warnings introduced — changes use valid Three.js APIs (`LineSegments`, `EdgesGeometry`, `LineBasicMaterial`, `MeshStandardMaterial` with standard params)
+
+### Review Findings
+
+- [x] [Review][Patch] AC-7 doc out of sync — story says `COLORS.DANGER = 0xFF2233` but committed value is `0xFF4411` (hot coral, intentional per d27fd44); update AC-7 and subtask 1.1 to reflect actual value [tokens.js]
+- [x] [Review][Patch] AC-6 doc out of sync — story says `opacity: 0.15` for variant SZ fill but code uses `0.75` (raised intentionally post-dev); update AC-6 to say `0.75` [SceneManager.js]
+- [x] [Review][Patch] AC-4 doc misleading — spec text says `emissiveIntensity: EMISSIVE_SAFE_ZONE_BORDER (0.7)` but `LineBasicMaterial` doesn't support emissive; Dev Notes resolve this correctly (use `color` only); update AC-4 to remove emissive claim and note that `EMISSIVE_SAFE_ZONE_BORDER` is reserved for future shader/material upgrade
+- [x] [Review][Defer] SafeZoneRenderer.this.geometry has no disposal path on permanent renderer teardown — pre-existing architecture gap; geometry leaks if renderer is GC'd without reset() [SafeZoneRenderer.js] — deferred, pre-existing
+- [x] [Review][Defer] paletteIdx=0 fallback when anchorString=null ignores available transitionWave.safe_string — renders variant SZ always red for null-anchor case; pre-existing behaviour [SceneManager.js:388] — deferred, pre-existing
+- [x] [Review][Defer] paletteIdx conversion (stringCount - string) duplicated in SceneManager and SafeZoneRenderer without shared utility — divergence risk if indexing convention changes [SceneManager.js:388, SafeZoneRenderer.js:109] — deferred, pre-existing
+- [x] [Review][Defer] stale-zone cleanup skips fill.geometry dispose (correct — shared) but no comment explains the invariant — future refactor risk [SafeZoneRenderer.js:95] — deferred, pre-existing
 
 ---
 
