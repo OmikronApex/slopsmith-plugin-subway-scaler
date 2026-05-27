@@ -1011,60 +1011,63 @@ export function createScene(canvas) {
         _bldgTrackedOffsetX = _worldOffsetX;
       }
 
-      // Variant-piece Z clearance: once the peel geometry starts moving, keep buildings
-      // behind the diagonal's rearmost reach. Gap only activates when elapsed > 0.
+      // Variant-piece gap: keep a clear zone from the outgoing diagonal rear to the incoming
+      // diagonal front — i.e. the full Z extent of the piece.
       //
-      // Geometry: the outgoing diagonal runs from (variantX, -STRAIGHT_LEN/2) inward to
-      // (variantX + DIAG_LEN, -(STRAIGHT_LEN/2 + DIAG_LEN)) at 45°.
-      // A building at X = bldgX is reached by the diagonal at Z_local = -(STRAIGHT_LEN/2 + dX)
-      // where dX = bldgX − variantX.  Clearance grows linearly with outward X distance.
-      // Buildings on the OPPOSITE side of the variant never intersect the diagonal — use a
-      // small fixed clearance for the straight section only.
-      const variantPieceElapsed = variantProposePiece
-        ? Math.max(0, nowMs - gameStartTime - variantProposePiece.spawnTimeMs)
-        : 0;
-      const variantPieceZ = (variantProposePiece && variantPieceElapsed > 0)
-        ? variantProposePiece.mesh.position.z
-        : null;
+      // Strategy: one building per side per frame is relocated to the rear whenever it falls
+      // inside the piece zone.  Starting from piece proposal (not just when moving) so the
+      // zone drains smoothly during the stationary wait before the piece scrolls in.
+      // One-per-frame rate means ~24 frames to clear the pool — imperceptible at 60 fps.
+      const variantPieceZ = variantProposePiece ? variantProposePiece.mesh.position.z : null;
 
-      // Compute per-side clearance using worst-case (outermost) building X for that side.
-      function bldgClearanceForSide(poolSide) {
-        if (variantPieceZ === null || !variantInfo) return 0;
+      // Rear clearance: outgoing diagonal reaches -(STRAIGHT_LEN/2 + dX) from group centre,
+      // where dX = distance from variantX to outermost building on the same side.
+      // Opposite side only needs STRAIGHT_LEN/2 clearance (straight section only).
+      function bldgRearClearance(poolSide) {
+        if (!variantInfo) return STRAIGHT_LEN / 2 + 5;
         const { variantX, side: vSide } = variantInfo;
         const sign = vSide === 'RIGHT' ? 1 : -1;
-        if (poolSide.toUpperCase() !== vSide) {
-          // Opposite side: only the straight section matters — small fixed clearance.
-          return STRAIGHT_LEN / 2 + 5;
-        }
-        // Same side: worst-case building X = outermost scatter boundary.
+        if (poolSide.toUpperCase() !== vSide) return STRAIGHT_LEN / 2 + 5;
         const maxBldgX = BLDG_X_INNER + BLDG_X_SPREAD + BLDG_W_MAX / 2;
         const dX = Math.max(0, maxBldgX - sign * variantX);
-        return STRAIGHT_LEN / 2 + dX + 10; // 10 unit safety margin
+        return STRAIGHT_LEN / 2 + dX + 10;
       }
 
-      // Scroll and recycle active buildings — place recycled building behind the rearmost rear face.
-      const leftClear  = bldgClearanceForSide('left');
-      const rightClear = bldgClearanceForSide('right');
+      // Forward cutoff: incoming diagonal front = groupZ + STRAIGHT_LEN/2 + DIAG_LEN.
+      const bldgFwdCutoff = variantPieceZ !== null
+        ? variantPieceZ + STRAIGHT_LEN / 2 + DIAG_LEN + 5
+        : null;
 
-      // Per-building incoming-diagonal check: the incoming diagonal hits a building at world X = bX
-      // at Z = variantPieceZ + STRAIGHT_LEN/2 + dX, where dX = bX − variantX (same 45° rule).
-      // Only relocate buildings whose Z actually reaches that intercept — not a broad cutoff.
-      // Since piece and buildings move at the same speed the relative gap is constant after relocation.
-      function inIncomingDiag(g, poolSide) {
-        if (variantPieceZ === null || !variantInfo) return false;
-        if (poolSide.toUpperCase() !== variantInfo.side) return false; // opposite side never hit
-        const sign = variantInfo.side === 'RIGHT' ? 1 : -1;
-        const bX   = g.userData.baseX + _worldOffsetX;
-        const dX   = Math.max(0, sign * (bX - variantInfo.variantX));
-        const hitZ = variantPieceZ + STRAIGHT_LEN / 2 + dX;
-        const d    = g.children[0].geometry.parameters.depth;
-        return g.position.z + d / 2 >= hitZ; // front face of building reached the intercept
+      const leftClear  = bldgRearClearance('left');
+      const rightClear = bldgRearClearance('right');
+
+      // Gradual zone drain: relocate the frontmost in-zone building (one per side per frame).
+      if (variantPieceZ !== null) {
+        for (const [arr, side, clear] of [
+          [leftBuildings,  'left',  leftClear],
+          [rightBuildings, 'right', rightClear],
+        ]) {
+          const rearLimit = variantPieceZ - clear;
+          let frontmost = null;
+          for (const g of arr) {
+            if (g.position.z > rearLimit && g.position.z < bldgFwdCutoff) {
+              if (!frontmost || g.position.z > frontmost.position.z) frontmost = g;
+            }
+          }
+          if (frontmost) {
+            const rear = arr.reduce((a, b) => a.position.z < b.position.z ? a : b);
+            const rearFaceZ = rear.position.z - rear.children[0].geometry.parameters.depth / 2;
+            placeBuildingBehindPool(frontmost, side, arr, Math.min(rearFaceZ, rearLimit));
+            frontmost.position.x = frontmost.userData.baseX + _worldOffsetX;
+          }
+        }
       }
 
+      // Scroll and recycle active buildings — normal BLDG_CULL_Z recycling only.
       for (const g of leftBuildings) {
         g.position.z += bldgDelta;
         g.position.x = g.userData.baseX + _worldOffsetX;
-        if (g.position.z > BLDG_CULL_Z || inIncomingDiag(g, 'left')) {
+        if (g.position.z > BLDG_CULL_Z) {
           const rear = leftBuildings.reduce((a, b) => a.position.z < b.position.z ? a : b);
           const rearFaceZ = rear.position.z - rear.children[0].geometry.parameters.depth / 2;
           const targetZ = variantPieceZ !== null
@@ -1077,7 +1080,7 @@ export function createScene(canvas) {
       for (const g of rightBuildings) {
         g.position.z += bldgDelta;
         g.position.x = g.userData.baseX + _worldOffsetX;
-        if (g.position.z > BLDG_CULL_Z || inIncomingDiag(g, 'right')) {
+        if (g.position.z > BLDG_CULL_Z) {
           const rear = rightBuildings.reduce((a, b) => a.position.z < b.position.z ? a : b);
           const rearFaceZ = rear.position.z - rear.children[0].geometry.parameters.depth / 2;
           const targetZ = variantPieceZ !== null
