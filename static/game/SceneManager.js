@@ -137,9 +137,11 @@ export function createScene(canvas) {
       win.geometry = new THREE.BufferGeometry(); // cheap empty placeholder
       win.visible = false;
     }
-    // X position — inner edge at BLDG_X_INNER, scatter outward
+    // X position — inner edge at BLDG_X_INNER, scatter outward.
+    // Store as baseX so the render loop can add _worldOffsetX each frame (variant track shift).
     const xOffset = BLDG_X_INNER + w / 2 + Math.random() * BLDG_X_SPREAD;
-    group.position.x = side === 'left' ? -xOffset : xOffset;
+    group.userData.baseX = side === 'left' ? -xOffset : xOffset;
+    group.position.x = group.userData.baseX + _worldOffsetX;
   }
 
   function makeBuildingGroup() {
@@ -955,10 +957,13 @@ export function createScene(canvas) {
     }
 
     // Building scroll (story 7-2) — same speed formula as floor and pending tracks.
+    // X is baseX + _worldOffsetX so buildings always flank the active track
+    // (including after a variant-track transition that shifts _worldOffsetX).
     {
       const bldgDelta = lastWaveSpeed * 0.5 * (dt * 1000);
       for (const g of leftBuildings) {
         g.position.z += bldgDelta;
+        g.position.x = g.userData.baseX + _worldOffsetX;
         if (g.position.z > BLDG_CULL_Z) {
           randomiseBuildingGroup(g, 'left');
           g.position.z = BLDG_SPAWN_Z;
@@ -966,6 +971,7 @@ export function createScene(canvas) {
       }
       for (const g of rightBuildings) {
         g.position.z += bldgDelta;
+        g.position.x = g.userData.baseX + _worldOffsetX;
         if (g.position.z > BLDG_CULL_Z) {
           randomiseBuildingGroup(g, 'right');
           g.position.z = BLDG_SPAWN_Z;
