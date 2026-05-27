@@ -445,6 +445,7 @@ Dark urban environment — the track runs through a low-poly PS1 city after dark
 | `color-text-primary` | `#E8E8F0` | Primary text — off-white |
 | `color-text-disabled` | `#555570` | Inactive/disabled text |
 | `color-edge` | `#08080F` | Hard outline — chunky PS1 silhouettes |
+| `color-danger` | `#FF4411` | NPC cart hazard — hot coral. Distinct from String Red (#CC0000) and String Orange (#CC6600) by hue. Carts will be replaced by 3D models (Epic 7+); revisit colour post-swap. |
 
 **String colors (Rocksmith — canonical, unchanged):**
 

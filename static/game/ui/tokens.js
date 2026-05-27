@@ -15,9 +15,11 @@ export const COLORS = {
   TEXT_DISABLED: 0x555570,
   EDGE:          0x08080F,
   // NPC cart threat colour — reserved solely for hazard state signals.
-  // Do NOT reuse for UI warnings, low-health indicators, or any non-hazard element.
+  // Hot coral: hue-shifted away from String Red (0xCC0000) and String Orange (0xCC6600).
+  // Contrast vs strings is low (~1.1:1) but acceptable — carts are 3D geometry, never on the
+  // safe lane, and will be replaced by proper 3D models (Epic 7+). Revisit colour after model swap.
   // ACCENT (0xFFB800) is reserved for world lighting (lampposts, story 7-3).
-  DANGER:        0xFF2233,
+  DANGER:        0xFF4411,
 };
 
 // ===== STRING COLORS (Slopsmith / Rocksmith standard palette) =====
