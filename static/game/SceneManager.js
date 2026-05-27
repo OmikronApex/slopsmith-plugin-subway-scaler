@@ -28,7 +28,7 @@ export function createScene(canvas) {
   renderer.setClearColor(COLORS.BG_VOID);
 
   const scene = new THREE.Scene();
-  scene.fog = new THREE.Fog(COLORS.BG_VOID, 35, 100);
+  // scene.fog = new THREE.Fog(COLORS.BG_VOID, 35, 100); // TEMP: disabled for banding diagnosis
 
   const camBase = cameraForPitch(CAMERA_PITCH, CAMERA_DISTANCE);
   const camera = new THREE.PerspectiveCamera(55, (canvas.width / canvas.height) || 16 / 9, 0.1, 200);
