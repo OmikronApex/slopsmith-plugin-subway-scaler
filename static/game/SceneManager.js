@@ -1033,9 +1033,11 @@ export function createScene(canvas) {
         return STRAIGHT_LEN / 2 + dX + 10;
       }
 
-      // Forward cutoff: incoming diagonal front = groupZ + STRAIGHT_LEN/2 + DIAG_LEN.
+      // Forward cutoff: the rear foot of the incoming diagonal = groupZ + STRAIGHT_LEN/2.
+      // Buildings from the player up to this point stay intact; only the gap between the
+      // two diagonals (straight section + diagonals) is drained.
       const bldgFwdCutoff = variantPieceZ !== null
-        ? variantPieceZ + STRAIGHT_LEN / 2 + DIAG_LEN + 5
+        ? variantPieceZ + STRAIGHT_LEN / 2
         : null;
 
       const leftClear  = bldgRearClearance('left');
