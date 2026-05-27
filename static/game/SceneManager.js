@@ -167,15 +167,23 @@ export function createScene(canvas) {
   const BLDG_GAP_MAX = 1.2;
 
   // Place a single building just behind the rearmost building in its pool array.
-  // On initial fill, pass the current cursor Z (updated in-place via the returned new cursor).
-  // On recycle, pass null — it will derive cursor from the pool's current minimum Z.
+  // cursorZ must be the rear FACE Z of the reference point (not a centre).
+  // Returns the rear face Z of the newly placed building for chaining.
   function placeBuildingBehindPool(g, side, arr, cursorZ) {
     randomiseBuildingGroup(g, side);
     const d = g.children[0].geometry.parameters.depth;
     const gap = BLDG_GAP_MIN + Math.random() * (BLDG_GAP_MAX - BLDG_GAP_MIN);
-    const rearZ = cursorZ !== null ? cursorZ : Math.min(...arr.map(b => b.position.z));
-    g.position.z = rearZ - d / 2 - gap;
-    return g.position.z - d / 2; // new cursor: rear face of this building
+    // If no cursor supplied, derive rear face from the rearmost building in the pool.
+    // Use centre - depth/2 to get the actual rear face, not just the centre.
+    let rearFaceZ;
+    if (cursorZ !== null) {
+      rearFaceZ = cursorZ;
+    } else {
+      const rearmost = arr.reduce((a, b) => a.position.z < b.position.z ? a : b);
+      rearFaceZ = rearmost.position.z - rearmost.children[0].geometry.parameters.depth / 2;
+    }
+    g.position.z = rearFaceZ - gap - d / 2; // centre of new building
+    return g.position.z - d / 2;            // rear face of new building — cursor for next
   }
 
   function createBuildingPool() {
@@ -1009,15 +1017,16 @@ export function createScene(canvas) {
       const variantPieceZ = variantProposePiece ? variantProposePiece.mesh.position.z : null;
       const BLDG_VARIANT_CLEAR = 30; // units of Z clearance behind the peel piece
 
-      // Scroll and recycle active buildings — place recycled building behind the rearmost.
+      // Scroll and recycle active buildings — place recycled building behind the rearmost rear face.
       for (const g of leftBuildings) {
         g.position.z += bldgDelta;
         g.position.x = g.userData.baseX + _worldOffsetX;
         if (g.position.z > BLDG_CULL_Z) {
-          const rearZ = Math.min(...leftBuildings.map(b => b.position.z));
+          const rear = leftBuildings.reduce((a, b) => a.position.z < b.position.z ? a : b);
+          const rearFaceZ = rear.position.z - rear.children[0].geometry.parameters.depth / 2;
           const targetZ = variantPieceZ !== null
-            ? Math.min(rearZ, variantPieceZ - BLDG_VARIANT_CLEAR)
-            : rearZ;
+            ? Math.min(rearFaceZ, variantPieceZ - BLDG_VARIANT_CLEAR)
+            : rearFaceZ;
           placeBuildingBehindPool(g, 'left', leftBuildings, targetZ);
           g.position.x = g.userData.baseX + _worldOffsetX;
         }
@@ -1026,10 +1035,11 @@ export function createScene(canvas) {
         g.position.z += bldgDelta;
         g.position.x = g.userData.baseX + _worldOffsetX;
         if (g.position.z > BLDG_CULL_Z) {
-          const rearZ = Math.min(...rightBuildings.map(b => b.position.z));
+          const rear = rightBuildings.reduce((a, b) => a.position.z < b.position.z ? a : b);
+          const rearFaceZ = rear.position.z - rear.children[0].geometry.parameters.depth / 2;
           const targetZ = variantPieceZ !== null
-            ? Math.min(rearZ, variantPieceZ - BLDG_VARIANT_CLEAR)
-            : rearZ;
+            ? Math.min(rearFaceZ, variantPieceZ - BLDG_VARIANT_CLEAR)
+            : rearFaceZ;
           placeBuildingBehindPool(g, 'right', rightBuildings, targetZ);
           g.position.x = g.userData.baseX + _worldOffsetX;
         }
