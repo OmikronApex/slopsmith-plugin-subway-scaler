@@ -92,9 +92,9 @@ export function createScene(canvas) {
   const BLDG_POOL_SIZE   = 26;    // groups per side — covers BLDG_NEAR_CUTOFF to fog distance (~100 units)
   const BLDG_MIN_H       = 2.0;   // min height
   const BLDG_MAX_H       = 8.0;   // max height
-  const BLDG_W_MIN       = 1.5;   // min width (X)
+  const BLDG_W_MIN       = 2.5;   // min width (X)
   const BLDG_W_MAX       = 4.0;   // max width
-  const BLDG_D_MIN       = 2.0;   // min depth (Z)
+  const BLDG_D_MIN       = 2.5;   // min depth (Z)
   const BLDG_D_MAX       = 5.0;   // max depth
   const BLDG_X_INNER     = 12;    // inner edge X offset from centre (per side)
   const BLDG_X_SPREAD    = 6;     // buildings scatter up to this far outward of BLDG_X_INNER
@@ -1041,18 +1041,18 @@ export function createScene(canvas) {
       if (_worldOffsetX !== _bldgTrackedOffsetX) {
         // Push active pools into retiring list — X positions stay frozen at old offset.
         retiringBuildings.push(...leftBuildings, ...rightBuildings);
-        if (variantLeftBuildings.length > 0 &&
-            Math.abs(_variantBldgOffsetX - _worldOffsetX) < 0.01) {
-          // Variant buildings already pre-populated at this offset — adopt them as main pool.
+        if (variantLeftBuildings.length > 0) {
+          // Variant buildings pre-populated at proposal time — adopt as new main pool.
+          // vx (used at proposal) ≈ centerX but may differ slightly; snap X to the
+          // exact new _worldOffsetX so there is no sustained drift.
           leftBuildings  = variantLeftBuildings;
           rightBuildings = variantRightBuildings;
           variantLeftBuildings  = [];
           variantRightBuildings = [];
         } else {
-          // No variant pool (or wrong offset) — spawn fresh.
           createBuildingPool();
         }
-        // Ensure X is correct for the new offset.
+        // Snap X to the exact new offset (corrects any vx vs centerX delta).
         for (const g of [...leftBuildings, ...rightBuildings]) {
           g.position.x = g.userData.baseX + _worldOffsetX;
         }
