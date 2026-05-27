@@ -26,6 +26,8 @@ export function createScene(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setSize(canvas.clientWidth || canvas.width, canvas.clientHeight || canvas.height, false);
   renderer.setClearColor(COLORS.BG_VOID);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.0;
 
   const scene = new THREE.Scene();
   scene.fog = new THREE.Fog(COLORS.BG_VOID, 35, 100);
@@ -1173,6 +1175,8 @@ export class SceneManager {
     instance._renderer = new THREE.WebGLRenderer({ antialias: true });
     instance._renderer.setSize(w, h);
     instance._renderer.setClearColor(COLORS.BG_VOID);
+    instance._renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    instance._renderer.toneMappingExposure = 1.0;
     container.appendChild(instance._renderer.domElement);
 
     instance._scene = new THREE.Scene();
