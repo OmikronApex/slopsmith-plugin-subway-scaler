@@ -56,6 +56,7 @@ export class SafeZoneRenderer {
         polygonOffsetFactor: 1,
         polygonOffsetUnits: 1,
         side: THREE.DoubleSide,
+        dithering: true,
       })
     );
     fill.renderOrder = 0;

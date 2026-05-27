@@ -26,6 +26,9 @@ export function createScene(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setSize(canvas.clientWidth || canvas.width, canvas.clientHeight || canvas.height, false);
   renderer.setClearColor(COLORS.BG_VOID);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.8;
 
   const scene = new THREE.Scene();
   scene.fog = new THREE.Fog(COLORS.BG_VOID, 35, 100);
@@ -51,8 +54,8 @@ export function createScene(canvas) {
   floorAmbient.layers.set(FLOOR_LAYER);
   scene.add(floorAmbient);
 
-  const trackMat = new THREE.MeshStandardMaterial({ color: COLORS.BG_STAGE });
-  const roofMat = new THREE.MeshStandardMaterial({ color: ROOF_COLOUR });
+  const trackMat = new THREE.MeshStandardMaterial({ color: COLORS.BG_STAGE, dithering: true });
+  const roofMat = new THREE.MeshStandardMaterial({ color: ROOF_COLOUR, dithering: true });
 
   // ─── Floor plane (story 7-1) ─────────────────────────────────────────────
   const FLOOR_Y = -0.15;          // below track bottom (-0.08) with clearance (spec AC-4)
@@ -60,7 +63,7 @@ export function createScene(canvas) {
   const FLOOR_TILE_DEPTH = 300;   // two tiles = 600 units depth, well past fog (100)
   const FLOOR_CULL_Z = 20;        // cull tiles whose front edge passes this Z (behind camera)
 
-  let floorMat = new THREE.MeshPhysicalMaterial({ color: COLORS.BG_VOID, roughness: 1.0, metalness: 0.0 });
+  let floorMat = new THREE.MeshPhysicalMaterial({ color: COLORS.BG_VOID, roughness: 1.0, metalness: 0.0, dithering: true });
   function makeFloorTile() {
     const tile = new THREE.Mesh(
       new THREE.PlaneGeometry(FLOOR_WIDTH, FLOOR_TILE_DEPTH, 32, 32),
@@ -80,7 +83,7 @@ export function createScene(canvas) {
   function bodyMaterial(colourHex) {
     let m = bodyMatByColour.get(colourHex);
     if (!m) {
-      m = new THREE.MeshStandardMaterial({ color: colourHex });
+      m = new THREE.MeshStandardMaterial({ color: colourHex, dithering: true });
       bodyMatByColour.set(colourHex, m);
     }
     return m;
@@ -119,7 +122,7 @@ export function createScene(canvas) {
 
   const character = new THREE.Mesh(
     new THREE.CapsuleGeometry(0.28, 0.6, 4, 8),
-    new THREE.MeshStandardMaterial({ color: 0xff4488 }),
+    new THREE.MeshStandardMaterial({ color: 0xff4488, dithering: true }),
   );
   character.position.set(0, CHAR_Y, FRONT_Z + 0.1);
   scene.add(character);
@@ -256,7 +259,7 @@ export function createScene(canvas) {
       tile.geometry.dispose();
     }
     floorMat.dispose();
-    floorMat = new THREE.MeshPhysicalMaterial({ color: COLORS.BG_VOID, roughness: 1.0, metalness: 0.0 });
+    floorMat = new THREE.MeshPhysicalMaterial({ color: COLORS.BG_VOID, roughness: 1.0, metalness: 0.0, dithering: true });
     floorTiles = [makeFloorTile(), makeFloorTile()];
     floorTiles[0].position.set(0, FLOOR_Y, -(FLOOR_TILE_DEPTH / 2) + FLOOR_CULL_Z);
     floorTiles[1].position.set(0, FLOOR_Y, -(FLOOR_TILE_DEPTH * 1.5) + FLOOR_CULL_Z);
@@ -445,6 +448,7 @@ export function createScene(canvas) {
       polygonOffsetFactor: 1,
       polygonOffsetUnits: 1,
       side: THREE.DoubleSide,
+      dithering: true,
     });
     const szMesh = new THREE.Mesh(szGeo, szMat);
     szMesh.renderOrder = 0;
