@@ -173,15 +173,107 @@ export function createScene(canvas) {
   const BLDG_GAP_MIN = 0.3;
   const BLDG_GAP_MAX = 1.2;
 
-  // Place a single building just behind the rearmost building in its pool array.
-  // cursorZ must be the rear FACE Z of the reference point (not a centre).
+  // ─── Building gap reservation system ─────────────────────────────────────
+  // A reservation is a Z range on one side that buildings must NOT occupy.
+  // Placement (initial + recycle) consults active reservations and jumps the
+  // candidate Z behind any reservation it would overlap. This is a HARD
+  // invariant — there is no "drain over multiple frames" race.
+  //
+  // To add a gap, call setBuildingGap(id, { poolSide, poolKind, zRangeAt }):
+  //   poolSide: 'left' | 'right'    — which pool array (matches building.userData.baseX sign)
+  //   poolKind: 'main' | 'variant'  — main pool or pre-transition variant pool
+  //   zRangeAt(): () => { z0, z1 }  — world Z, z0 < z1, called each placement check
+  //
+  // The zRangeAt callback is where ALL gap geometry lives. To change a gap's
+  // shape, edit that one closure. Return { z0: -Infinity, z1: -Infinity } to
+  // disable the reservation without removing it (e.g. when the anchor piece is
+  // briefly null).
+  const _bldgReservations = new Map();
+  function setBuildingGap(id, spec) { _bldgReservations.set(id, spec); }
+  function clearBuildingGap(id) { _bldgReservations.delete(id); }
+  function reservationsFor(side, kind) {
+    const out = [];
+    for (const r of _bldgReservations.values()) {
+      if (r.poolSide === side && r.poolKind === kind) out.push(r);
+    }
+    return out;
+  }
+  // On adoption (variant pool → main pool), re-tag variant reservations as main
+  // so the same Z constraint keeps applying to the same buildings (now in main arrays).
+  function _adoptVariantReservations() {
+    for (const r of _bldgReservations.values()) {
+      if (r.poolKind === 'variant') r.poolKind = 'main';
+    }
+  }
+
+  // ─── Debug visualiser ────────────────────────────────────────────────────
+  // Gated on window.__TEST_MODE (set by ?testMode= URL param in main.js).
+  // Renders each active reservation as a translucent ground plane so gap zones
+  // are visible in the scene. Disposed automatically when reservation cleared.
+  const _gapDebugMeshes = new Map(); // id → Mesh
+  function _updateGapDebug() {
+    if (typeof window === 'undefined' || !window.__TEST_MODE) {
+      if (_gapDebugMeshes.size === 0) return;
+      for (const m of _gapDebugMeshes.values()) {
+        scene.remove(m);
+        m.geometry.dispose();
+        m.material.dispose();
+      }
+      _gapDebugMeshes.clear();
+      return;
+    }
+    // Drop meshes for reservations that no longer exist.
+    for (const [id, mesh] of _gapDebugMeshes) {
+      if (!_bldgReservations.has(id)) {
+        scene.remove(mesh);
+        mesh.geometry.dispose();
+        mesh.material.dispose();
+        _gapDebugMeshes.delete(id);
+      }
+    }
+    // Add / update meshes for active reservations.
+    for (const [id, r] of _bldgReservations) {
+      const { z0, z1 } = r.zRangeAt();
+      let mesh = _gapDebugMeshes.get(id);
+      if (z1 <= z0) { if (mesh) mesh.visible = false; continue; }
+      if (!mesh) {
+        // Unit-Z plane; scaled per frame to match the reservation's Z extent.
+        mesh = new THREE.Mesh(
+          new THREE.PlaneGeometry(8, 1),
+          new THREE.MeshBasicMaterial({
+            color: r.poolKind === 'variant' ? 0xff00ff : 0x00ffff,
+            transparent: true,
+            opacity: 0.35,
+            depthWrite: false,
+            side: THREE.DoubleSide,
+          }),
+        );
+        mesh.rotation.x = -Math.PI / 2;
+        mesh.renderOrder = 2;
+        scene.add(mesh);
+        _gapDebugMeshes.set(id, mesh);
+      }
+      mesh.visible = true;
+      const offsetX  = r.poolKind === 'variant' ? _variantBldgOffsetX : _worldOffsetX;
+      const sideSign = r.poolSide === 'right' ? 1 : -1;
+      mesh.position.set(
+        offsetX + sideSign * (BLDG_X_INNER + BLDG_X_SPREAD / 2),
+        0.05,
+        (z0 + z1) / 2,
+      );
+      mesh.scale.set(1, z1 - z0, 1); // PlaneGeometry depth = 1 (along Z post-rotation)
+    }
+  }
+
+  // Place a single building just behind the rearmost building in its pool array,
+  // jumping behind any reservation that the candidate Z would overlap.
+  // cursorZ must be the rear FACE Z of the reference point (not a centre), or null
+  // to derive from the pool's rearmost building.
   // Returns the rear face Z of the newly placed building for chaining.
-  function placeBuildingBehindPool(g, side, arr, cursorZ) {
+  function placeBuildingBehindPool(g, side, arr, cursorZ, kind = 'main') {
     randomiseBuildingGroup(g, side);
     const d = g.children[0].geometry.parameters.depth;
     const gap = BLDG_GAP_MIN + Math.random() * (BLDG_GAP_MAX - BLDG_GAP_MIN);
-    // If no cursor supplied, derive rear face from the rearmost building in the pool.
-    // Use centre - depth/2 to get the actual rear face, not just the centre.
     let rearFaceZ;
     if (cursorZ !== null) {
       rearFaceZ = cursorZ;
@@ -189,8 +281,21 @@ export function createScene(canvas) {
       const rearmost = arr.reduce((a, b) => a.position.z < b.position.z ? a : b);
       rearFaceZ = rearmost.position.z - rearmost.children[0].geometry.parameters.depth / 2;
     }
-    g.position.z = rearFaceZ - gap - d / 2; // centre of new building
-    return g.position.z - d / 2;            // rear face of new building — cursor for next
+    let frontFaceZ = rearFaceZ - gap;
+    // Skip any reservation this candidate would overlap. Sort z1 desc so we jump
+    // behind the rearmost (highest z1) reservation first — handles adjacent gaps.
+    const res = reservationsFor(side, kind)
+      .map(r => r.zRangeAt())
+      .filter(({ z0, z1 }) => z1 > z0)
+      .sort((a, b) => b.z1 - a.z1);
+    for (const { z0, z1 } of res) {
+      // Building occupies [frontFaceZ - d, frontFaceZ]. Overlap iff frontFaceZ > z0 AND (frontFaceZ - d) < z1.
+      if (frontFaceZ > z0 && frontFaceZ - d < z1) {
+        frontFaceZ = z0 - gap;
+      }
+    }
+    g.position.z = frontFaceZ - d / 2;  // centre
+    return frontFaceZ - d;              // new rear face (cursor for next)
   }
 
   function createBuildingPool() {
@@ -201,7 +306,7 @@ export function createScene(canvas) {
       let cursor = BLDG_NEAR_CUTOFF; // start just in front of the near-cutoff gap
       for (let i = 0; i < BLDG_POOL_SIZE; i++) {
         const g = makeBuildingGroup();
-        cursor = placeBuildingBehindPool(g, side, arr, cursor);
+        cursor = placeBuildingBehindPool(g, side, arr, cursor, 'main');
         scene.add(g);
         arr.push(g);
       }
@@ -219,7 +324,7 @@ export function createScene(canvas) {
       let cursor = BLDG_NEAR_CUTOFF;
       for (let i = 0; i < BLDG_POOL_SIZE; i++) {
         const g = makeBuildingGroup();
-        cursor = placeBuildingBehindPool(g, side, arr, cursor);
+        cursor = placeBuildingBehindPool(g, side, arr, cursor, 'variant');
         g.position.x = g.userData.baseX + offsetX;
         scene.add(g);
         arr.push(g);
@@ -485,6 +590,9 @@ export function createScene(canvas) {
 
   function clearVariantGeom() {
     clearVariantBuildingPool();
+    clearBuildingGap('main-propose');
+    clearBuildingGap('main-dismiss');
+    clearBuildingGap('variant-outgoing');
     if (variantProposePiece) {
       scene.remove(variantProposePiece.mesh);
       variantProposePiece.mesh.traverse(c => { if (c.isMesh) c.geometry?.dispose(); });
@@ -626,6 +734,40 @@ export function createScene(canvas) {
     const _vbSign = variantInfo.side === 'RIGHT' ? 1 : -1;
     const _vbLandingX = vx + _vbSign * DIAG_LEN;
     const _vbCenterX = _vbLandingX + _vbSign * (numLanes - 1) / 2 * LANE_W;
+
+    // ─── Building gap reservations ───────────────────────────────────────────
+    // Register BEFORE createVariantBuildingPool so the variant pool spawns clean.
+    // Each closure owns all geometry for its gap — edit here to change shape/anchor.
+    const _vSideLower = variant.side === 'RIGHT' ? 'right' : 'left';
+    const _innerLower = variant.side === 'RIGHT' ? 'left'  : 'right';
+
+    // Main pool gap on the variant side — clears the piece's outgoing-diagonal +
+    // straight-section span so main buildings don't clip through the propose piece.
+    setBuildingGap('main-propose', {
+      poolSide: _vSideLower,
+      poolKind: 'main',
+      zRangeAt: () => {
+        if (!variantProposePiece) return { z0: -Infinity, z1: -Infinity };
+        const pz = variantProposePiece.mesh.position.z;
+        // Width 25, centred on outgoing-diagonal midpoint (pz − (STRAIGHT_LEN + DIAG_LEN) / 2).
+        return { z0: pz - 50, z1: pz - 35 };
+      },
+    });
+
+    // Variant pool gap on the inner side — clears the outgoing diagonal's Z extent
+    // so the variant skyline doesn't clip through the diagonal that the character
+    // rides during the transition.
+    setBuildingGap('variant-outgoing', {
+      poolSide: _innerLower,
+      poolKind: 'variant',
+      zRangeAt: () => {
+        if (!variantProposePiece) return { z0: -Infinity, z1: -Infinity };
+        const pz = variantProposePiece.mesh.position.z;
+        // Width 25, centred 10 units behind outgoing-diagonal midpoint.
+        return { z0: pz - 70, z1: pz - 55 };
+      },
+    });
+
     createVariantBuildingPool(_vbCenterX);
 
     // Palette index for variant safe zone colours (story 7-0).
@@ -689,6 +831,24 @@ export function createScene(canvas) {
     variantSafeZoneBorderMesh = szBorderMesh;
   }
 
+  // Dismiss-piece gap on the inner side of the (post-adoption) main pool — clears
+  // the outgoing-diagonal + straight-section span so the dismiss piece doesn't
+  // clip through the buildings it scrolls past.
+  function _registerDismissGap() {
+    if (!variantInfo) return;
+    const innerLower = variantInfo.side === 'RIGHT' ? 'left' : 'right';
+    setBuildingGap('main-dismiss', {
+      poolSide: innerLower,
+      poolKind: 'main',
+      zRangeAt: () => {
+        if (!variantDismissPiece) return { z0: -Infinity, z1: -Infinity };
+        const pz = variantDismissPiece.mesh.position.z;
+        // Width 25, centred on outgoing-diagonal midpoint.
+        return { z0: pz - 65, z1: pz - 40 };
+      },
+    });
+  }
+
   function dismissVariantTracks() {
     if (!variantInfo || variantDismissPiece) return;
     const spawnTimeMs = performance.now() - gameStartTime;
@@ -696,6 +856,7 @@ export function createScene(canvas) {
     mesh.position.set(0, 0, SPAWN_Z);
     scene.add(mesh);
     variantDismissPiece = { mesh, spawnTimeMs, speedPxMs: lastWaveSpeed };
+    _registerDismissGap();
   }
 
   function acceptVariantTracks(newPrimary, notes = [], startIndex = 0) {
@@ -714,6 +875,7 @@ export function createScene(canvas) {
       mesh.position.set(0, 0, SPAWN_Z);
       scene.add(mesh);
       variantDismissPiece = { mesh, spawnTimeMs, speedPxMs: lastWaveSpeed };
+      _registerDismissGap();
     }
     // startIndex: which note the player will play next (used to snap character to the
     // note they just played, i.e. startIndex - 1 for RIGHT / 0 for LEFT).
@@ -905,6 +1067,8 @@ export function createScene(canvas) {
           scene.remove(variantProposePiece.mesh);
           variantProposePiece.mesh.traverse(c => { if (c.isMesh) c.geometry?.dispose(); });
           variantProposePiece = null;
+          clearBuildingGap('main-propose');
+          clearBuildingGap('variant-outgoing');
         }
       }
     }
@@ -1058,6 +1222,13 @@ export function createScene(canvas) {
           rightBuildings = variantRightBuildings;
           variantLeftBuildings  = [];
           variantRightBuildings = [];
+          // Same buildings, new pool kind tag — re-tag reservations so they keep applying.
+          _adoptVariantReservations();
+          // 'main-propose' was for the OLD main pool (now retired). Propose piece
+          // sits on the inner side of the new main pool; the re-tagged variant gap
+          // already covers that. Drop the outer-side reservation to avoid spurious
+          // drains on the new main pool's outer side.
+          clearBuildingGap('main-propose');
         } else {
           createBuildingPool();
         }
@@ -1068,149 +1239,40 @@ export function createScene(canvas) {
         _bldgTrackedOffsetX = _worldOffsetX;
       }
 
-      // Variant-piece gap: keep a clear zone around each active diagonal piece
-      // (propose = incoming before transition; dismiss = incoming after transition).
-      // Both pieces use the same variant side and the same clearance geometry.
+      // Reservation-based recycle: each building is respawned behind the pool if
+      // it (a) passes the cull plane, or (b) overlaps any active gap reservation
+      // on its side. placeBuildingBehindPool() jumps over reservations so the
+      // respawn point itself can never land inside a gap.
       //
-      // Lead time is distance-based: BLDG_GAP_LEAD_UNITS / (speedPxMs * 0.5).
-      // At default speed (0.05 px/ms) → ~2 s; scales shorter at higher speeds,
-      // clamped to 400 ms minimum (enough to drain the 12-building half-pool).
-      const BLDG_GAP_LEAD_UNITS = 50;
-      const nowGameMs = nowMs - gameStartTime;
-
-      function isPieceGapActive(piece) {
-        if (!piece) return false;
-        const leadMs = Math.max(400, BLDG_GAP_LEAD_UNITS / (piece.speedPxMs * 0.5));
-        return nowGameMs >= piece.spawnTimeMs - leadMs;
-      }
-
-      // Collect both active diagonal pieces that need a gap.
-      const activePieces = [variantProposePiece, variantDismissPiece]
-        .filter(p => isPieceGapActive(p));
-
-      // Rear clearance — returns null (no gap) for the wrong side.
-      //
-      // The outgoing diagonal extends STRAIGHT_LEN/2 + DIAG_LEN behind the piece centre.
-      // clearance must cover that full Z extent so rearLimit sits behind the diagonal rear.
-      //
-      // Propose piece: incoming diagonal sweeps from main track toward variantX.
-      //   Gap on the VARIANT side (same as variantInfo.side).
-      // Dismiss piece: incoming diagonal sweeps from variantX away from the new track.
-      //   From the new track the INNER (opposite) side buildings are in the path.
-      function bldgRearClearance(poolSide, piece) {
-        if (!variantInfo) return null;
-        const { side: vSide } = variantInfo;
-        const gapSide = (piece === variantDismissPiece)
-          ? (vSide === 'RIGHT' ? 'LEFT' : 'RIGHT')
-          : vSide;
-        if (poolSide.toUpperCase() !== gapSide) return null;
-        // Z clearance covers the full piece rear: straight half + full outgoing diagonal + buffer.
-        return STRAIGHT_LEN / 2 + DIAG_LEN + 5;
-      }
-
-      // Gradual zone drain: one building per side per piece per frame.
-      // Spawn cap per side: most restrictive Z across all active pieces.
-      const leftSpawnCap  = { val: null };
-      const rightSpawnCap = { val: null };
-
-      for (const piece of activePieces) {
-        const pieceZ    = piece.mesh.position.z;
-        // Propose: preserve buildings close to player (player hasn't moved yet).
-        // Dismiss: clear the full diagonal traversal path.
-        const fwdCutoff = piece === variantDismissPiece
-          ? pieceZ + STRAIGHT_LEN / 2 + DIAG_LEN + 5
-          : pieceZ + STRAIGHT_LEN / 2;
-        for (const [arr, side, capObj] of [
-          [leftBuildings,  'left',  leftSpawnCap],
-          [rightBuildings, 'right', rightSpawnCap],
-        ]) {
-          const clear = bldgRearClearance(side, piece);
-          if (clear === null) continue;
-          const rearLimit = pieceZ - clear;
-          // Update spawn cap for this side.
-          if (capObj.val === null || rearLimit < capObj.val) capObj.val = rearLimit;
-          let frontmost = null;
-          for (const g of arr) {
-            if (g.position.z > rearLimit && g.position.z < fwdCutoff) {
-              if (!frontmost || g.position.z > frontmost.position.z) frontmost = g;
-            }
-          }
-          if (frontmost) {
-            const rear = arr.reduce((a, b) => a.position.z < b.position.z ? a : b);
-            const rearFaceZ = rear.position.z - rear.children[0].geometry.parameters.depth / 2;
-            placeBuildingBehindPool(frontmost, side, arr, Math.min(rearFaceZ, rearLimit));
-            frontmost.position.x = frontmost.userData.baseX + _worldOffsetX;
-          }
-        }
-      }
-
-      // Scroll and recycle active buildings — normal BLDG_CULL_Z recycling only.
-      for (const g of leftBuildings) {
-        g.position.z += bldgDelta;
-        g.position.x = g.userData.baseX + _worldOffsetX;
-        if (g.position.z > BLDG_CULL_Z) {
-          const rear = leftBuildings.reduce((a, b) => a.position.z < b.position.z ? a : b);
-          const rearFaceZ = rear.position.z - rear.children[0].geometry.parameters.depth / 2;
-          const targetZ = leftSpawnCap.val !== null
-            ? Math.min(rearFaceZ, leftSpawnCap.val)
-            : rearFaceZ;
-          placeBuildingBehindPool(g, 'left', leftBuildings, targetZ);
-          g.position.x = g.userData.baseX + _worldOffsetX;
-        }
-      }
-      for (const g of rightBuildings) {
-        g.position.z += bldgDelta;
-        g.position.x = g.userData.baseX + _worldOffsetX;
-        if (g.position.z > BLDG_CULL_Z) {
-          const rear = rightBuildings.reduce((a, b) => a.position.z < b.position.z ? a : b);
-          const rearFaceZ = rear.position.z - rear.children[0].geometry.parameters.depth / 2;
-          const targetZ = rightSpawnCap.val !== null
-            ? Math.min(rearFaceZ, rightSpawnCap.val)
-            : rearFaceZ;
-          placeBuildingBehindPool(g, 'right', rightBuildings, targetZ);
-          g.position.x = g.userData.baseX + _worldOffsetX;
-        }
-      }
-
-      // Scroll and recycle variant buildings (pre-transition pool at _variantBldgOffsetX).
-      // Apply dismiss piece gap here too: spawnVariantTracks (which triggers adoption) may
-      // be called with a setTimeout delay, so dismiss piece can exist while buildings are
-      // still in variantLeftBuildings/variantRightBuildings and not yet in the main block.
-      for (const [arr, side] of [[variantLeftBuildings, 'left'], [variantRightBuildings, 'right']]) {
-        const vClear = bldgRearClearance(side, variantDismissPiece);
-        const vPieceZ = (vClear !== null && isPieceGapActive(variantDismissPiece))
-          ? variantDismissPiece.mesh.position.z : null;
-
-        // Drain one in-zone building per side per frame.
-        if (vPieceZ !== null) {
-          const rearLimit   = vPieceZ - vClear;
-          const fwdCutoff   = vPieceZ + STRAIGHT_LEN / 2 + DIAG_LEN + 5;
-          let frontmost = null;
-          for (const g of arr) {
-            if (g.position.z > rearLimit && g.position.z < fwdCutoff) {
-              if (!frontmost || g.position.z > frontmost.position.z) frontmost = g;
-            }
-          }
-          if (frontmost) {
-            const rear = arr.reduce((a, b) => a.position.z < b.position.z ? a : b);
-            const rearFaceZ = rear.position.z - rear.children[0].geometry.parameters.depth / 2;
-            placeBuildingBehindPool(frontmost, side, arr, Math.min(rearFaceZ, rearLimit));
-            frontmost.position.x = frontmost.userData.baseX + _variantBldgOffsetX;
-          }
-        }
-
+      // To add/modify/remove a gap, use setBuildingGap / clearBuildingGap.
+      // All gap geometry lives in the reservation's zRangeAt() closure.
+      function recyclePool(arr, side, kind, offsetX) {
+        const res = reservationsFor(side, kind);
         for (const g of arr) {
           g.position.z += bldgDelta;
-          g.position.x = g.userData.baseX + _variantBldgOffsetX;
-          if (g.position.z > BLDG_CULL_Z) {
+          g.position.x = g.userData.baseX + offsetX;
+          const cz = g.position.z;
+          const d  = g.children[0].geometry.parameters.depth;
+          let inGap = false;
+          for (const r of res) {
+            const { z0, z1 } = r.zRangeAt();
+            if (z1 > z0 && cz + d / 2 > z0 && cz - d / 2 < z1) { inGap = true; break; }
+          }
+          if (cz > BLDG_CULL_Z || inGap) {
             const rear = arr.reduce((a, b) => a.position.z < b.position.z ? a : b);
             const rearFaceZ = rear.position.z - rear.children[0].geometry.parameters.depth / 2;
-            const capZ = vPieceZ !== null ? Math.min(rearFaceZ, vPieceZ - vClear) : rearFaceZ;
-            placeBuildingBehindPool(g, side, arr, capZ);
-            g.position.x = g.userData.baseX + _variantBldgOffsetX;
+            placeBuildingBehindPool(g, side, arr, rearFaceZ, kind);
+            g.position.x = g.userData.baseX + offsetX;
           }
         }
       }
+
+      recyclePool(leftBuildings,         'left',  'main',    _worldOffsetX);
+      recyclePool(rightBuildings,        'right', 'main',    _worldOffsetX);
+      recyclePool(variantLeftBuildings,  'left',  'variant', _variantBldgOffsetX);
+      recyclePool(variantRightBuildings, 'right', 'variant', _variantBldgOffsetX);
+
+      _updateGapDebug();
 
       // Scroll retiring buildings (X frozen at old offset); dispose when they pass the cull plane.
       for (let i = retiringBuildings.length - 1; i >= 0; i--) {

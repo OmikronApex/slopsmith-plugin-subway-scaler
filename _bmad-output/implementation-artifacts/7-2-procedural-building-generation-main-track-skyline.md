@@ -65,6 +65,31 @@ Then no Three.js deprecation or material warnings are emitted.
 **AC-11 — No regressions:**
 All existing E2E tests pass with no new console errors.
 
+**AC-12 — Variant-transition building gaps (reservation system):**
+Given a variant track is proposed,
+When the propose / dismiss piece scrolls toward and past the player,
+Then no main-pool building clips through the propose piece on the variant side,
+And no main-pool building clips through the dismiss piece on the opposite (inner) side after adoption,
+And no variant-pool building clips through the propose piece's outgoing diagonal on the inner side,
+And gap behaviour is implemented via a **reservation system** — a Z range registered with `setBuildingGap(id, { poolSide, poolKind, zRangeAt })` is enforced as a hard invariant at placement time (initial + recycle), not as an emergent drain,
+And `placeBuildingBehindPool()` jumps the candidate Z behind any reservation it would overlap, so respawned buildings never land inside a gap,
+And the recycle test re-respawns any building whose `[z − d/2, z + d/2]` overlaps an active reservation,
+And the gap geometry for each reservation lives in a single `zRangeAt()` closure — modifying width, anchor, or side is a one-line edit,
+And reservations are cleared automatically when their anchor piece despawns or `clearVariantGeom()` runs.
+
+**AC-13 — Variant-pool adoption preserves gap intent:**
+Given the player accepts a variant and `_worldOffsetX` changes,
+When the pre-transition variant pool is adopted as the new main pool,
+Then reservations tagged `poolKind: 'variant'` are re-tagged to `'main'` so the same Z constraint keeps applying to the same buildings (now in main arrays),
+And the stale `main-propose` reservation (which targeted the retired OLD main pool's outer side) is cleared on adoption to avoid spurious drains on the new main pool's outer side.
+
+**AC-14 — Reservation debug visualiser (testMode):**
+Given the page is opened with `?testMode=1` (or any `?testMode` query param),
+When a reservation is active,
+Then a translucent ground plane is rendered at the reservation's Z range — cyan for `poolKind: 'main'`, magenta for `poolKind: 'variant'`,
+And the plane resizes/repositions each frame to match the live `zRangeAt()` return,
+And the plane is removed when the reservation is cleared.
+
 ---
 
 ## Tasks / Subtasks
@@ -348,6 +373,48 @@ Like floor tiles and the character, buildings are permanent scene elements that 
 
 This mirrors the decision made for floor tiles in story 7-1.
 
+### Building Gap Reservation System (Story 7-2 follow-up)
+
+The variant-track transition needs the propose / dismiss pieces to pass through the building skyline without clipping. The original implementation tried to manage this with three coupled mechanisms (gap-window function + spawn cap + per-frame "drain frontmost building" loop), which proved fragile — gap math was split across a constants block, a window-computation function, and the drain loop, and the drain was racy under fast scroll.
+
+This was replaced with a **reservation system** — a single first-class concept where each gap is a Z range registered against one pool side, enforced as a hard invariant at placement time.
+
+**Core API (all inside `createScene()` closure):**
+
+```js
+setBuildingGap(id, {
+  poolSide,  // 'left' | 'right'
+  poolKind,  // 'main' | 'variant'
+  zRangeAt,  // () => { z0, z1 } in world Z, called each placement check
+});
+clearBuildingGap(id);
+```
+
+`zRangeAt` is the single source of truth for the gap's shape — edit there to change width, anchor, side. Returning `{ z0: -Infinity, z1: -Infinity }` disables the reservation without removing it (used when the anchor piece is briefly null).
+
+**Enforcement points:**
+
+1. `placeBuildingBehindPool(g, side, arr, cursorZ, kind)` — when a building is placed (initial pool creation OR recycle), the candidate front-face Z is jumped behind any reservation it would overlap. Sort by `z1 desc` so cascading jumps land behind the rear-most reservation first.
+2. `recyclePool(arr, side, kind, offsetX)` — each frame, each building's `[z − d/2, z + d/2]` is tested against active reservations on its side. Overlap forces an immediate respawn behind the pool (via `placeBuildingBehindPool`, which then enforces invariant (1)).
+
+There is no separate drain mechanism. The invariant is: **after every placement and recycle pass, no building overlaps any active reservation**.
+
+**Pool kind tagging.** Reservations distinguish between the current main pool and the pre-transition variant pool. The variant pool is created at proposal time (`createVariantBuildingPool`) at the eventual world-offset of the new main, and is adopted into `leftBuildings`/`rightBuildings` when `_worldOffsetX` changes. On adoption, `_adoptVariantReservations()` re-tags any `poolKind: 'variant'` reservation to `'main'` so the same Z constraint keeps applying to the same buildings.
+
+**Registered reservations during a variant transition:**
+
+| ID | poolSide | poolKind | zRangeAt | Lifecycle |
+|---|---|---|---|---|
+| `main-propose` | vSide of variant | `main` | `pz − 65` → `pz − 40` (anchored to propose piece) | Registered in `proposeVariantTracks`; cleared on propose-piece despawn, on adoption, or in `clearVariantGeom`. |
+| `variant-outgoing` | inner side (opposite vSide) | `variant` | `pz − 75` → `pz − 50` (anchored to propose piece) | Registered in `proposeVariantTracks`; re-tagged to `main` on adoption; cleared on propose-piece despawn or in `clearVariantGeom`. |
+| `main-dismiss` | inner side of new main | `main` | `pz − 65` → `pz − 40` (anchored to dismiss piece) | Registered when dismiss piece spawns (`dismissVariantTracks` or `acceptVariantTracks` via `_registerDismissGap`); cleared in `clearVariantGeom`. |
+
+All three reservations are width 25 in Z, anchored relative to their piece's Z. The variant gap is centred 10 units further behind the piece than the main gap to track the outgoing diagonal more precisely. Tuning width / centre is a one-line edit inside the relevant closure.
+
+**Debug visualiser.** When `window.__TEST_MODE` is true (set by `?testMode` URL param in `main.js`), each active reservation is rendered as a translucent ground plane in `_updateGapDebug()` — cyan for main-pool, magenta for variant-pool. Plane position and scale update every frame from `zRangeAt()`. Disposed when the reservation is cleared.
+
+**To add a new gap:** one `setBuildingGap('your-id', { poolSide, poolKind, zRangeAt })` call. Nothing else to touch.
+
 ### Previous Story (7-1) Learnings
 
 - All materials need `dithering: true` (added globally in 7-1 — maintain consistency)
@@ -397,6 +464,7 @@ claude-sonnet-4-6
 - reset() disposes all 24 building geometries + both shared materials, recreates via createBuildingPool().
 - Layer 0 (default) for buildings — receive DirectionalLight for depth cues; lighting layer split documented in code comment block.
 - 82/82 E2E tests pass, no regressions. No syntax errors.
+- Follow-up (2026-05-28): replaced the original gap-window + drain + spawn-cap mechanism with a reservation-based system. Gap geometry is now defined in a single `zRangeAt()` closure per reservation; placement enforces a hard invariant so respawned buildings can never land in a gap, and there is no per-frame drain race. Three reservations register during a variant transition: `main-propose` (main pool, vSide), `variant-outgoing` (variant pool, inner side; re-tagged to `main` on adoption), and `main-dismiss` (main pool, inner side, dismiss piece). All width 25 in Z. Debug visualiser gated on `?testMode` URL param renders each active reservation as a translucent ground plane (cyan = main, magenta = variant). `BLDG_POOL_SIZE` raised from 12 to 26 to fill the visible depth range after reservations claim contiguous Z slices.
 
 ### File List
 
@@ -407,3 +475,4 @@ claude-sonnet-4-6
 - 2026-05-27: Story 7-2 created
 - 2026-05-27: Party mode review — window disposal fix (symmetric), density 1/3→55%, layer 0 confirmed with comment block
 - 2026-05-27: Story 7-2 implemented — procedural building pool, scroll, recycle, reset disposal
+- 2026-05-28: Variant-transition gap support added — gap-window/drain/spawn-cap mechanism replaced with reservation system (`setBuildingGap`/`clearBuildingGap`, hard-invariant placement, ground-plane debug visualiser via `?testMode`). Added AC-12 (reservation system), AC-13 (adoption re-tag), AC-14 (debug visualiser).
