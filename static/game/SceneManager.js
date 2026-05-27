@@ -26,8 +26,6 @@ export function createScene(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setSize(canvas.clientWidth || canvas.width, canvas.clientHeight || canvas.height, false);
   renderer.setClearColor(COLORS.BG_VOID);
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.0;
 
   const scene = new THREE.Scene();
   scene.fog = new THREE.Fog(COLORS.BG_VOID, 35, 100);
@@ -54,7 +52,7 @@ export function createScene(canvas) {
   const FLOOR_TILE_DEPTH = 300;   // two tiles = 600 units depth, well past fog (100)
   const FLOOR_CULL_Z = 20;        // cull tiles whose front edge passes this Z (behind camera)
 
-  let floorMat = new THREE.MeshStandardMaterial({ color: COLORS.BG_VOID });
+  let floorMat = new THREE.MeshLambertMaterial({ color: COLORS.BG_VOID });
   function makeFloorTile() {
     const tile = new THREE.Mesh(
       new THREE.PlaneGeometry(FLOOR_WIDTH, FLOOR_TILE_DEPTH, 32, 32),
@@ -249,7 +247,7 @@ export function createScene(canvas) {
       tile.geometry.dispose();
     }
     floorMat.dispose();
-    floorMat = new THREE.MeshStandardMaterial({ color: COLORS.BG_VOID });
+    floorMat = new THREE.MeshLambertMaterial({ color: COLORS.BG_VOID });
     floorTiles = [makeFloorTile(), makeFloorTile()];
     floorTiles[0].position.set(0, FLOOR_Y, -(FLOOR_TILE_DEPTH / 2) + FLOOR_CULL_Z);
     floorTiles[1].position.set(0, FLOOR_Y, -(FLOOR_TILE_DEPTH * 1.5) + FLOOR_CULL_Z);
@@ -1175,8 +1173,6 @@ export class SceneManager {
     instance._renderer = new THREE.WebGLRenderer({ antialias: true });
     instance._renderer.setSize(w, h);
     instance._renderer.setClearColor(COLORS.BG_VOID);
-    instance._renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    instance._renderer.toneMappingExposure = 1.0;
     container.appendChild(instance._renderer.domElement);
 
     instance._scene = new THREE.Scene();
