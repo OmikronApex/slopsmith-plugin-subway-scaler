@@ -418,7 +418,9 @@ export function createScene(canvas) {
     // Match SafeZoneRenderer Z: SPAWN_Z + elapsed*speed*0.5 + DEPTH/2.
     // Without the +DEPTH/2 offset the variant safezone trails the anchor's by half a depth.
     const szInitialZ = SPAWN_Z + szElapsed * speedPxMs * 0.5 + VARIANT_SZ_DEPTH / 2;
-    szMesh.position.set(vx, 0.05, szInitialZ);
+    // Variant tracks sit at y=0 (top surface +0.03). Use y=0.15 to match the
+    // clearance SafeZoneRenderer gives primary zones above main tracks (y=-0.05, top=-0.02).
+    szMesh.position.set(vx, 0.15, szInitialZ);
     if (anchorFret != null) {
       const fretOffset = variant.side === 'RIGHT' ? 2 : -2;
       const label = makeTextSprite((anchorFret + fretOffset).toString());
@@ -435,7 +437,7 @@ export function createScene(canvas) {
     );
     szBorderMesh.renderOrder = 1;
     szBorderMesh.rotation.x = -Math.PI / 2;
-    szBorderMesh.position.set(vx, 0.06, szInitialZ);
+    szBorderMesh.position.set(vx, 0.16, szInitialZ);
     scene.add(szBorderMesh);
     variantSafeZoneBorderMesh = szBorderMesh;
   }
