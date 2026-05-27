@@ -1023,14 +1023,14 @@ export function createScene(canvas) {
         nowGameMs >= variantProposePiece.spawnTimeMs - 2000;
       const variantPieceZ = pieceGapActive ? variantProposePiece.mesh.position.z : null;
 
-      // Rear clearance: outgoing diagonal reaches -(STRAIGHT_LEN/2 + dX) from group centre,
-      // where dX = distance from variantX to outermost building on the same side.
-      // Opposite side only needs STRAIGHT_LEN/2 clearance (straight section only).
+      // Rear clearance: returns null for the non-variant side (no gap there).
+      // For the variant side, outgoing diagonal reaches -(STRAIGHT_LEN/2 + dX) from group
+      // centre, where dX = distance from variantX to outermost building.
       function bldgRearClearance(poolSide) {
-        if (!variantInfo) return STRAIGHT_LEN / 2 + 5;
+        if (!variantInfo) return null;
         const { variantX, side: vSide } = variantInfo;
+        if (poolSide.toUpperCase() !== vSide) return null;  // opposite side: no gap
         const sign = vSide === 'RIGHT' ? 1 : -1;
-        if (poolSide.toUpperCase() !== vSide) return STRAIGHT_LEN / 2 + 5;
         const maxBldgX = BLDG_X_INNER + BLDG_X_SPREAD + BLDG_W_MAX / 2;
         const dX = Math.max(0, maxBldgX - sign * variantX);
         return STRAIGHT_LEN / 2 + dX + 10;
@@ -1047,11 +1047,13 @@ export function createScene(canvas) {
       const rightClear = bldgRearClearance('right');
 
       // Gradual zone drain: relocate the frontmost in-zone building (one per side per frame).
+      // Only runs for the variant side (clear !== null).
       if (variantPieceZ !== null) {
         for (const [arr, side, clear] of [
           [leftBuildings,  'left',  leftClear],
           [rightBuildings, 'right', rightClear],
         ]) {
+          if (clear === null) continue;  // opposite side — no gap
           const rearLimit = variantPieceZ - clear;
           let frontmost = null;
           for (const g of arr) {
@@ -1075,7 +1077,7 @@ export function createScene(canvas) {
         if (g.position.z > BLDG_CULL_Z) {
           const rear = leftBuildings.reduce((a, b) => a.position.z < b.position.z ? a : b);
           const rearFaceZ = rear.position.z - rear.children[0].geometry.parameters.depth / 2;
-          const targetZ = variantPieceZ !== null
+          const targetZ = (variantPieceZ !== null && leftClear !== null)
             ? Math.min(rearFaceZ, variantPieceZ - leftClear)
             : rearFaceZ;
           placeBuildingBehindPool(g, 'left', leftBuildings, targetZ);
@@ -1088,7 +1090,7 @@ export function createScene(canvas) {
         if (g.position.z > BLDG_CULL_Z) {
           const rear = rightBuildings.reduce((a, b) => a.position.z < b.position.z ? a : b);
           const rearFaceZ = rear.position.z - rear.children[0].geometry.parameters.depth / 2;
-          const targetZ = variantPieceZ !== null
+          const targetZ = (variantPieceZ !== null && rightClear !== null)
             ? Math.min(rearFaceZ, variantPieceZ - rightClear)
             : rearFaceZ;
           placeBuildingBehindPool(g, 'right', rightBuildings, targetZ);
