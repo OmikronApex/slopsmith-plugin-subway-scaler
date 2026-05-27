@@ -1014,11 +1014,14 @@ export function createScene(canvas) {
       // Variant-piece gap: keep a clear zone from the outgoing diagonal rear to the incoming
       // diagonal front — i.e. the full Z extent of the piece.
       //
-      // Strategy: one building per side per frame is relocated to the rear whenever it falls
-      // inside the piece zone.  Starting from piece proposal (not just when moving) so the
-      // zone drains smoothly during the stationary wait before the piece scrolls in.
-      // One-per-frame rate means ~24 frames to clear the pool — imperceptible at 60 fps.
-      const variantPieceZ = variantProposePiece ? variantProposePiece.mesh.position.z : null;
+      // Strategy: start draining 2 s before the piece begins moving so the zone is clear
+      // when the geometry arrives.  While the piece is stationary and more than 2 s away
+      // buildings spawn normally with no cap.
+      // One-per-frame drain rate means ~24 frames (~0.4 s at 60 fps) to clear the pool.
+      const nowGameMs = nowMs - gameStartTime;
+      const pieceGapActive = variantProposePiece !== null &&
+        nowGameMs >= variantProposePiece.spawnTimeMs - 2000;
+      const variantPieceZ = pieceGapActive ? variantProposePiece.mesh.position.z : null;
 
       // Rear clearance: outgoing diagonal reaches -(STRAIGHT_LEN/2 + dX) from group centre,
       // where dX = distance from variantX to outermost building on the same side.
