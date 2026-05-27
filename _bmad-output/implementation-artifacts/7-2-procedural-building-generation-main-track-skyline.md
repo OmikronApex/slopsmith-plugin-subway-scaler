@@ -30,8 +30,9 @@ And dimensions are re-randomised each time a building is recycled to the horizon
 **AC-4 — Night City palette, flat-shaded silhouette with window accents:**
 Then building body material uses `color: COLORS.BG_NEAR` (`0x252538`) with `flatShading: true` and `dithering: true`,
 And no colour literals appear in any material constructor,
-And approximately 1-in-3 buildings randomly display a window-light accent: a small emissive `BoxGeometry` strip on the building's front face using `color: COLORS.TEXT_PRIMARY` (`0xE8E8F0`) with `emissiveIntensity: 0.6`,
-And window accent boxes are part of the same recycled `Group` as the building body.
+And 50–60% of buildings display a window-light accent (`Math.random() < 0.55`): a small emissive `BoxGeometry` strip on the building's front face using `color: COLORS.TEXT_PRIMARY` (`0xE8E8F0`) with `emissiveIntensity: 0.6` — density creates a bustling night-city feel that pulses with the rhythmic cart waves,
+And window accent boxes are part of the same recycled `Group` as the building body,
+And window geometry is disposed on every recycle regardless of whether the new state is lit or dark (symmetric disposal — no mid-game VRAM accumulation).
 
 **AC-5 — Side-street gap near camera:**
 Then no building is positioned within `BLDG_NEAR_CUTOFF = -15` world Z units of the player (i.e. buildings only exist at z ≤ `BLDG_NEAR_CUTOFF`),
@@ -112,14 +113,17 @@ All existing E2E tests pass with no new console errors.
       body.geometry.dispose();
       body.geometry = new THREE.BoxGeometry(w, h, d);
       body.position.set(0, h / 2, 0); // base sits at y=0 (floor level)
-      // window (second child, may be hidden)
+      // window (second child) — always dispose before reassigning (symmetric disposal)
       const win = group.children[1];
-      const hasWindow = Math.random() < 0.33;
-      win.visible = hasWindow;
+      const hasWindow = Math.random() < 0.55; // 50-60% density — bustling night city
+      win.geometry.dispose(); // dispose regardless of new state — no mid-game VRAM accumulation
       if (hasWindow) {
-        win.geometry.dispose();
         win.geometry = new THREE.BoxGeometry(w * 0.5, h * 0.25, 0.05);
         win.position.set(0, h * 0.6, d / 2 + 0.01); // front face
+        win.visible = true;
+      } else {
+        win.geometry = new THREE.BufferGeometry(); // cheap empty geometry placeholder
+        win.visible = false;
       }
       // X position — inner edge at BLDG_X_INNER, scatter outward
       const xOffset = BLDG_X_INNER + w / 2 + Math.random() * BLDG_X_SPREAD;
@@ -249,7 +253,21 @@ createScene()
 
 ### Materials
 
-Buildings are on layer 0 (default) — they receive both `AmbientLight` and `DirectionalLight` (the `sun`). `flatShading: true` gives faceted, low-poly look consistent with the PS1 demake aesthetic. **Do not** use `FLOOR_LAYER = 1` for buildings — they should be lit by the directional sun to have natural side-face shading that reads as 3D depth.
+Buildings are on **layer 0** (default) — they receive both `AmbientLight` and `DirectionalLight` (the `sun`). This is intentional and different from the floor (layer 1, ambient-only). Add this comment block near the constants to document the split:
+
+```js
+// ── Lighting layer split ──────────────────────────────────────────────────
+// FLOOR_LAYER = 1: floor tiles receive ambient-only via a dedicated AmbientLight.
+//   Reason: DirectionalLight on a large flat plane creates circular brightness
+//   banding due to per-vertex lighting interpolation across huge triangles.
+// Buildings stay on layer 0: they receive DirectionalLight (sun) as well as
+//   ambient. This gives them bright tops and dark sides — the depth cue that
+//   makes box silhouettes read as solid 3D forms rather than flat sprites.
+//   Different surface, different problem, different solution.
+// ─────────────────────────────────────────────────────────────────────────
+```
+
+`flatShading: true` gives faceted, low-poly look consistent with the PS1 demake aesthetic. **Do not** use `FLOOR_LAYER = 1` for buildings.
 
 ```js
 const bldgBodyMat = new THREE.MeshStandardMaterial({
@@ -272,9 +290,12 @@ const bldgWindowMat = new THREE.MeshStandardMaterial({
 
 ### Pool Design
 
-Buildings reuse the same Group objects. On recycle, `randomiseBuildingGroup()` mutates geometry dimensions using `.dispose()` + reassignment. This is safe because:
-1. The old geometry is disposed before reassignment (no leak)
-2. The material is shared — never disposed per-building
+Buildings reuse the same Group objects. On recycle, `randomiseBuildingGroup()` mutates geometry dimensions using `.dispose()` + reassignment. Key rules:
+1. **Body geometry**: always disposed and reassigned on every recycle.
+2. **Window geometry**: always disposed on every recycle regardless of `hasWindow` — symmetric disposal prevents mid-game VRAM accumulation. Use `new THREE.BufferGeometry()` as a cheap placeholder when the window is hidden.
+3. The material is shared across all buildings — never disposed per-building, only on `reset()`.
+
+Window density is `Math.random() < 0.55` (~55%) — bustling night city feel. This was chosen over the initial 1/3 spec to match the rhythmic energy of the cart waves and improve visual readability in motion (per UX review).
 
 The `let bldgBodyMat` and `let bldgWindowMat` must be `let` (not `const`) so `reset()` can dispose and recreate them cleanly.
 
@@ -376,3 +397,4 @@ Purely visual — no unit tests for procedural geometry.
 ## Change Log
 
 - 2026-05-27: Story 7-2 created
+- 2026-05-27: Party mode review — window disposal fix (symmetric), density 1/3→55%, layer 0 confirmed with comment block
