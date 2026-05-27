@@ -157,6 +157,10 @@ export function createScene(canvas) {
 
   let leftBuildings  = [];
   let rightBuildings = [];
+  // Buildings retired during a variant-track transition: locked to old world X, scroll out, then disposed.
+  let retiringBuildings = [];
+  // Last known world offset applied to the active building pool — used to detect transitions.
+  let _bldgTrackedOffsetX = 0;
 
   function createBuildingPool() {
     const bldgZRange = Math.abs(BLDG_NEAR_CUTOFF - BLDG_SPAWN_Z);
@@ -368,6 +372,12 @@ export function createScene(canvas) {
       scene.remove(g);
       for (const child of g.children) child.geometry.dispose();
     }
+    // Also dispose any retiring buildings (mid-transition state).
+    for (const g of retiringBuildings) {
+      scene.remove(g);
+      for (const child of g.children) child.geometry.dispose();
+    }
+    retiringBuildings = [];
     bldgBodyMat.dispose();
     bldgWindowMat.dispose();
     bldgBodyMat = new THREE.MeshStandardMaterial({
@@ -382,6 +392,7 @@ export function createScene(canvas) {
       flatShading: true,
       dithering: true,
     });
+    _bldgTrackedOffsetX = 0;
     createBuildingPool();
   }
 
@@ -959,10 +970,25 @@ export function createScene(canvas) {
     }
 
     // Building scroll (story 7-2) — same speed formula as floor and pending tracks.
-    // X is baseX + _worldOffsetX so buildings always flank the active track
-    // (including after a variant-track transition that shifts _worldOffsetX).
+    // On variant-track transition (_worldOffsetX changes): retire current pool (frozen X, scroll out,
+    // then dispose) and spawn a fresh pool at the new world offset — both visible simultaneously.
     {
       const bldgDelta = lastWaveSpeed * 0.5 * (dt * 1000);
+
+      // Detect world-offset change (variant track transition).
+      if (_worldOffsetX !== _bldgTrackedOffsetX) {
+        // Push active pools into retiring list — X positions stay frozen at old offset.
+        retiringBuildings.push(...leftBuildings, ...rightBuildings);
+        // Spawn fresh pools at new offset.
+        createBuildingPool();
+        // Apply new offset immediately so new buildings appear in the right place.
+        for (const g of [...leftBuildings, ...rightBuildings]) {
+          g.position.x = g.userData.baseX + _worldOffsetX;
+        }
+        _bldgTrackedOffsetX = _worldOffsetX;
+      }
+
+      // Scroll and recycle active buildings.
       for (const g of leftBuildings) {
         g.position.z += bldgDelta;
         g.position.x = g.userData.baseX + _worldOffsetX;
@@ -977,6 +1003,17 @@ export function createScene(canvas) {
         if (g.position.z > BLDG_CULL_Z) {
           randomiseBuildingGroup(g, 'right');
           g.position.z = BLDG_SPAWN_Z;
+        }
+      }
+
+      // Scroll retiring buildings (X frozen at old offset); dispose when they pass the cull plane.
+      for (let i = retiringBuildings.length - 1; i >= 0; i--) {
+        const g = retiringBuildings[i];
+        g.position.z += bldgDelta;
+        if (g.position.z > BLDG_CULL_Z) {
+          scene.remove(g);
+          for (const child of g.children) child.geometry.dispose();
+          retiringBuildings.splice(i, 1);
         }
       }
     }
