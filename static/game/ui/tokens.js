@@ -14,6 +14,10 @@ export const COLORS = {
   TEXT_PRIMARY:  0xE8E8F0,
   TEXT_DISABLED: 0x555570,
   EDGE:          0x08080F,
+  // NPC cart threat colour — reserved solely for hazard state signals.
+  // Do NOT reuse for UI warnings, low-health indicators, or any non-hazard element.
+  // ACCENT (0xFFB800) is reserved for world lighting (lampposts, story 7-3).
+  DANGER:        0xFF2233,
 };
 
 // ===== STRING COLORS (Slopsmith / Rocksmith standard palette) =====
@@ -32,6 +36,27 @@ export const STRING_COLORS = [
   0x00CCCC, // 7 — Teal
 ];
 
+// ===== SAFE ZONE FILL COLOURS (darkened string colours for translucent safe-zone planes) =====
+// Indexed low→high pitch — same index as STRING_COLORS.
+// Each value is a darkened variant of STRING_COLORS[i] for use as the translucent fill material.
+// The opaque neon border uses STRING_COLORS[i] at full value.
+export const STRING_SAFE_ZONE_FILLS = [
+  0x330000, // 0 — Red    (darkened)
+  0x332A00, // 1 — Yellow (darkened)
+  0x001A33, // 2 — Blue   (darkened)
+  0x331900, // 3 — Orange (darkened)
+  0x003319, // 4 — Green  (darkened)
+  0x260033, // 5 — Purple (darkened)
+  0x330029, // 6 — Magenta(darkened)
+  0x003333, // 7 — Teal   (darkened)
+];
+
+// Emissive intensity for safe-zone border LineBasicMaterial (full-brightness string colour).
+// PROVISIONAL — retune after lamppost lighting (story 7-3) lands.
+// Do NOT raise above 0.8 before testing with ACESFilmicToneMapping.
+export const EMISSIVE_SAFE_ZONE_BORDER = 0.7;
+
+// ===== STRING COLOUR LOOKUP =====
 // Look up a string color by low→high index, clamping to instrument.stringCount.
 export function colourForString(stringIdx, instrument) {
   if (stringIdx == null || typeof stringIdx !== 'number' || isNaN(stringIdx)) return STRING_COLORS[0];

@@ -6,7 +6,7 @@
 
 import * as THREE from './vendor/three.module.js';
 import { laneX, cameraForPitch, SPAWN_Z, LANE_X_SCALE } from './TrackSystem.js';
-import { COLORS, colourForString } from './ui/tokens.js';
+import { COLORS, colourForString, STRING_COLORS, STRING_SAFE_ZONE_FILLS } from './ui/tokens.js';
 
 const CHAR_Y = 1.1;
 const FRONT_Z = 0;
@@ -25,10 +25,10 @@ const DIAG_LEN = 45;              // Z length of diagonal section in bend piece 
 export function createScene(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setSize(canvas.clientWidth || canvas.width, canvas.clientHeight || canvas.height, false);
-  renderer.setClearColor(0x101a2a);
+  renderer.setClearColor(COLORS.BG_VOID);
 
   const scene = new THREE.Scene();
-  scene.fog = new THREE.Fog(0x101a2a, 35, 100);
+  scene.fog = new THREE.Fog(COLORS.BG_VOID, 35, 100);
 
   const camBase = cameraForPitch(CAMERA_PITCH, CAMERA_DISTANCE);
   const camera = new THREE.PerspectiveCamera(55, (canvas.width / canvas.height) || 16 / 9, 0.1, 200);
@@ -43,7 +43,7 @@ export function createScene(canvas) {
   sun.position.set(4, 12, 8);
   scene.add(sun);
 
-  const trackMat = new THREE.MeshStandardMaterial({ color: 0x2a3142 });
+  const trackMat = new THREE.MeshStandardMaterial({ color: COLORS.BG_STAGE });
   const roofMat = new THREE.MeshStandardMaterial({ color: ROOF_COLOUR });
 
   const bodyMatByColour = new Map();
@@ -103,7 +103,8 @@ export function createScene(canvas) {
   let variantProposePiece = null;   // { mesh: Group, spawnTimeMs, speedPxMs }
   let variantDismissPiece = null;   // { mesh: Group, spawnTimeMs, speedPxMs }
   let variantInfo = null;           // { side, variantX }
-  let variantSafeZoneMesh = null;   // safe zone mesh on variant lane (story 5-7)
+  let variantSafeZoneMesh = null;         // safe zone fill plane on variant lane (story 5-7)
+  let variantSafeZoneBorderMesh = null;   // neon border LineSegments for variant safe zone (story 7-0)
   let variantAcceptState = null;    // { newPrimary, acceptX, characterMoved } — tracks accept animation
   let lastWaveSpeed = 0.05;         // captured from setWaves; used for piece scrolling
   let onVariantMissedCb = null;     // registered from main.js (story 5-8, AC-2)
@@ -265,6 +266,12 @@ export function createScene(canvas) {
       variantSafeZoneMesh.material?.dispose();
       variantSafeZoneMesh = null;
     }
+    if (variantSafeZoneBorderMesh) {
+      scene.remove(variantSafeZoneBorderMesh);
+      variantSafeZoneBorderMesh.geometry?.dispose();
+      variantSafeZoneBorderMesh.material?.dispose();
+      variantSafeZoneBorderMesh = null;
+    }
     variantAcceptState = null;
     variantInfo = null;
     _charTraversal = null;
@@ -375,22 +382,30 @@ export function createScene(canvas) {
     variantProposePiece = { mesh, spawnTimeMs: spawnMs, speedPxMs };
     variantInfo = { side: variant.side, variantX: vx, speedPxMs };
 
-    // Safe zone color from anchor note's string. Use the same palette mapping
-    // as SafeZoneRenderer (low-pitch→high-pitch), so variant color matches the
-    // primary safezone of the anchor wave.
+    // Palette index for variant safe zone colours (story 7-0).
+    // Uses STRING_SAFE_ZONE_FILLS for fill and STRING_COLORS for the neon border.
     const stringCount = instrument?.stringCount ?? 6;
     const paletteIdx = anchorString != null ? (stringCount - anchorString) : 0;
-    const variantSzColor = anchorString != null
-      ? colourForString(paletteIdx, instrument)
-      : COLORS.ACCENT;
+    // Safe zone fill — dim translucent plane using STRING_SAFE_ZONE_FILLS (story 7-0).
     const szGeo = new THREE.PlaneGeometry(1.2, VARIANT_SZ_DEPTH);
+    const fillColor = paletteIdx < STRING_SAFE_ZONE_FILLS.length
+      ? STRING_SAFE_ZONE_FILLS[paletteIdx]
+      : STRING_SAFE_ZONE_FILLS[0];
+    const borderColor = paletteIdx < STRING_COLORS.length
+      ? STRING_COLORS[paletteIdx]
+      : STRING_COLORS[0];
     const szMat = new THREE.MeshStandardMaterial({
-      color: variantSzColor,
+      color: fillColor,
       transparent: true,
-      opacity: 0.5,
+      opacity: 0.15,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: 1,
+      polygonOffsetUnits: 1,
       side: THREE.DoubleSide,
     });
     const szMesh = new THREE.Mesh(szGeo, szMat);
+    szMesh.renderOrder = 0;
     szMesh.rotation.x = -Math.PI / 2;
     szMesh.userData.spawnMs = spawnMs;
     szMesh.userData.speedPxMs = speedPxMs;
@@ -402,7 +417,8 @@ export function createScene(canvas) {
     const szElapsed = Math.max(0, nowGameMs - spawnMs);
     // Match SafeZoneRenderer Z: SPAWN_Z + elapsed*speed*0.5 + DEPTH/2.
     // Without the +DEPTH/2 offset the variant safezone trails the anchor's by half a depth.
-    szMesh.position.set(vx, 0.05, SPAWN_Z + szElapsed * speedPxMs * 0.5 + VARIANT_SZ_DEPTH / 2);
+    const szInitialZ = SPAWN_Z + szElapsed * speedPxMs * 0.5 + VARIANT_SZ_DEPTH / 2;
+    szMesh.position.set(vx, 0.05, szInitialZ);
     if (anchorFret != null) {
       const fretOffset = variant.side === 'RIGHT' ? 2 : -2;
       const label = makeTextSprite((anchorFret + fretOffset).toString());
@@ -410,6 +426,18 @@ export function createScene(canvas) {
     }
     scene.add(szMesh);
     variantSafeZoneMesh = szMesh;
+
+    // Safe zone border — EdgesGeometry neon outline (story 7-0).
+    // EdgesGeometry on PlaneGeometry = 4 perimeter edges, no internal diagonals.
+    const szBorderMesh = new THREE.LineSegments(
+      new THREE.EdgesGeometry(szGeo),
+      new THREE.LineBasicMaterial({ color: borderColor })
+    );
+    szBorderMesh.renderOrder = 1;
+    szBorderMesh.rotation.x = -Math.PI / 2;
+    szBorderMesh.position.set(vx, 0.06, szInitialZ);
+    scene.add(szBorderMesh);
+    variantSafeZoneBorderMesh = szBorderMesh;
   }
 
   function dismissVariantTracks() {
@@ -478,7 +506,7 @@ export function createScene(canvas) {
         const group = new THREE.Group();
         for (let i = 0; i < numLanes; i++) {
           if (i === waveData.safe_track) continue;
-          const cart = makeCart(bodyMaterial(0x888888));
+          const cart = makeCart(bodyMaterial(COLORS.DANGER));
           cart.position.x = laneX(i, numLanes) + _worldOffsetX;
           group.add(cart);
         }
@@ -651,6 +679,7 @@ export function createScene(canvas) {
         const elapsed = Math.max(0, nowMs - gameStartTime - adjSpawnMs);
         const z = SPAWN_Z + elapsed * speedPxMs * 0.5 + VARIANT_SZ_DEPTH / 2;
         variantSafeZoneMesh.position.z = z;
+        if (variantSafeZoneBorderMesh) variantSafeZoneBorderMesh.position.z = z;
         if (window.__gameState?.variant) {
           window.__gameState.variant.safeZoneZ = z;
         }
@@ -680,6 +709,12 @@ export function createScene(canvas) {
           variantSafeZoneMesh.geometry?.dispose();
           variantSafeZoneMesh.material?.dispose();
           variantSafeZoneMesh = null;
+          if (variantSafeZoneBorderMesh) {
+            scene.remove(variantSafeZoneBorderMesh);
+            variantSafeZoneBorderMesh.geometry?.dispose();
+            variantSafeZoneBorderMesh.material?.dispose();
+            variantSafeZoneBorderMesh = null;
+          }
         }
       }
     } else {
@@ -964,6 +999,12 @@ export function createScene(canvas) {
       variantSafeZoneMesh.geometry?.dispose();
       variantSafeZoneMesh.material?.dispose();
       variantSafeZoneMesh = null;
+    }
+    if (variantSafeZoneBorderMesh) {
+      scene.remove(variantSafeZoneBorderMesh);
+      variantSafeZoneBorderMesh.geometry?.dispose();
+      variantSafeZoneBorderMesh.material?.dispose();
+      variantSafeZoneBorderMesh = null;
     }
     onVariantMissedCb = null;
     lastVariantTickMs = 0;

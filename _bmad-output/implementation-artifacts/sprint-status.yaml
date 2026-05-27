@@ -1,5 +1,5 @@
 generated: "2026-05-21"
-last_updated: "2026-05-27"  # Epic 6 code review complete — 28 issues fixed
+last_updated: "2026-05-27"  # Story 7-0 complete — visual token conformance
 project: "slopsmith-plugin-subway-scaler"
 project_key: "SS"
 tracking_system: "local"
@@ -83,3 +83,12 @@ development_status:
   6-6-variant-scale-wave-spawn-activation: done
   6-7-e2e-transition-sequence-coverage: done
   6-8-variant-transition-cinematic-refinement: done
+
+  # Epic 7 — Visual Polish: World Environment & Procedural Scenery
+  epic-7: in-progress
+  7-0-visual-conformance-tracks-carts-safe-zones: review
+  7-1-floor-plane-ground-surface-beneath-tracks: backlog
+  7-2-procedural-building-generation-main-track-skyline: backlog
+  7-3-lamppost-geometry-and-point-lighting: backlog
+  7-4-procedural-buildings-variant-geometry: backlog
+  7-5-vertex-shader-curved-world-surface: backlog
