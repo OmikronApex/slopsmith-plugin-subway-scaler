@@ -46,6 +46,27 @@ export function createScene(canvas) {
   const trackMat = new THREE.MeshStandardMaterial({ color: COLORS.BG_STAGE });
   const roofMat = new THREE.MeshStandardMaterial({ color: ROOF_COLOUR });
 
+  // ─── Floor plane (story 7-1) ─────────────────────────────────────────────
+  const FLOOR_Y = -0.15;          // below track bottom (-0.08) with clearance
+  const FLOOR_WIDTH = 80;         // covers ≥3× track span on each side for up to 8 strings
+  const FLOOR_TILE_DEPTH = 130;   // > fog end (100) — far edge always hidden
+  const FLOOR_CULL_Z = 20;        // cull tiles whose front edge passes this Z (behind camera)
+
+  let floorMat = new THREE.MeshStandardMaterial({ color: COLORS.BG_STAGE, flatShading: true });
+  function makeFloorTile() {
+    const tile = new THREE.Mesh(
+      new THREE.PlaneGeometry(FLOOR_WIDTH, FLOOR_TILE_DEPTH),
+      floorMat
+    );
+    tile.rotation.x = -Math.PI / 2;
+    return tile;
+  }
+  let floorTiles = [makeFloorTile(), makeFloorTile()];
+  floorTiles[0].position.set(0, FLOOR_Y, -(FLOOR_TILE_DEPTH / 2) + FLOOR_CULL_Z);
+  floorTiles[1].position.set(0, FLOOR_Y, -(FLOOR_TILE_DEPTH * 1.5) + FLOOR_CULL_Z);
+  floorTiles.forEach(t => scene.add(t));
+  // ─────────────────────────────────────────────────────────────────────────
+
   const bodyMatByColour = new Map();
   function bodyMaterial(colourHex) {
     let m = bodyMatByColour.get(colourHex);
@@ -219,6 +240,18 @@ export function createScene(canvas) {
     character.rotation.set(0, 0, 0);
     targetCameraX = 0;
     currentCameraX = 0;
+
+    // Recreate floor tiles (story 7-1) — dispose old, spawn fresh at initial positions.
+    for (const tile of floorTiles) {
+      scene.remove(tile);
+      tile.geometry.dispose();
+    }
+    floorMat.dispose();
+    floorMat = new THREE.MeshStandardMaterial({ color: COLORS.BG_STAGE, flatShading: true });
+    floorTiles = [makeFloorTile(), makeFloorTile()];
+    floorTiles[0].position.set(0, FLOOR_Y, -(FLOOR_TILE_DEPTH / 2) + FLOOR_CULL_Z);
+    floorTiles[1].position.set(0, FLOOR_Y, -(FLOOR_TILE_DEPTH * 1.5) + FLOOR_CULL_Z);
+    floorTiles.forEach(t => scene.add(t));
   }
 
   // ─── Variant geometry helpers (story 5-5) ─────────────────────────────────
@@ -779,6 +812,17 @@ export function createScene(canvas) {
         const cb = _tracksLandedCb;
         _tracksLandedCb = null;
         if (cb) cb();
+      }
+    }
+
+    // Floor tile scrolling (story 7-1). Matches pending-track speed formula.
+    {
+      const floorDelta = lastWaveSpeed * 0.5 * (dt * 1000);
+      for (const tile of floorTiles) {
+        tile.position.z += floorDelta;
+        if (tile.position.z > FLOOR_CULL_Z + FLOOR_TILE_DEPTH / 2) {
+          tile.position.z -= FLOOR_TILE_DEPTH * 2;
+        }
       }
     }
 

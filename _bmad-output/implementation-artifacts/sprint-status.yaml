@@ -1,5 +1,5 @@
 generated: "2026-05-21"
-last_updated: "2026-05-27"  # Story 7-0 complete — visual token conformance
+last_updated: "2026-05-27"  # Story 7-1 created — floor plane ready for dev
 project: "slopsmith-plugin-subway-scaler"
 project_key: "SS"
 tracking_system: "local"
@@ -87,7 +87,7 @@ development_status:
   # Epic 7 — Visual Polish: World Environment & Procedural Scenery
   epic-7: in-progress
   7-0-visual-conformance-tracks-carts-safe-zones: done
-  7-1-floor-plane-ground-surface-beneath-tracks: backlog
+  7-1-floor-plane-ground-surface-beneath-tracks: review
   7-2-procedural-building-generation-main-track-skyline: backlog
   7-3-lamppost-geometry-and-point-lighting: backlog
   7-4-procedural-buildings-variant-geometry: backlog
