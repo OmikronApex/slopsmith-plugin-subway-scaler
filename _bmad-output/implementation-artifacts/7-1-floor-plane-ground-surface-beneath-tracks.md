@@ -13,15 +13,17 @@ so the world feels grounded rather than floating in void.
 **AC-1 — Floor plane visible beneath all track lanes:**
 Given the game scene loads,
 When the track geometry is rendered,
-Then a flat-shaded ground plane is visible beneath all track lanes,
-And the floor extends outward to at least 3× the track span width on each side (≥ 56 units total width for 6-string; use a fixed constant wide enough for any instrument up to 8 strings: `FLOOR_WIDTH = 80`),
+Then a ground plane is visible beneath all track lanes,
+And the floor extends far beyond visible world edges (`FLOOR_WIDTH = 400`),
 And no floor geometry protrudes above the track surface at any camera angle.
 
-**AC-2 — Floor material uses `COLORS.BG_STAGE`:**
+**AC-2 — Floor material uses `COLORS.BG_VOID` with physical shading:**
 Given the floor plane is rendered,
-Then the floor material uses `color: COLORS.BG_STAGE` (`0x1A1A2E`),
-And `flatShading: true`,
-And no colour literals in the floor material constructor.
+Then the floor material uses `color: COLORS.BG_VOID` (`0x0D0D1A`) — visually distinct from the `BG_STAGE` track surface,
+And `MeshPhysicalMaterial` with `roughness: 1.0, metalness: 0.0, dithering: true`,
+And no colour literals in the floor material constructor,
+And the floor is isolated on `FLOOR_LAYER = 1` so the scene `DirectionalLight` (layer 0) does not illuminate it — preventing circular brightness banding,
+And a dedicated `AmbientLight` on layer 1 provides uniform illumination.
 
 **AC-3 — Floor scrolls with the scene (two-tile recycle pool):**
 Given the game is running,
@@ -52,11 +54,11 @@ All existing E2E tests pass with no new console errors.
 ## Tasks / Subtasks
 
 - [x] Task 1: Add floor constants and geometry to `SceneManager.js`
-  - [x] 1.1 Add constants: `FLOOR_Y = -0.15`, `FLOOR_WIDTH = 80`, `FLOOR_TILE_DEPTH = 130`, `FLOOR_CULL_Z = 20`
-  - [x] 1.2 Create `floorMat = new THREE.MeshStandardMaterial({ color: COLORS.BG_STAGE, flatShading: true })`
-  - [x] 1.3 Create factory `makeFloorTile()` → `Mesh(PlaneGeometry(FLOOR_WIDTH, FLOOR_TILE_DEPTH), floorMat)` with `rotation.x = -Math.PI/2`
+  - [x] 1.1 Add constants: `FLOOR_Y = -0.15`, `FLOOR_WIDTH = 400`, `FLOOR_TILE_DEPTH = 300`, `FLOOR_CULL_Z = 20`, `FLOOR_LAYER = 1`
+  - [x] 1.2 Create `floorMat = new THREE.MeshPhysicalMaterial({ color: COLORS.BG_VOID, roughness: 1.0, metalness: 0.0, dithering: true })`
+  - [x] 1.3 Create factory `makeFloorTile()` → `Mesh(PlaneGeometry(FLOOR_WIDTH, FLOOR_TILE_DEPTH, 32, 32), floorMat)` with `rotation.x = -Math.PI/2` and `tile.layers.set(FLOOR_LAYER)`
   - [x] 1.4 Create two tiles: `floorTiles = [makeFloorTile(), makeFloorTile()]`; position: tile 0 at `z = -FLOOR_TILE_DEPTH/2 + FLOOR_CULL_Z`, tile 1 at `z = -FLOOR_TILE_DEPTH * 1.5 + FLOOR_CULL_Z`; both at `y = FLOOR_Y`
-  - [x] 1.5 `scene.add()` both tiles immediately in `createScene()`
+  - [x] 1.5 `scene.add()` both tiles; add dedicated `floorAmbient = new THREE.AmbientLight(0xffffff, 0.45)` on `FLOOR_LAYER`; `camera.layers.enable(FLOOR_LAYER)`
 
 - [x] Task 2: Scroll floor tiles in render loop
   - [x] 2.1 In the render loop (`render()`), after advancing `dt`, move each tile: `tile.position.z += lastWaveSpeed * 0.5 * (dt * 1000) � matches pending-track formula exactly`
@@ -105,23 +107,42 @@ Check the existing wave/cart scroll math in `render()` to confirm the multiplier
 ### Material Setup
 
 ```js
-// In createScene(), alongside trackMat:
-const floorMat = new THREE.MeshStandardMaterial({
-  color: COLORS.BG_STAGE,
-  flatShading: true,
+const FLOOR_LAYER = 1; // declared before camera — floor tiles isolated from DirectionalLight
+
+// Floor-only ambient on layer 1 — uniform illumination, no directional gradient
+const floorAmbient = new THREE.AmbientLight(0xffffff, 0.45);
+floorAmbient.layers.set(FLOOR_LAYER);
+scene.add(floorAmbient);
+
+// Camera must see layer 1
+camera.layers.enable(FLOOR_LAYER);
+
+let floorMat = new THREE.MeshPhysicalMaterial({
+  color: COLORS.BG_VOID,  // darker than tracks (BG_STAGE) for visual separation
+  roughness: 1.0,
+  metalness: 0.0,
+  dithering: true,        // smooth gradient banding (works with SRGBColorSpace + ACESFilmic)
 });
 ```
 
-`flatShading: true` gives a slightly faceted look that aligns with the PS1 demake aesthetic. No `side: THREE.DoubleSide` needed — floor always viewed from above.
+`COLORS.BG_VOID = 0x0D0D1A` distinguishes the floor from the `BG_STAGE` track surface. `MeshPhysicalMaterial` reacts to scene lighting like the tracks do. The `FLOOR_LAYER` isolation prevents the `DirectionalLight` from creating circular brightness banding across the large plane — the floor receives only the uniform `floorAmbient` contribution.
+
+The renderer is configured with:
+```js
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.8; // ACES darkens by default; boost to restore perceived brightness
+```
+`dithering: true` on all materials eliminates colour banding in the ACES-tonemapped gradient.
 
 ### Tile Recycling Logic
 
-Two tiles of depth `FLOOR_TILE_DEPTH = 130` cover the full visible range from camera (`z ≈ 11`) to spawn (`z = -100`) and beyond fog (`z = -100`). Total coverage = 260 units — well beyond fog (100 units). The tiles recycle before the front edge reaches the player.
+Two tiles of depth `FLOOR_TILE_DEPTH = 300` cover the full visible range from camera (`z ≈ 11`) to spawn (`z = -100`) and well beyond fog (`z = -100`). Total coverage = 600 units. The tiles recycle before the front edge reaches the player.
 
 Initial positions (tile centred in Z):
 ```
-tile[0].position.z = -(FLOOR_TILE_DEPTH / 2) + FLOOR_CULL_Z   // = -65 + 20 = -45
-tile[1].position.z = -(FLOOR_TILE_DEPTH * 1.5) + FLOOR_CULL_Z // = -195 + 20 = -175
+tile[0].position.z = -(FLOOR_TILE_DEPTH / 2) + FLOOR_CULL_Z   // = -150 + 20 = -130
+tile[1].position.z = -(FLOOR_TILE_DEPTH * 1.5) + FLOOR_CULL_Z // = -450 + 20 = -430
 ```
 Both tiles at `y = FLOOR_Y`, `x = 0`.
 
@@ -136,7 +157,7 @@ for (const tile of floorTiles) {
 }
 ```
 
-The `FLOOR_CULL_Z + FLOOR_TILE_DEPTH / 2 = 20 + 65 = 85` threshold: a tile's front edge reaches z=85 (well behind camera at z≈11) before recycling. This gives a generous margin.
+The `FLOOR_CULL_Z + FLOOR_TILE_DEPTH / 2 = 20 + 150 = 170` threshold: a tile's front edge reaches z=170 (well behind camera at z≈11) before recycling. This gives a generous margin.
 
 ### Speed Formula (Match Existing Render Loop)
 
@@ -171,13 +192,10 @@ The `MeshStandardMaterial` floor will be lit by these. Looks correct out of the 
 
 Fog is `new THREE.Fog(COLORS.BG_VOID, 35, 100)` — starts at z=35 (world space, positive = toward player) and is fully opaque at z=100. The far end of the floor tiles will be hidden by fog before the recycle seam is visible. No special treatment needed.
 
-### Files to Modify
+### Files Modified
 
-**Only `static/game/SceneManager.js`** — this story adds purely to `createScene()`. No other files need changes.
-
-- `tokens.js`: no changes (floor uses existing `COLORS.BG_STAGE`)
-- `TrackSystem.js`: no changes
-- `SafeZoneRenderer.js`: no changes
+- `static/game/SceneManager.js` — floor plane, layer isolation, renderer config (tone mapping, color space, exposure)
+- `static/game/ui/SafeZoneRenderer.js` — `dithering: true` added to safe zone fill material (part of global dithering pass)
 
 ### Previous Story (7-0) Learnings
 
@@ -228,20 +246,26 @@ claude-sonnet-4-6
 
 ### Completion Notes List
 
-- Floor constants declared (FLOOR_Y, FLOOR_WIDTH, FLOOR_TILE_DEPTH, FLOOR_CULL_Z) as module-level in SceneManager.js
-- floorMat uses COLORS.BG_STAGE with flatShading:true — no hex literals
-- makeFloorTile() factory creates PlaneGeometry(80, 130) rotated -π/2
-- Two tiles initialized at z=-45 and z=-175 (both at y=-0.15)
-- Scroll formula matches pending-track formula: lastWaveSpeed * 0.5 * (dt * 1000)
-- Recycle threshold: tile.position.z > 85 → subtract 260 (seamless, no gap)
-- reset() disposes both geometries + shared material, recreates fresh tiles immediately
+- Floor constants: FLOOR_Y=-0.15, FLOOR_WIDTH=400, FLOOR_TILE_DEPTH=300, FLOOR_CULL_Z=20, FLOOR_LAYER=1
+- floorMat: MeshPhysicalMaterial, COLORS.BG_VOID, roughness:1.0, metalness:0.0, dithering:true
+- makeFloorTile() factory: PlaneGeometry(400, 300, 32, 32), rotated -π/2, tile.layers.set(1)
+- Two tiles at z=-130 and z=-430 (both at y=-0.15)
+- Dedicated floorAmbient (AmbientLight layer 1) — uniform illumination, no directional banding
+- camera.layers.enable(1) — floor tiles visible to camera
+- Renderer: SRGBColorSpace, ACESFilmicToneMapping, toneMappingExposure:1.8
+- dithering:true applied to all scene materials (tracks, carts, character, safe zones, floor)
+- Scroll formula: lastWaveSpeed * 0.5 * (dt * 1000) — matches pending-track formula
+- Recycle threshold: tile.position.z > 170 → subtract 600 (seamless, no gap)
+- reset() disposes both geometries + shared material, recreates fresh tiles on FLOOR_LAYER
 - 82/82 pytest tests pass; no regressions; no new console errors
 
 ### File List
 
 - `static/game/SceneManager.js`
+- `static/game/ui/SafeZoneRenderer.js`
 
 ## Change Log
 
 - 2026-05-27: Story 7-1 created
 - 2026-05-27: Implementation complete — status → review
+- 2026-05-27: Post-review visual tuning — BG_VOID colour, FLOOR_WIDTH 400, FLOOR_TILE_DEPTH 300, layer isolation, MeshPhysicalMaterial, dithering, ACESFilmic tone mapping
