@@ -1046,18 +1046,25 @@ export function createScene(canvas) {
       const leftClear  = bldgClearanceForSide('left');
       const rightClear = bldgClearanceForSide('right');
 
-      // Incoming diagonal cutoff: the incoming diagonal sits at groupZ + STRAIGHT_LEN/2 forward.
-      // Any building at Z > this value is inside the incoming diagonal zone and must be relocated.
-      // Since piece and buildings scroll at the same speed the relative gap is constant, so
-      // each building only needs relocating once (after relocation it stays behind the cutoff).
-      const incomingCutoff = variantPieceZ !== null ? variantPieceZ + STRAIGHT_LEN / 2 : null;
+      // Per-building incoming-diagonal check: the incoming diagonal hits a building at world X = bX
+      // at Z = variantPieceZ + STRAIGHT_LEN/2 + dX, where dX = bX − variantX (same 45° rule).
+      // Only relocate buildings whose Z actually reaches that intercept — not a broad cutoff.
+      // Since piece and buildings move at the same speed the relative gap is constant after relocation.
+      function inIncomingDiag(g, poolSide) {
+        if (variantPieceZ === null || !variantInfo) return false;
+        if (poolSide.toUpperCase() !== variantInfo.side) return false; // opposite side never hit
+        const sign = variantInfo.side === 'RIGHT' ? 1 : -1;
+        const bX   = g.userData.baseX + _worldOffsetX;
+        const dX   = Math.max(0, sign * (bX - variantInfo.variantX));
+        const hitZ = variantPieceZ + STRAIGHT_LEN / 2 + dX;
+        const d    = g.children[0].geometry.parameters.depth;
+        return g.position.z + d / 2 >= hitZ; // front face of building reached the intercept
+      }
 
       for (const g of leftBuildings) {
         g.position.z += bldgDelta;
         g.position.x = g.userData.baseX + _worldOffsetX;
-        const needsRecycle = g.position.z > BLDG_CULL_Z
-          || (incomingCutoff !== null && g.position.z > incomingCutoff);
-        if (needsRecycle) {
+        if (g.position.z > BLDG_CULL_Z || inIncomingDiag(g, 'left')) {
           const rear = leftBuildings.reduce((a, b) => a.position.z < b.position.z ? a : b);
           const rearFaceZ = rear.position.z - rear.children[0].geometry.parameters.depth / 2;
           const targetZ = variantPieceZ !== null
@@ -1070,9 +1077,7 @@ export function createScene(canvas) {
       for (const g of rightBuildings) {
         g.position.z += bldgDelta;
         g.position.x = g.userData.baseX + _worldOffsetX;
-        const needsRecycle = g.position.z > BLDG_CULL_Z
-          || (incomingCutoff !== null && g.position.z > incomingCutoff);
-        if (needsRecycle) {
+        if (g.position.z > BLDG_CULL_Z || inIncomingDiag(g, 'right')) {
           const rear = rightBuildings.reduce((a, b) => a.position.z < b.position.z ? a : b);
           const rearFaceZ = rear.position.z - rear.children[0].geometry.parameters.depth / 2;
           const targetZ = variantPieceZ !== null
