@@ -32,6 +32,7 @@ export function createScene(canvas) {
 
   const camBase = cameraForPitch(CAMERA_PITCH, CAMERA_DISTANCE);
   const camera = new THREE.PerspectiveCamera(55, (canvas.width / canvas.height) || 16 / 9, 0.1, 200);
+  camera.layers.enable(FLOOR_LAYER); // see floor tiles on layer 1
   camera.position.set(camBase.x, camBase.y, camBase.z);
   camera.lookAt(camBase.lookAt[0], camBase.lookAt[1], camBase.lookAt[2]);
 
@@ -42,6 +43,12 @@ export function createScene(canvas) {
   const sun = new THREE.DirectionalLight(0xffffff, 0.9);
   sun.position.set(4, 12, 8);
   scene.add(sun);
+
+  // Floor-only ambient light on layer 1 — floor receives uniform ambient only, not directional
+  const FLOOR_LAYER = 1;
+  const floorAmbient = new THREE.AmbientLight(0xffffff, 0.45);
+  floorAmbient.layers.set(FLOOR_LAYER);
+  scene.add(floorAmbient);
 
   const trackMat = new THREE.MeshStandardMaterial({ color: COLORS.BG_STAGE });
   const roofMat = new THREE.MeshStandardMaterial({ color: ROOF_COLOUR });
@@ -59,6 +66,7 @@ export function createScene(canvas) {
       floorMat
     );
     tile.rotation.x = -Math.PI / 2;
+    tile.layers.set(FLOOR_LAYER); // floor layer only — sun (layer 0) doesn't illuminate it
     return tile;
   }
   let floorTiles = [makeFloorTile(), makeFloorTile()];
