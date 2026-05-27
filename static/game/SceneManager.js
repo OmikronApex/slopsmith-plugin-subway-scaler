@@ -1011,57 +1011,54 @@ export function createScene(canvas) {
         _bldgTrackedOffsetX = _worldOffsetX;
       }
 
-      // Variant-piece gap: keep a clear zone from the outgoing diagonal rear to the incoming
-      // diagonal front — i.e. the full Z extent of the piece.
+      // Variant-piece gap: keep a clear zone around each active diagonal piece
+      // (propose = incoming before transition; dismiss = incoming after transition).
+      // Both pieces use the same variant side and the same clearance geometry.
       //
-      // Strategy: start draining a fixed world-distance before the piece begins moving so
-      // the zone is clear when the geometry arrives.  Lead time is derived from speed so
-      // it stays proportional: BLDG_GAP_LEAD_UNITS / (speedPxMs * 0.5).
-      // At the default wave speed (0.05 px/ms) this resolves to ~2 s; faster speeds get a
-      // shorter lead, clamped to 400 ms minimum (enough to drain the 12-building half-pool).
-      const BLDG_GAP_LEAD_UNITS = 50; // world units — tuned at default speed 0.05 px/ms
+      // Lead time is distance-based: BLDG_GAP_LEAD_UNITS / (speedPxMs * 0.5).
+      // At default speed (0.05 px/ms) → ~2 s; scales shorter at higher speeds,
+      // clamped to 400 ms minimum (enough to drain the 12-building half-pool).
+      const BLDG_GAP_LEAD_UNITS = 50;
       const nowGameMs = nowMs - gameStartTime;
-      const pieceGapActive = variantProposePiece !== null && (() => {
-        const leadMs = Math.max(400, BLDG_GAP_LEAD_UNITS / (variantProposePiece.speedPxMs * 0.5));
-        return nowGameMs >= variantProposePiece.spawnTimeMs - leadMs;
-      })();
-      const variantPieceZ = pieceGapActive ? variantProposePiece.mesh.position.z : null;
 
-      // Rear clearance: returns null for the non-variant side (no gap there).
-      // For the variant side, outgoing diagonal reaches -(STRAIGHT_LEN/2 + dX) from group
-      // centre, where dX = distance from variantX to outermost building.
+      function isPieceGapActive(piece) {
+        if (!piece) return false;
+        const leadMs = Math.max(400, BLDG_GAP_LEAD_UNITS / (piece.speedPxMs * 0.5));
+        return nowGameMs >= piece.spawnTimeMs - leadMs;
+      }
+
+      // Collect both active diagonal pieces that need a gap.
+      const activePieces = [variantProposePiece, variantDismissPiece]
+        .filter(p => isPieceGapActive(p));
+
+      // Rear clearance: null for the non-variant side (no gap there).
+      // Variant side: outgoing diagonal reaches -(STRAIGHT_LEN/2 + dX) from group centre.
       function bldgRearClearance(poolSide) {
         if (!variantInfo) return null;
         const { variantX, side: vSide } = variantInfo;
-        if (poolSide.toUpperCase() !== vSide) return null;  // opposite side: no gap
+        if (poolSide.toUpperCase() !== vSide) return null;
         const sign = vSide === 'RIGHT' ? 1 : -1;
         const maxBldgX = BLDG_X_INNER + BLDG_X_SPREAD + BLDG_W_MAX / 2;
         const dX = Math.max(0, maxBldgX - sign * variantX);
         return STRAIGHT_LEN / 2 + dX + 10;
       }
 
-      // Forward cutoff: the rear foot of the incoming diagonal = groupZ + STRAIGHT_LEN/2.
-      // Buildings from the player up to this point stay intact; only the gap between the
-      // two diagonals (straight section + diagonals) is drained.
-      const bldgFwdCutoff = variantPieceZ !== null
-        ? variantPieceZ + STRAIGHT_LEN / 2
-        : null;
-
       const leftClear  = bldgRearClearance('left');
       const rightClear = bldgRearClearance('right');
 
-      // Gradual zone drain: relocate the frontmost in-zone building (one per side per frame).
-      // Only runs for the variant side (clear !== null).
-      if (variantPieceZ !== null) {
+      // Gradual zone drain: one building per side per piece per frame.
+      for (const piece of activePieces) {
+        const pieceZ    = piece.mesh.position.z;
+        const fwdCutoff = pieceZ + STRAIGHT_LEN / 2;
         for (const [arr, side, clear] of [
           [leftBuildings,  'left',  leftClear],
           [rightBuildings, 'right', rightClear],
         ]) {
-          if (clear === null) continue;  // opposite side — no gap
-          const rearLimit = variantPieceZ - clear;
+          if (clear === null) continue;
+          const rearLimit = pieceZ - clear;
           let frontmost = null;
           for (const g of arr) {
-            if (g.position.z > rearLimit && g.position.z < bldgFwdCutoff) {
+            if (g.position.z > rearLimit && g.position.z < fwdCutoff) {
               if (!frontmost || g.position.z > frontmost.position.z) frontmost = g;
             }
           }
@@ -1074,6 +1071,16 @@ export function createScene(canvas) {
         }
       }
 
+      // Spawn cap: most restrictive (lowest Z) across all active pieces, per side.
+      function spawnCap(clear) {
+        if (clear === null || activePieces.length === 0) return null;
+        let cap = Infinity;
+        for (const p of activePieces) cap = Math.min(cap, p.mesh.position.z - clear);
+        return isFinite(cap) ? cap : null;
+      }
+      const leftSpawnCap  = spawnCap(leftClear);
+      const rightSpawnCap = spawnCap(rightClear);
+
       // Scroll and recycle active buildings — normal BLDG_CULL_Z recycling only.
       for (const g of leftBuildings) {
         g.position.z += bldgDelta;
@@ -1081,8 +1088,8 @@ export function createScene(canvas) {
         if (g.position.z > BLDG_CULL_Z) {
           const rear = leftBuildings.reduce((a, b) => a.position.z < b.position.z ? a : b);
           const rearFaceZ = rear.position.z - rear.children[0].geometry.parameters.depth / 2;
-          const targetZ = (variantPieceZ !== null && leftClear !== null)
-            ? Math.min(rearFaceZ, variantPieceZ - leftClear)
+          const targetZ = leftSpawnCap !== null
+            ? Math.min(rearFaceZ, leftSpawnCap)
             : rearFaceZ;
           placeBuildingBehindPool(g, 'left', leftBuildings, targetZ);
           g.position.x = g.userData.baseX + _worldOffsetX;
@@ -1094,8 +1101,8 @@ export function createScene(canvas) {
         if (g.position.z > BLDG_CULL_Z) {
           const rear = rightBuildings.reduce((a, b) => a.position.z < b.position.z ? a : b);
           const rearFaceZ = rear.position.z - rear.children[0].geometry.parameters.depth / 2;
-          const targetZ = (variantPieceZ !== null && rightClear !== null)
-            ? Math.min(rearFaceZ, variantPieceZ - rightClear)
+          const targetZ = rightSpawnCap !== null
+            ? Math.min(rearFaceZ, rightSpawnCap)
             : rearFaceZ;
           placeBuildingBehindPool(g, 'right', rightBuildings, targetZ);
           g.position.x = g.userData.baseX + _worldOffsetX;
