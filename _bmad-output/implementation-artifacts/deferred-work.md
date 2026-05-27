@@ -96,3 +96,9 @@
 - `paletteIdx=0` fallback when `anchorString` is null ignores available `transitionWave.safe_string` — variant SZ always renders with red (index 0) for null-anchor case; consider using `transitionWave.safe_string` as a better fallback [SceneManager.js:388].
 - `paletteIdx` conversion (`stringCount - string`) duplicated in both `SceneManager.js` and `SafeZoneRenderer.js` without a shared utility — if string indexing convention changes, both sites must be updated independently [SceneManager.js:388, SafeZoneRenderer.js:109].
 - Stale-zone cleanup intentionally skips `fill.geometry.dispose()` (it's the shared `this.geometry`) but no comment explains this invariant — future refactor could accidentally add the dispose call and corrupt all remaining zones [SafeZoneRenderer.js:95].
+
+## Deferred from: code review of 7-1-floor-plane-ground-surface-beneath-tracks (2026-05-27)
+
+- Use-after-free risk: `floorMat.dispose()` called in `reset()` could theoretically race a mid-flight render frame — JS is single-threaded so RAF frames never interleave; theoretical only [SceneManager.js].
+- `makeFloorTile` closure captures `floorMat` by variable reference; correctness depends on `floorMat` being reassigned before `makeFloorTile()` is called in `reset()` — fragile to reordering; consider extracting a `createFloorTiles()` helper [SceneManager.js].
+- `PlaneGeometry(400, 300, 32, 32)` alloc/dealloc on every `reset()` — 1024 quads × 2 tiles recreated each call; on low-end hardware or rapid resets this causes GPU memory churn; tiles could be repositioned instead of destroyed [SceneManager.js].

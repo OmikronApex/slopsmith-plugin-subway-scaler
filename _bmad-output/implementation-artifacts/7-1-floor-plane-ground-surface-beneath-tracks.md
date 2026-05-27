@@ -1,6 +1,6 @@
 # Story 7.1: Floor Plane — Ground Surface Beneath Tracks
 
-Status: review
+Status: done
 
 ## Story
 
@@ -73,6 +73,17 @@ All existing E2E tests pass with no new console errors.
 - [x] Task 4: E2E regression check
   - [x] 4.1 `pytest tests/ -x -q � 82/82 passed, no regressions` — confirm all existing specs pass, no new console errors
   - [x] 4.2 Manual visual check: pending (purely visual, no automated gate)
+
+### Senior Developer Review (AI)
+
+**Outcome:** Approved — 0 patches, 0 decision-needed, 3 deferred, 8 dismissed
+**Date:** 2026-05-27
+**Layers:** Blind Hunter · Edge Case Hunter · Acceptance Auditor
+
+#### Action Items
+- [x] [Review][Defer] Use-after-free risk: `floorMat.dispose()` during render frame [SceneManager.js] — deferred, JS single-threaded; RAF frames never interleave; theoretical only
+- [x] [Review][Defer] `makeFloorTile` closure order fragility in `reset()` [SceneManager.js] — deferred, correct today; fragile to reordering; low priority
+- [x] [Review][Defer] `PlaneGeometry(32×32)` GPU alloc churn on every `reset()` [SceneManager.js] — deferred, performance note for low-end hardware; not a correctness bug
 
 ---
 
