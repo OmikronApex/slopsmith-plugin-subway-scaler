@@ -397,7 +397,7 @@ export function createScene(canvas) {
     const szMat = new THREE.MeshStandardMaterial({
       color: fillColor,
       transparent: true,
-      opacity: 0.15,
+      opacity: 0.75,
       depthWrite: false,
       polygonOffset: true,
       polygonOffsetFactor: 1,

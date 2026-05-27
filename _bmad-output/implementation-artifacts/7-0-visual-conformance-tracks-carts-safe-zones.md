@@ -26,7 +26,7 @@ And `COLORS.ACCENT` (`0xFFB800`) is not used on any cart.
 **AC-3 — Safe zone fill plane uses `STRING_SAFE_ZONE_FILLS[i]` at `opacity: 0.15`:**
 Given a safe zone is active on track lane at string index `i`,
 When the safe-zone indicator is rendered,
-Then a translucent plane fills the safe-zone bounds with material colour `STRING_SAFE_ZONE_FILLS[i]`, `opacity: 0.15`, `transparent: true`, `depthWrite: false`, `polygonOffset: true`, `polygonOffsetFactor: 1`, `polygonOffsetUnits: 1`.
+Then a translucent plane fills the safe-zone bounds with material colour `STRING_SAFE_ZONE_FILLS[i]`, `opacity: 0.75`, `transparent: true`, `depthWrite: false`, `polygonOffset: true`, `polygonOffsetFactor: 1`, `polygonOffsetUnits: 1`.
 
 **AC-4 — Safe zone border uses `EdgesGeometry` with neon emissive:**
 And a border mesh (`EdgesGeometry` wrapping a `PlaneGeometry` matching the fill plane) surrounds the perimeter with colour `STRING_COLORS[i]`, `emissiveIntensity: EMISSIVE_SAFE_ZONE_BORDER` (`0.7`),
@@ -257,3 +257,4 @@ claude-sonnet-4-6
 ## Change Log
 
 - 2026-05-27: Story 7-0 implemented — token conformance for tracks (BG_STAGE), carts (DANGER), safe zones (STRING_SAFE_ZONE_FILLS fill + STRING_COLORS EdgesGeometry border)
+- 2026-05-27: Safe zone fill opacity increased 0.15 → 0.75 for improved visibility (AC-3 updated accordingly); applied same opacity to variant safe zone in SceneManager.js
