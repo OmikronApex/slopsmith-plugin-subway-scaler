@@ -79,6 +79,100 @@ export function createScene(canvas) {
   floorTiles.forEach(t => scene.add(t));
   // ─────────────────────────────────────────────────────────────────────────
 
+  // ─── Buildings (story 7-2) ───────────────────────────────────────────────
+  // ── Lighting layer split ──────────────────────────────────────────────────
+  // FLOOR_LAYER = 1: floor tiles receive ambient-only via a dedicated AmbientLight.
+  //   Reason: DirectionalLight on a large flat plane creates circular brightness
+  //   banding due to per-vertex lighting interpolation across huge triangles.
+  // Buildings stay on layer 0: they receive DirectionalLight (sun) as well as
+  //   ambient. This gives them bright tops and dark sides — the depth cue that
+  //   makes box silhouettes read as solid 3D forms rather than flat sprites.
+  //   Different surface, different problem, different solution.
+  // ─────────────────────────────────────────────────────────────────────────
+  const BLDG_POOL_SIZE   = 12;    // groups per side
+  const BLDG_MIN_H       = 2.0;   // min height
+  const BLDG_MAX_H       = 8.0;   // max height
+  const BLDG_W_MIN       = 1.5;   // min width (X)
+  const BLDG_W_MAX       = 4.0;   // max width
+  const BLDG_D_MIN       = 2.0;   // min depth (Z)
+  const BLDG_D_MAX       = 5.0;   // max depth
+  const BLDG_X_INNER     = 12;    // inner edge X offset from centre (per side)
+  const BLDG_X_SPREAD    = 6;     // buildings scatter up to this far outward of BLDG_X_INNER
+  const BLDG_SPAWN_Z     = -115;  // Z at which buildings are (re)spawned
+  const BLDG_CULL_Z      = 20;    // Z threshold — recycle when building.position.z > this
+  const BLDG_NEAR_CUTOFF = -15;   // buildings only at z ≤ this (side-street gap)
+
+  // Shared materials — let so reset() can dispose and recreate.
+  let bldgBodyMat = new THREE.MeshStandardMaterial({
+    color: COLORS.BG_NEAR,
+    flatShading: true,
+    dithering: true,
+  });
+  let bldgWindowMat = new THREE.MeshStandardMaterial({
+    color: COLORS.TEXT_PRIMARY,
+    emissive: COLORS.TEXT_PRIMARY,
+    emissiveIntensity: 0.6,
+    flatShading: true,
+    dithering: true,
+  });
+
+  function randomiseBuildingGroup(group, side) {
+    const h = BLDG_MIN_H + Math.random() * (BLDG_MAX_H - BLDG_MIN_H);
+    const w = BLDG_W_MIN + Math.random() * (BLDG_W_MAX - BLDG_W_MIN);
+    const d = BLDG_D_MIN + Math.random() * (BLDG_D_MAX - BLDG_D_MIN);
+    // body
+    const body = group.children[0];
+    body.geometry.dispose();
+    body.geometry = new THREE.BoxGeometry(w, h, d);
+    body.position.set(0, h / 2, 0); // base sits at y=0 (floor level)
+    // window — always dispose before reassigning (symmetric disposal — no mid-game VRAM accumulation)
+    const win = group.children[1];
+    const hasWindow = Math.random() < 0.55; // ~55% density — bustling night city
+    win.geometry.dispose(); // dispose regardless of new state
+    if (hasWindow) {
+      win.geometry = new THREE.BoxGeometry(w * 0.5, h * 0.25, 0.05);
+      win.position.set(0, h * 0.6, d / 2 + 0.01); // front face
+      win.visible = true;
+    } else {
+      win.geometry = new THREE.BufferGeometry(); // cheap empty placeholder
+      win.visible = false;
+    }
+    // X position — inner edge at BLDG_X_INNER, scatter outward
+    const xOffset = BLDG_X_INNER + w / 2 + Math.random() * BLDG_X_SPREAD;
+    group.position.x = side === 'left' ? -xOffset : xOffset;
+  }
+
+  function makeBuildingGroup() {
+    const group = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), bldgBodyMat);
+    const win  = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.25, 0.05), bldgWindowMat);
+    win.visible = false;
+    group.add(body, win);
+    return group;
+  }
+
+  let leftBuildings  = [];
+  let rightBuildings = [];
+
+  function createBuildingPool() {
+    const bldgZRange = Math.abs(BLDG_NEAR_CUTOFF - BLDG_SPAWN_Z);
+    leftBuildings  = [];
+    rightBuildings = [];
+    for (let i = 0; i < BLDG_POOL_SIZE; i++) {
+      for (const [arr, side] of [[leftBuildings, 'left'], [rightBuildings, 'right']]) {
+        const g = makeBuildingGroup();
+        randomiseBuildingGroup(g, side);
+        // Spread evenly across Z range from SPAWN_Z to NEAR_CUTOFF — no visible pop-in at start.
+        g.position.z = BLDG_SPAWN_Z + (i / BLDG_POOL_SIZE) * bldgZRange;
+        scene.add(g);
+        arr.push(g);
+      }
+    }
+  }
+
+  createBuildingPool();
+  // ─────────────────────────────────────────────────────────────────────────
+
   const bodyMatByColour = new Map();
   function bodyMaterial(colourHex) {
     let m = bodyMatByColour.get(colourHex);
@@ -264,6 +358,27 @@ export function createScene(canvas) {
     floorTiles[0].position.set(0, FLOOR_Y, -(FLOOR_TILE_DEPTH / 2) + FLOOR_CULL_Z);
     floorTiles[1].position.set(0, FLOOR_Y, -(FLOOR_TILE_DEPTH * 1.5) + FLOOR_CULL_Z);
     floorTiles.forEach(t => scene.add(t));
+
+    // Dispose buildings (story 7-2) — remove all groups, dispose geometries and shared materials.
+    for (const g of [...leftBuildings, ...rightBuildings]) {
+      scene.remove(g);
+      for (const child of g.children) child.geometry.dispose();
+    }
+    bldgBodyMat.dispose();
+    bldgWindowMat.dispose();
+    bldgBodyMat = new THREE.MeshStandardMaterial({
+      color: COLORS.BG_NEAR,
+      flatShading: true,
+      dithering: true,
+    });
+    bldgWindowMat = new THREE.MeshStandardMaterial({
+      color: COLORS.TEXT_PRIMARY,
+      emissive: COLORS.TEXT_PRIMARY,
+      emissiveIntensity: 0.6,
+      flatShading: true,
+      dithering: true,
+    });
+    createBuildingPool();
   }
 
   // ─── Variant geometry helpers (story 5-5) ─────────────────────────────────
@@ -835,6 +950,25 @@ export function createScene(canvas) {
         tile.position.z += floorDelta;
         if (tile.position.z > FLOOR_CULL_Z + FLOOR_TILE_DEPTH / 2) {
           tile.position.z -= FLOOR_TILE_DEPTH * 2;
+        }
+      }
+    }
+
+    // Building scroll (story 7-2) — same speed formula as floor and pending tracks.
+    {
+      const bldgDelta = lastWaveSpeed * 0.5 * (dt * 1000);
+      for (const g of leftBuildings) {
+        g.position.z += bldgDelta;
+        if (g.position.z > BLDG_CULL_Z) {
+          randomiseBuildingGroup(g, 'left');
+          g.position.z = BLDG_SPAWN_Z;
+        }
+      }
+      for (const g of rightBuildings) {
+        g.position.z += bldgDelta;
+        if (g.position.z > BLDG_CULL_Z) {
+          randomiseBuildingGroup(g, 'right');
+          g.position.z = BLDG_SPAWN_Z;
         }
       }
     }

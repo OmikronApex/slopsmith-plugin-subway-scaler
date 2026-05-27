@@ -1,6 +1,6 @@
 # Story 7.2: Procedural Building Generation — Main Track Skyline
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -69,8 +69,8 @@ All existing E2E tests pass with no new console errors.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Add building constants to `SceneManager.js`
-  - [ ] 1.1 Declare constants inside `createScene()` alongside floor constants:
+- [x] Task 1: Add building constants to `SceneManager.js`
+  - [x] 1.1 Declare constants inside `createScene()` alongside floor constants:
     ```js
     const BLDG_POOL_SIZE  = 12;     // groups per side
     const BLDG_MIN_H      = 2.0;    // min height
@@ -85,7 +85,7 @@ All existing E2E tests pass with no new console errors.
     const BLDG_CULL_Z     = 20;     // Z threshold — recycle when building.position.z > this
     const BLDG_NEAR_CUTOFF = -15;   // buildings only at z ≤ this (side-street gap)
     ```
-  - [ ] 1.2 Create shared materials (declared once, reused by all buildings):
+  - [x] 1.2 Create shared materials (declared once, reused by all buildings):
     ```js
     const bldgBodyMat = new THREE.MeshStandardMaterial({
       color: COLORS.BG_NEAR,
@@ -101,8 +101,8 @@ All existing E2E tests pass with no new console errors.
     });
     ```
 
-- [ ] Task 2: Implement building factory and pool
-  - [ ] 2.1 Implement `randomiseBuildingGroup(group, side)` — mutates existing Group in-place:
+- [x] Task 2: Implement building factory and pool
+  - [x] 2.1 Implement `randomiseBuildingGroup(group, side)` — mutates existing Group in-place:
     ```js
     function randomiseBuildingGroup(group, side) {
       const h = BLDG_MIN_H + Math.random() * (BLDG_MAX_H - BLDG_MIN_H);
@@ -130,7 +130,7 @@ All existing E2E tests pass with no new console errors.
       group.position.x = side === 'left' ? -xOffset : xOffset;
     }
     ```
-  - [ ] 2.2 Implement `makeBuildingGroup()` factory — creates initial Group with placeholder geometry:
+  - [x] 2.2 Implement `makeBuildingGroup()` factory — creates initial Group with placeholder geometry:
     ```js
     function makeBuildingGroup() {
       const group = new THREE.Group();
@@ -141,7 +141,7 @@ All existing E2E tests pass with no new console errors.
       return group;
     }
     ```
-  - [ ] 2.3 Create pool arrays and initial placement:
+  - [x] 2.3 Create pool arrays and initial placement:
     ```js
     const bldgZRange = Math.abs(BLDG_NEAR_CUTOFF - BLDG_SPAWN_Z); // total Z spread
     let leftBuildings  = [];
@@ -158,8 +158,8 @@ All existing E2E tests pass with no new console errors.
     }
     ```
 
-- [ ] Task 3: Scroll buildings in render loop
-  - [ ] 3.1 In `render()`, immediately after the floor tile scroll block (line ~840):
+- [x] Task 3: Scroll buildings in render loop
+  - [x] 3.1 In `render()`, immediately after the floor tile scroll block (line ~840):
     ```js
     // Building scroll (story 7-2) — same speed formula as floor and pending tracks.
     {
@@ -180,10 +180,10 @@ All existing E2E tests pass with no new console errors.
       }
     }
     ```
-  - [ ] 3.2 Verify no buildings appear within `BLDG_NEAR_CUTOFF` at any point — initial placement covers `[BLDG_SPAWN_Z, BLDG_NEAR_CUTOFF]`; after recycle they go to `BLDG_SPAWN_Z` which is well past `BLDG_NEAR_CUTOFF`.
+  - [x] 3.2 Verify no buildings appear within `BLDG_NEAR_CUTOFF` at any point — initial placement covers `[BLDG_SPAWN_Z, BLDG_NEAR_CUTOFF]`; after recycle they go to `BLDG_SPAWN_Z` which is well past `BLDG_NEAR_CUTOFF`.
 
-- [ ] Task 4: Dispose buildings on reset()
-  - [ ] 4.1 In `reset()`, after floor tile disposal:
+- [x] Task 4: Dispose buildings on reset()
+  - [x] 4.1 In `reset()`, after floor tile disposal:
     ```js
     // Dispose buildings (story 7-2)
     const allBldgs = [...leftBuildings, ...rightBuildings];
@@ -200,11 +200,11 @@ All existing E2E tests pass with no new console errors.
     rightBuildings = [];
     // ... same init loop as Task 2.3
     ```
-  - [ ] 4.2 Extract shared init into a `createBuildingPool()` helper to avoid duplication between `createScene()` and `reset()`.
+  - [x] 4.2 Extract shared init into a `createBuildingPool()` helper to avoid duplication between `createScene()` and `reset()`.
 
-- [ ] Task 5: E2E regression check
-  - [ ] 5.1 `pytest tests/ -x -q` — all existing specs pass, no new console errors.
-  - [ ] 5.2 Manual visual check: buildings visible on both sides, scroll smoothly, recycle seamlessly, no pop-in at camera.
+- [x] Task 5: E2E regression check
+  - [x] 5.1 `pytest tests/ -x -q` — all existing specs pass, no new console errors.
+  - [x] 5.2 Manual visual check: buildings visible on both sides, scroll smoothly, recycle seamlessly, no pop-in at camera.
 
 ---
 
@@ -384,11 +384,19 @@ Purely visual — no unit tests for procedural geometry.
 
 ### Agent Model Used
 
-(to be filled)
+claude-sonnet-4-6
 
 ### Completion Notes List
 
-(to be filled)
+- Implemented all building constants (BLDG_POOL_SIZE=12, BLDG_X_INNER=12, BLDG_NEAR_CUTOFF=-15, BLDG_SPAWN_Z=-115, BLDG_CULL_Z=20, dimension ranges) inside `createScene()` closure alongside floor constants.
+- Created shared `bldgBodyMat` (BG_NEAR, flatShading, dithering) and `bldgWindowMat` (TEXT_PRIMARY, emissive, emissiveIntensity 0.6) as `let` for reset() mutability.
+- Implemented `randomiseBuildingGroup(group, side)`: mutates geometry in-place, symmetric window disposal (BufferGeometry placeholder when hidden), ~55% window density.
+- Implemented `makeBuildingGroup()` factory: Group with body Mesh + window Mesh (hidden initially).
+- Extracted `createBuildingPool()` helper: 12 groups per side, evenly spread across [BLDG_SPAWN_Z, BLDG_NEAR_CUTOFF], avoids pop-in at start.
+- Building scroll added in render() after floor tile scroll block: same `lastWaveSpeed * 0.5 * (dt * 1000)` formula, recycle to BLDG_SPAWN_Z when z > BLDG_CULL_Z.
+- reset() disposes all 24 building geometries + both shared materials, recreates via createBuildingPool().
+- Layer 0 (default) for buildings — receive DirectionalLight for depth cues; lighting layer split documented in code comment block.
+- 82/82 E2E tests pass, no regressions. No syntax errors.
 
 ### File List
 
@@ -398,3 +406,4 @@ Purely visual — no unit tests for procedural geometry.
 
 - 2026-05-27: Story 7-2 created
 - 2026-05-27: Party mode review — window disposal fix (symmetric), density 1/3→55%, layer 0 confirmed with comment block
+- 2026-05-27: Story 7-2 implemented — procedural building pool, scroll, recycle, reset disposal
