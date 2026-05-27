@@ -1088,35 +1088,46 @@ export function createScene(canvas) {
       const activePieces = [variantProposePiece, variantDismissPiece]
         .filter(p => isPieceGapActive(p));
 
-      // Rear clearance: null for the non-variant side (no gap there).
-      // Variant side: outgoing diagonal reaches -(STRAIGHT_LEN/2 + dX) from group centre.
-      function bldgRearClearance(poolSide) {
+      // Rear clearance — returns null (no gap) for the wrong side.
+      //
+      // Propose piece: diagonal sweeps from main track toward variantX.
+      //   Gap needed on the VARIANT side (same as variantInfo.side).
+      // Dismiss piece: diagonal sweeps from variantX away from the new track.
+      //   Seen from the new track the gap is needed on the INNER side (opposite).
+      function bldgRearClearance(poolSide, piece) {
         if (!variantInfo) return null;
         const { variantX, side: vSide } = variantInfo;
-        if (poolSide.toUpperCase() !== vSide) return null;
         const sign = vSide === 'RIGHT' ? 1 : -1;
+        const gapSide = (piece === variantDismissPiece)
+          ? (vSide === 'RIGHT' ? 'LEFT' : 'RIGHT')
+          : vSide;
+        if (poolSide.toUpperCase() !== gapSide) return null;
         const maxBldgX = BLDG_X_INNER + BLDG_X_SPREAD + BLDG_W_MAX / 2;
         const dX = Math.max(0, maxBldgX - sign * variantX);
         return STRAIGHT_LEN / 2 + dX + 10;
       }
 
-      const leftClear  = bldgRearClearance('left');
-      const rightClear = bldgRearClearance('right');
-
       // Gradual zone drain: one building per side per piece per frame.
+      // Spawn cap per side: most restrictive Z across all active pieces.
+      const leftSpawnCap  = { val: null };
+      const rightSpawnCap = { val: null };
+
       for (const piece of activePieces) {
         const pieceZ    = piece.mesh.position.z;
-        // Propose: player hasn't moved yet — preserve buildings close to player.
-        // Dismiss: character traverses the full diagonal — clear the entire path.
+        // Propose: preserve buildings close to player (player hasn't moved yet).
+        // Dismiss: clear the full diagonal traversal path.
         const fwdCutoff = piece === variantDismissPiece
           ? pieceZ + STRAIGHT_LEN / 2 + DIAG_LEN + 5
           : pieceZ + STRAIGHT_LEN / 2;
-        for (const [arr, side, clear] of [
-          [leftBuildings,  'left',  leftClear],
-          [rightBuildings, 'right', rightClear],
+        for (const [arr, side, capObj] of [
+          [leftBuildings,  'left',  leftSpawnCap],
+          [rightBuildings, 'right', rightSpawnCap],
         ]) {
+          const clear = bldgRearClearance(side, piece);
           if (clear === null) continue;
           const rearLimit = pieceZ - clear;
+          // Update spawn cap for this side.
+          if (capObj.val === null || rearLimit < capObj.val) capObj.val = rearLimit;
           let frontmost = null;
           for (const g of arr) {
             if (g.position.z > rearLimit && g.position.z < fwdCutoff) {
@@ -1132,16 +1143,6 @@ export function createScene(canvas) {
         }
       }
 
-      // Spawn cap: most restrictive (lowest Z) across all active pieces, per side.
-      function spawnCap(clear) {
-        if (clear === null || activePieces.length === 0) return null;
-        let cap = Infinity;
-        for (const p of activePieces) cap = Math.min(cap, p.mesh.position.z - clear);
-        return isFinite(cap) ? cap : null;
-      }
-      const leftSpawnCap  = spawnCap(leftClear);
-      const rightSpawnCap = spawnCap(rightClear);
-
       // Scroll and recycle active buildings — normal BLDG_CULL_Z recycling only.
       for (const g of leftBuildings) {
         g.position.z += bldgDelta;
@@ -1149,8 +1150,8 @@ export function createScene(canvas) {
         if (g.position.z > BLDG_CULL_Z) {
           const rear = leftBuildings.reduce((a, b) => a.position.z < b.position.z ? a : b);
           const rearFaceZ = rear.position.z - rear.children[0].geometry.parameters.depth / 2;
-          const targetZ = leftSpawnCap !== null
-            ? Math.min(rearFaceZ, leftSpawnCap)
+          const targetZ = leftSpawnCap.val !== null
+            ? Math.min(rearFaceZ, leftSpawnCap.val)
             : rearFaceZ;
           placeBuildingBehindPool(g, 'left', leftBuildings, targetZ);
           g.position.x = g.userData.baseX + _worldOffsetX;
@@ -1162,8 +1163,8 @@ export function createScene(canvas) {
         if (g.position.z > BLDG_CULL_Z) {
           const rear = rightBuildings.reduce((a, b) => a.position.z < b.position.z ? a : b);
           const rearFaceZ = rear.position.z - rear.children[0].geometry.parameters.depth / 2;
-          const targetZ = rightSpawnCap !== null
-            ? Math.min(rearFaceZ, rightSpawnCap)
+          const targetZ = rightSpawnCap.val !== null
+            ? Math.min(rearFaceZ, rightSpawnCap.val)
             : rearFaceZ;
           placeBuildingBehindPool(g, 'right', rightBuildings, targetZ);
           g.position.x = g.userData.baseX + _worldOffsetX;
