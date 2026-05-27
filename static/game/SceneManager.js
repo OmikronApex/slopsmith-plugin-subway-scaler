@@ -1046,10 +1046,18 @@ export function createScene(canvas) {
       const leftClear  = bldgClearanceForSide('left');
       const rightClear = bldgClearanceForSide('right');
 
+      // Incoming diagonal cutoff: the incoming diagonal sits at groupZ + STRAIGHT_LEN/2 forward.
+      // Any building at Z > this value is inside the incoming diagonal zone and must be relocated.
+      // Since piece and buildings scroll at the same speed the relative gap is constant, so
+      // each building only needs relocating once (after relocation it stays behind the cutoff).
+      const incomingCutoff = variantPieceZ !== null ? variantPieceZ + STRAIGHT_LEN / 2 : null;
+
       for (const g of leftBuildings) {
         g.position.z += bldgDelta;
         g.position.x = g.userData.baseX + _worldOffsetX;
-        if (g.position.z > BLDG_CULL_Z) {
+        const needsRecycle = g.position.z > BLDG_CULL_Z
+          || (incomingCutoff !== null && g.position.z > incomingCutoff);
+        if (needsRecycle) {
           const rear = leftBuildings.reduce((a, b) => a.position.z < b.position.z ? a : b);
           const rearFaceZ = rear.position.z - rear.children[0].geometry.parameters.depth / 2;
           const targetZ = variantPieceZ !== null
@@ -1062,7 +1070,9 @@ export function createScene(canvas) {
       for (const g of rightBuildings) {
         g.position.z += bldgDelta;
         g.position.x = g.userData.baseX + _worldOffsetX;
-        if (g.position.z > BLDG_CULL_Z) {
+        const needsRecycle = g.position.z > BLDG_CULL_Z
+          || (incomingCutoff !== null && g.position.z > incomingCutoff);
+        if (needsRecycle) {
           const rear = rightBuildings.reduce((a, b) => a.position.z < b.position.z ? a : b);
           const rearFaceZ = rear.position.z - rear.children[0].geometry.parameters.depth / 2;
           const targetZ = variantPieceZ !== null
