@@ -139,9 +139,11 @@ export function createScene(canvas) {
     }
     // X position — inner edge at BLDG_X_INNER, scatter outward.
     // Store as baseX so the render loop can add _worldOffsetX each frame (variant track shift).
+    // Note: do NOT read _worldOffsetX here — this function is called during createBuildingPool()
+    // which runs before _worldOffsetX is declared. The render loop applies the offset every frame.
     const xOffset = BLDG_X_INNER + w / 2 + Math.random() * BLDG_X_SPREAD;
     group.userData.baseX = side === 'left' ? -xOffset : xOffset;
-    group.position.x = group.userData.baseX + _worldOffsetX;
+    group.position.x = group.userData.baseX; // render loop adds _worldOffsetX each frame
   }
 
   function makeBuildingGroup() {
