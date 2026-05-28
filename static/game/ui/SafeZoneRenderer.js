@@ -1,6 +1,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { STRING_COLORS, STRING_SAFE_ZONE_FILLS } from './tokens.js';
 import { SPAWN_Z } from '../TrackSystem.js';
+import { applyWorldCurve } from '../SceneManager.js';
 
 const SAFE_ZONE_DEPTH = 20;
 
@@ -17,11 +18,29 @@ function makeLabel(text) {
   ctx.lineWidth = 4;
   ctx.strokeText(text, 32, 32);
   ctx.fillText(text, 32, 32);
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas) }));
-  sprite.scale.set(0.8, 0.8, 1);
-  // Safe zone has rotation.x = -π/2, so local +Z maps to world +Y.
-  sprite.position.set(0, 0, 0.5);
-  return sprite;
+  // Upright textured quad (not a Sprite): a Sprite billboards via three's SpritePlugin
+  // and cannot be touched by the world-curve vertex shader, so it floats off the
+  // dropped track. A curve-wrapped mesh laid FLAT on the track reads poorly at the
+  // camera's shallow pitch, so we stand it VERTICAL like a little sign: being thin in
+  // Z, the bend translates it straight down onto the curve (same as buildings) while
+  // keeping it upright and readable. Parent safe zone is rotated -π/2, so
+  // rotation.x=+π/2 cancels that → the quad stands world-upright facing the camera
+  // (+Z). Local +Z maps to world +Y, so position z raises its base onto the track.
+  // Material params match the SceneManager prewarm label exactly so the compiled
+  // program is reused (no spike). renderOrder draws it over fill + border.
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.8, 0.8),
+    applyWorldCurve(new THREE.MeshBasicMaterial({
+      map: new THREE.CanvasTexture(canvas),
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    }))
+  );
+  mesh.rotation.x = Math.PI / 2;
+  mesh.position.set(0, 0, 0.4);
+  mesh.renderOrder = 2;
+  return mesh;
 }
 
 /**
@@ -33,7 +52,7 @@ export class SafeZoneRenderer {
     this.scene = scene;
     this.zones = new Map(); // wave_id -> { fill: Mesh, border: LineSegments }
     // Shared plane geometry reused for both fill and border EdgeGeometry source.
-    this.geometry = new THREE.PlaneGeometry(1.2, SAFE_ZONE_DEPTH);
+    this.geometry = new THREE.PlaneGeometry(1.2, SAFE_ZONE_DEPTH, 1, 16);
   }
 
   // Build a { fill, border } zone pair for a given low→high palette index.
@@ -47,7 +66,7 @@ export class SafeZoneRenderer {
 
     const fill = new THREE.Mesh(
       this.geometry,
-      new THREE.MeshStandardMaterial({
+      applyWorldCurve(new THREE.MeshStandardMaterial({
         color: fillColor,
         transparent: true,
         opacity: 0.75,
@@ -57,7 +76,7 @@ export class SafeZoneRenderer {
         polygonOffsetUnits: 1,
         side: THREE.DoubleSide,
         dithering: true,
-      })
+      }))
     );
     fill.renderOrder = 0;
     fill.rotation.x = -Math.PI / 2;
@@ -65,7 +84,7 @@ export class SafeZoneRenderer {
     // EdgesGeometry on PlaneGeometry = exactly 4 perimeter edges, no internal diagonals.
     const border = new THREE.LineSegments(
       new THREE.EdgesGeometry(this.geometry),
-      new THREE.LineBasicMaterial({ color: borderColor })
+      applyWorldCurve(new THREE.LineBasicMaterial({ color: borderColor }))
     );
     border.renderOrder = 1;
     border.rotation.x = -Math.PI / 2;

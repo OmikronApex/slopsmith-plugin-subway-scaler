@@ -1,6 +1,8 @@
 # Story 7.4: Procedural Buildings — Variant Geometry
 
-Status: ready-for-dev
+Status: cancelled
+
+> **Retired 2026-05-28** — implementation no longer needed. Not for development.
 
 ## Story
 

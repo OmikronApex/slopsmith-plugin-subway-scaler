@@ -6,7 +6,7 @@
 
 import * as THREE from './vendor/three.module.js';
 import { laneX, cameraForPitch, SPAWN_Z, LANE_X_SCALE } from './TrackSystem.js';
-import { COLORS, colourForString, STRING_COLORS, STRING_SAFE_ZONE_FILLS } from './ui/tokens.js';
+import { COLORS, colourForString, STRING_COLORS, STRING_SAFE_ZONE_FILLS, CURVED_WORLD, WORLD_CURVE_STRENGTH } from './ui/tokens.js';
 
 const CHAR_Y = 1.1;
 const FRONT_Z = 0;
@@ -21,6 +21,52 @@ const PIECE_H = 0.06;             // Track piece height
 const STRAIGHT_LEN = 60;          // Z length of variant parallel track = 3 wave spacings (story 5-7 adjustment)
 const DIAG_LEN = 45;              // Z length of diagonal section in bend piece (~3× to reach frame edge)
 // SEG_LEN = 25 removed — variant track uses fixed 3-piece group (story 5-7)
+
+// ─── Curved world vertex bend (story 7-5) ──────────────────────────────────
+// Injects a view-space cylindrical bend into a standard/basic material's vertex
+// shader. The surface drops in Y as geometry recedes from the camera (negative
+// view Z), producing a falling horizon. Computed in VIEW space so scrolling/
+// recycling geometry curves correctly with zero CPU bookkeeping (the model-view
+// matrix already carries each object's per-frame Z).
+//
+// No-op when CURVED_WORLD is false — material compiles to its stock program.
+// The injected body faithfully reproduces the bundled three.js <project_vertex>
+// chunk (USE_BATCHING + USE_INSTANCING branches preserved) plus one bend line,
+// so downstream chunks (fog_vertex, lighting via vViewPosition) still find a
+// valid mvPosition / gl_Position. Works on any material whose vertex shader
+// includes <project_vertex> — MeshStandard/Physical AND LineBasic (safe-zone
+// borders), keeping borders aligned with their bent fills.
+//
+// Module-level so SafeZoneRenderer (a separate module) can share the exact same
+// helper — see SafeZoneRenderer.js. The constant customProgramCacheKey lets all
+// curved materials share one compiled program per base-material kind, keeping
+// renderer.info.programs flat (different base materials still differ by their
+// own internal key, so basic vs standard programs do not collide).
+export function applyWorldCurve(material) {
+  if (!CURVED_WORLD) return material;
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uCurveStrength = { value: WORLD_CURVE_STRENGTH };
+    shader.vertexShader =
+      'uniform float uCurveStrength;\n' +
+      shader.vertexShader.replace(
+        '#include <project_vertex>',
+        `vec4 mvPosition = vec4( transformed, 1.0 );
+         #ifdef USE_BATCHING
+           mvPosition = batchingMatrix * mvPosition;
+         #endif
+         #ifdef USE_INSTANCING
+           mvPosition = instanceMatrix * mvPosition;
+         #endif
+         mvPosition = modelViewMatrix * mvPosition;
+         // Cylindrical bend: drop Y by the square of view-space depth.
+         mvPosition.y -= (mvPosition.z * mvPosition.z) * uCurveStrength;
+         gl_Position = projectionMatrix * mvPosition;`
+      );
+  };
+  material.customProgramCacheKey = () => 'worldCurve';
+  return material;
+}
+// ────────────────────────────────────────────────────────────────────────────
 
 export function createScene(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -54,8 +100,8 @@ export function createScene(canvas) {
   floorAmbient.layers.set(FLOOR_LAYER);
   scene.add(floorAmbient);
 
-  const trackMat = new THREE.MeshStandardMaterial({ color: COLORS.BG_STAGE, dithering: true });
-  const roofMat = new THREE.MeshStandardMaterial({ color: ROOF_COLOUR, dithering: true });
+  const trackMat = applyWorldCurve(new THREE.MeshStandardMaterial({ color: COLORS.BG_STAGE, dithering: true }));
+  const roofMat = applyWorldCurve(new THREE.MeshStandardMaterial({ color: ROOF_COLOUR, dithering: true }));
 
   // ─── Floor plane (story 7-1) ─────────────────────────────────────────────
   const FLOOR_Y = -0.15;          // below track bottom (-0.08) with clearance (spec AC-4)
@@ -63,7 +109,7 @@ export function createScene(canvas) {
   const FLOOR_TILE_DEPTH = 300;   // two tiles = 600 units depth, well past fog (100)
   const FLOOR_CULL_Z = 20;        // cull tiles whose front edge passes this Z (behind camera)
 
-  let floorMat = new THREE.MeshPhysicalMaterial({ color: COLORS.BG_VOID, roughness: 1.0, metalness: 0.0, dithering: true });
+  let floorMat = applyWorldCurve(new THREE.MeshPhysicalMaterial({ color: COLORS.BG_VOID, roughness: 1.0, metalness: 0.0, dithering: true }));
   function makeFloorTile() {
     const tile = new THREE.Mesh(
       new THREE.PlaneGeometry(FLOOR_WIDTH, FLOOR_TILE_DEPTH, 32, 32),
@@ -103,18 +149,18 @@ export function createScene(canvas) {
   const BLDG_NEAR_CUTOFF = -15;   // buildings only at z ≤ this (side-street gap)
 
   // Shared materials — let so reset() can dispose and recreate.
-  let bldgBodyMat = new THREE.MeshStandardMaterial({
+  let bldgBodyMat = applyWorldCurve(new THREE.MeshStandardMaterial({
     color: COLORS.BG_NEAR,
     flatShading: true,
     dithering: true,
-  });
-  let bldgWindowMat = new THREE.MeshStandardMaterial({
+  }));
+  let bldgWindowMat = applyWorldCurve(new THREE.MeshStandardMaterial({
     color: COLORS.TEXT_PRIMARY,
     emissive: COLORS.TEXT_PRIMARY,
     emissiveIntensity: 0.6,
     flatShading: true,
     dithering: true,
-  });
+  }));
 
   // ─── Lampposts (story 7-3) ──────────────────────────────────────────────
   const LAMP_POST_SPACING = 18;     // Z spacing between consecutive lampposts
@@ -126,23 +172,32 @@ export function createScene(canvas) {
   const LAMP_HEAD_H        = 0.15;   // lamp head height
   const LAMP_HEAD_D        = 0.4;    // lamp head depth
 
-  let lampPoleMat = new THREE.MeshStandardMaterial({
+  let lampPoleMat = applyWorldCurve(new THREE.MeshStandardMaterial({
     color: COLORS.EDGE,
     flatShading: true,
     dithering: true,
-  });
-  let lampHeadMat = new THREE.MeshStandardMaterial({
+  }));
+  let lampHeadMat = applyWorldCurve(new THREE.MeshStandardMaterial({
     color: COLORS.ACCENT,
     emissive: COLORS.ACCENT,
     emissiveIntensity: 0.8,
     flatShading: true,
     dithering: true,
-  });
+  }));
 
   let leftLampposts  = [];
   let rightLampposts = [];
+  // Pre-transition variant-track lamppost pool. PREVIEW lamps: geometry + emissive
+  // head only, NO SpotLight — adding real lights mid-game changes the scene light
+  // count and forces a full material shader recompile (a propose-time lag spike).
+  // Spawned at proposal so the variant track shows lampposts during the decision/
+  // ride window. At landing the old main pool's SpotLights are reparented onto
+  // these exact lamps (see _commitBuildingTransition) and they become the main pool.
+  let variantLeftLampposts  = [];
+  let variantRightLampposts = [];
+  let _variantLampOffsetX   = 0;
 
-  function makeLamppostGroup(side) {
+  function makeLamppostGroup(side, withLight = true) {
     const group = new THREE.Group();
     const pole = new THREE.Mesh(new THREE.CylinderGeometry(LAMP_POLE_R, LAMP_POLE_R * 1.5, LAMP_POLE_H, 6), lampPoleMat);
     pole.position.set(0, LAMP_POLE_H / 2, 0);
@@ -150,11 +205,14 @@ export function createScene(canvas) {
     const head = new THREE.Mesh(new THREE.BoxGeometry(LAMP_HEAD_W, LAMP_HEAD_H, LAMP_HEAD_D), lampHeadMat);
     head.position.set(0, LAMP_POLE_H, 0);
     group.add(head);
-    const spot = new THREE.SpotLight(COLORS.ACCENT, 0.6, 15, Math.PI / 4, 0.5, 1);
-    spot.position.set(0, LAMP_POLE_H, 0);
-    spot.target.position.set(0, 0, 0);
-    group.add(spot);
-    group.add(spot.target);
+    let spot = null;
+    if (withLight) {
+      spot = new THREE.SpotLight(COLORS.ACCENT, 0.6, 15, Math.PI / 4, 0.5, 1);
+      spot.position.set(0, LAMP_POLE_H, 0);
+      spot.target.position.set(0, 0, 0);
+      group.add(spot);
+      group.add(spot.target);
+    }
     const flickerPhase = Math.random() * Math.PI * 2;
     const flickerHz   = 2 + Math.random() * 1;
     const hasFlicker  = Math.random() < 0.55;
@@ -175,6 +233,38 @@ export function createScene(canvas) {
         arr.push(g);
       }
     }
+  }
+
+  // Pre-transition variant lamppost preview pool: light-less, spawned at the variant
+  // offset so the new track shows lampposts during the proposal/ride window.
+  function createVariantLamppostPool(offsetX) {
+    clearVariantLamppostPool();
+    _variantLampOffsetX = offsetX;
+    for (let i = 0; i < LAMP_POOL_SIZE; i++) {
+      for (const [arr, side] of [[variantLeftLampposts, 'left'], [variantRightLampposts, 'right']]) {
+        const g = makeLamppostGroup(side, false); // light-less — no shader recompile
+        g.position.z = BLDG_SPAWN_Z + i * LAMP_POST_SPACING;
+        g.position.x = g.userData.baseX + offsetX;
+        arr.push(g);
+      }
+    }
+  }
+
+  // Dispose a lamppost group's geometry + lights. Shared materials (lampPoleMat /
+  // lampHeadMat) are NOT disposed here — only in reset().
+  function _disposeLamppost(g) {
+    scene.remove(g);
+    g.traverse(c => {
+      if (c.isMesh) c.geometry?.dispose();
+      if (c.isSpotLight) { c.dispose(); scene.remove(c.target); }
+      if (c.isLight) scene.remove(c);
+    });
+  }
+
+  function clearVariantLamppostPool() {
+    for (const g of [...variantLeftLampposts, ...variantRightLampposts]) _disposeLamppost(g);
+    variantLeftLampposts = [];
+    variantRightLampposts = [];
   }
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -450,6 +540,39 @@ export function createScene(canvas) {
     for (const g of [...leftBuildings, ...rightBuildings]) {
       g.position.x = g.userData.baseX + _worldOffsetX;
     }
+    // Lampposts: transfer the SpotLights from the old main pool onto the light-less
+    // variant preview lamps, then adopt the preview pool as the new main pool.
+    // Reparenting the lights keeps the total scene light count constant (no shader
+    // recompile / lag spike), and the preview lamps the player saw during the ride
+    // stay exactly in place — so the cast light turns on without a positional pop.
+    if (variantLeftLampposts.length > 0) {
+      for (const [oldArr, newArr] of [
+        [leftLampposts, variantLeftLampposts],
+        [rightLampposts, variantRightLampposts],
+      ]) {
+        for (let i = 0; i < newArr.length; i++) {
+          const donor = oldArr[i];
+          if (donor && donor.userData.spot) {
+            const spot = donor.userData.spot;
+            donor.remove(spot, spot.target);
+            newArr[i].add(spot, spot.target);
+            newArr[i].userData.spot         = spot;
+            newArr[i].userData.hasFlicker   = donor.userData.hasFlicker;
+            newArr[i].userData.flickerPhase = donor.userData.flickerPhase;
+            newArr[i].userData.flickerHz    = donor.userData.flickerHz;
+            donor.userData.spot = null;
+          }
+        }
+        for (const g of oldArr) _disposeLamppost(g); // old lamps now light-less
+      }
+      leftLampposts  = variantLeftLampposts;
+      rightLampposts = variantRightLampposts;
+      variantLeftLampposts  = [];
+      variantRightLampposts = [];
+      for (const g of [...leftLampposts, ...rightLampposts]) {
+        g.position.x = g.userData.baseX + _worldOffsetX;
+      }
+    }
     _bldgTrackedOffsetX = _worldOffsetX;
   }
 
@@ -461,7 +584,7 @@ export function createScene(canvas) {
   function bodyMaterial(colourHex) {
     let m = bodyMatByColour.get(colourHex);
     if (!m) {
-      m = new THREE.MeshStandardMaterial({ color: colourHex, dithering: true });
+      m = applyWorldCurve(new THREE.MeshStandardMaterial({ color: colourHex, dithering: true }));
       bodyMatByColour.set(colourHex, m);
     }
     return m;
@@ -478,7 +601,7 @@ export function createScene(canvas) {
     return g;
   }
 
-  function makeTextSprite(message) {
+  function makeFretLabel(message) {
     const canvas = document.createElement('canvas');
     canvas.width = 64;
     canvas.height = 64;
@@ -491,11 +614,28 @@ export function createScene(canvas) {
     ctx.lineWidth = 4;
     ctx.strokeText(message, 32, 32);
     ctx.fillText(message, 32, 32);
-    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas) }));
-    sprite.scale.set(0.8, 0.8, 1);
-    // Safe zone has rotation.x = -π/2, so local +Z maps to world +Y.
-    sprite.position.set(0, 0, 0.5);
-    return sprite;
+    // Upright textured quad (not a Sprite): a Sprite billboards via three's
+    // SpritePlugin and cannot be touched by the world-curve vertex shader, so it
+    // floats off the dropped track. A curve-wrapped mesh laid FLAT on the track reads
+    // poorly at the camera's shallow pitch. So we stand it VERTICAL like a little
+    // sign: being thin in Z, the bend translates it straight down onto the curve
+    // (same as buildings) while keeping it upright and readable. Parent safe zone is
+    // rotated -π/2, so rotation.x=+π/2 cancels that → the quad stands world-upright
+    // facing the camera (+Z). Local +Z maps to world +Y, so position z raises the
+    // quad's base onto the track. renderOrder draws it over fill + border.
+    const mesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.8, 0.8),
+      applyWorldCurve(new THREE.MeshBasicMaterial({
+        map: new THREE.CanvasTexture(canvas),
+        transparent: true,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      })),
+    );
+    mesh.rotation.x = Math.PI / 2;
+    mesh.position.set(0, 0, 0.4);
+    mesh.renderOrder = 2;
+    return mesh;
   }
 
   const character = new THREE.Mesh(
@@ -590,7 +730,7 @@ export function createScene(canvas) {
     for (let i = 0; i < count; i++) {
       const x = laneX(i, count) + _worldOffsetX;
       const mesh = new THREE.Mesh(
-        new THREE.BoxGeometry(1.4, 0.06, TRACK_DEPTH),
+        new THREE.BoxGeometry(1.4, 0.06, TRACK_DEPTH, 1, 1, 64),
         trackMat
       );
       // Front edge at z=20 — well past the camera (camera.z ≈ 11) so the near end
@@ -637,7 +777,7 @@ export function createScene(canvas) {
       tile.geometry.dispose();
     }
     floorMat.dispose();
-    floorMat = new THREE.MeshPhysicalMaterial({ color: COLORS.BG_VOID, roughness: 1.0, metalness: 0.0, dithering: true });
+    floorMat = applyWorldCurve(new THREE.MeshPhysicalMaterial({ color: COLORS.BG_VOID, roughness: 1.0, metalness: 0.0, dithering: true }));
     floorTiles = [makeFloorTile(), makeFloorTile()];
     floorTiles[0].position.set(0, FLOOR_Y, -(FLOOR_TILE_DEPTH / 2) + FLOOR_CULL_Z);
     floorTiles[1].position.set(0, FLOOR_Y, -(FLOOR_TILE_DEPTH * 1.5) + FLOOR_CULL_Z);
@@ -657,18 +797,18 @@ export function createScene(canvas) {
     retiringBuildings = [];
     bldgBodyMat.dispose();
     bldgWindowMat.dispose();
-    bldgBodyMat = new THREE.MeshStandardMaterial({
+    bldgBodyMat = applyWorldCurve(new THREE.MeshStandardMaterial({
       color: COLORS.BG_NEAR,
       flatShading: true,
       dithering: true,
-    });
-    bldgWindowMat = new THREE.MeshStandardMaterial({
+    }));
+    bldgWindowMat = applyWorldCurve(new THREE.MeshStandardMaterial({
       color: COLORS.TEXT_PRIMARY,
       emissive: COLORS.TEXT_PRIMARY,
       emissiveIntensity: 0.6,
       flatShading: true,
       dithering: true,
-    });
+    }));
     _bldgTrackedOffsetX = 0;
     createBuildingPool();
 
@@ -690,10 +830,11 @@ export function createScene(canvas) {
     }
     lampPoleMat.dispose();
     lampHeadMat.dispose();
-    lampPoleMat = new THREE.MeshStandardMaterial({ color: COLORS.EDGE, flatShading: true, dithering: true });
-    lampHeadMat = new THREE.MeshStandardMaterial({ color: COLORS.ACCENT, emissive: COLORS.ACCENT, emissiveIntensity: 0.8, flatShading: true, dithering: true });
+    lampPoleMat = applyWorldCurve(new THREE.MeshStandardMaterial({ color: COLORS.EDGE, flatShading: true, dithering: true }));
+    lampHeadMat = applyWorldCurve(new THREE.MeshStandardMaterial({ color: COLORS.ACCENT, emissive: COLORS.ACCENT, emissiveIntensity: 0.8, flatShading: true, dithering: true }));
     leftLampposts = [];
     rightLampposts = [];
+    clearVariantLamppostPool();
     createLamppostPool();
   }
 
@@ -709,16 +850,16 @@ export function createScene(canvas) {
     const group = new THREE.Group();
     const sign = side === 'RIGHT' ? 1 : -1;
     // Outgoing diagonal (back — arrives last): 45° peel from variant lane off-screen.
-    const outgoing = new THREE.Mesh(new THREE.BoxGeometry(LANE_W, PIECE_H, DIAG_LEN * 1.414), mat);
+    const outgoing = new THREE.Mesh(new THREE.BoxGeometry(LANE_W, PIECE_H, DIAG_LEN * 1.414, 1, 1, 32), mat);
     outgoing.rotation.set(0, sign * -Math.PI / 4, 0);
     outgoing.position.set(variantX + sign * DIAG_LEN * 0.5, 0, -(STRAIGHT_LEN / 2 + DIAG_LEN * 0.5));
     group.add(outgoing);
     // Straight section: player-facing end at highest local Z (first to reach player).
-    const straight = new THREE.Mesh(new THREE.BoxGeometry(LANE_W, PIECE_H, STRAIGHT_LEN), mat);
+    const straight = new THREE.Mesh(new THREE.BoxGeometry(LANE_W, PIECE_H, STRAIGHT_LEN, 1, 1, 32), mat);
     straight.position.set(variantX, 0, 0);
     group.add(straight);
     // Incoming diagonal (front — arrives first): 45° peel from main-track area to variant lane.
-    const incoming = new THREE.Mesh(new THREE.BoxGeometry(LANE_W, PIECE_H, DIAG_LEN * 1.414), mat);
+    const incoming = new THREE.Mesh(new THREE.BoxGeometry(LANE_W, PIECE_H, DIAG_LEN * 1.414, 1, 1, 32), mat);
     incoming.rotation.set(0, sign * -1 * -Math.PI / 4, 0);
     incoming.position.set(variantX + sign * DIAG_LEN * 0.5, 0, STRAIGHT_LEN / 2 + DIAG_LEN * 0.5);
     group.add(incoming);
@@ -728,6 +869,7 @@ export function createScene(canvas) {
   function clearVariantGeom() {
     _commitBuildingTransition(); // safety net: flush any pending env swap before clearing state
     clearVariantBuildingPool();
+    clearVariantLamppostPool(); // story 7-3 fix
     clearBuildingGap('main-propose');
     clearBuildingGap('main-dismiss');
     clearBuildingGap('variant-outgoing');
@@ -780,7 +922,7 @@ export function createScene(canvas) {
     _worldOffsetX = centerX;
     for (let i = 0; i < newNumLanes; i++) {
       const x = laneX(i, newNumLanes) + centerX;
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.06, TRACK_DEPTH), trackMat);
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.06, TRACK_DEPTH, 1, 1, 64), trackMat);
       mesh.position.set(x, -0.05, SPAWN_Z);
       scene.add(mesh);
       _pendingTracks.push({ mesh, targetZ: -TRACK_DEPTH / 2 + 20, speedPxMs });
@@ -819,6 +961,13 @@ export function createScene(canvas) {
   // Drop retiring (pre-variant) lane meshes and all ghosted wave meshes at the
   // end of the cinematic. Called from main.js applyPromoteResponse.
   function finalizeVariantTransition() {
+    // Commit the pending building/lamppost world-offset swap at landing — the same
+    // moment old tracks are dropped. Without this, the riding/accept flow (which has
+    // no dismiss piece) defers the commit to the next propose's clearVariantGeom(),
+    // leaving the main lamppost pool stranded at the old offset so the variant track
+    // has no lampposts until the next proposal. Idempotent (early-returns if already
+    // committed); the building pool's variant stand-in masked this for buildings.
+    _commitBuildingTransition();
     for (const t of _retiringTracks) {
       scene.remove(t.mesh);
       t.mesh.geometry?.dispose?.();
@@ -857,7 +1006,12 @@ export function createScene(canvas) {
     const nowGameMs = performance.now() - gameStartTime;
 
     const mesh = buildVariantTrackGroup(variant.side, vx);
-    const geomElapsed = Math.max(0, nowGameMs - spawnMs);
+    // Unclamped elapsed: while the start time is still in the future this is negative,
+    // so the piece spawns FURTHER BACK than SPAWN_Z and scrolls forward during the
+    // wait, crossing SPAWN_Z at exactly its scheduled moment. Timing from SPAWN_Z
+    // onward (the whole gameplay-visible journey) is unchanged; the piece simply
+    // emerges from the fog instead of sitting parked at SPAWN_Z.
+    const geomElapsed = nowGameMs - spawnMs;
     mesh.position.set(0, 0, SPAWN_Z + geomElapsed * speedPxMs * 0.5);
     scene.add(mesh);
     variantProposePiece = { mesh, spawnTimeMs: spawnMs, speedPxMs };
@@ -907,20 +1061,21 @@ export function createScene(canvas) {
     });
 
     createVariantBuildingPool(_vbCenterX);
+    createVariantLamppostPool(_vbCenterX); // story 7-3 fix — preview lamps on variant track
 
     // Palette index for variant safe zone colours (story 7-0).
     // Uses STRING_SAFE_ZONE_FILLS for fill and STRING_COLORS for the neon border.
     const stringCount = instrument?.stringCount ?? 6;
     const paletteIdx = anchorString != null ? (stringCount - anchorString) : 0;
     // Safe zone fill — dim translucent plane using STRING_SAFE_ZONE_FILLS (story 7-0).
-    const szGeo = new THREE.PlaneGeometry(1.2, VARIANT_SZ_DEPTH);
+    const szGeo = new THREE.PlaneGeometry(1.2, VARIANT_SZ_DEPTH, 1, 16);
     const fillColor = paletteIdx < STRING_SAFE_ZONE_FILLS.length
       ? STRING_SAFE_ZONE_FILLS[paletteIdx]
       : STRING_SAFE_ZONE_FILLS[0];
     const borderColor = paletteIdx < STRING_COLORS.length
       ? STRING_COLORS[paletteIdx]
       : STRING_COLORS[0];
-    const szMat = new THREE.MeshStandardMaterial({
+    const szMat = applyWorldCurve(new THREE.MeshStandardMaterial({
       color: fillColor,
       transparent: true,
       opacity: 0.75,
@@ -930,7 +1085,7 @@ export function createScene(canvas) {
       polygonOffsetUnits: 1,
       side: THREE.DoubleSide,
       dithering: true,
-    });
+    }));
     const szMesh = new THREE.Mesh(szGeo, szMat);
     szMesh.renderOrder = 0;
     szMesh.rotation.x = -Math.PI / 2;
@@ -941,16 +1096,18 @@ export function createScene(canvas) {
       const fretOffset = variant.side === 'RIGHT' ? 2 : -2;
       szMesh.userData.variantNote = anchorFret + fretOffset;
     }
-    const szElapsed = Math.max(0, nowGameMs - spawnMs);
-    // Match SafeZoneRenderer Z: SPAWN_Z + elapsed*speed*0.5 + DEPTH/2.
-    // Without the +DEPTH/2 offset the variant safezone trails the anchor's by half a depth.
+    // Unclamped (negative while waiting) so the safe zone spawns further back and
+    // scrolls in lockstep with the propose track piece — emerging from the fog rather
+    // than parked at SPAWN_Z. Match SafeZoneRenderer Z: SPAWN_Z + elapsed*speed*0.5 +
+    // DEPTH/2. Without the +DEPTH/2 offset the variant safezone trails by half a depth.
+    const szElapsed = nowGameMs - spawnMs;
     const szInitialZ = SPAWN_Z + szElapsed * speedPxMs * 0.5 + VARIANT_SZ_DEPTH / 2;
     // Variant tracks sit at y=0 (top surface +0.03). Use y=0.15 to match the
     // clearance SafeZoneRenderer gives primary zones above main tracks (y=-0.05, top=-0.02).
     szMesh.position.set(vx, 0.15, szInitialZ);
     if (anchorFret != null) {
       const fretOffset = variant.side === 'RIGHT' ? 2 : -2;
-      const label = makeTextSprite((anchorFret + fretOffset).toString());
+      const label = makeFretLabel((anchorFret + fretOffset).toString());
       szMesh.add(label);
     }
     scene.add(szMesh);
@@ -960,7 +1117,7 @@ export function createScene(canvas) {
     // EdgesGeometry on PlaneGeometry = 4 perimeter edges, no internal diagonals.
     const szBorderMesh = new THREE.LineSegments(
       new THREE.EdgesGeometry(szGeo),
-      new THREE.LineBasicMaterial({ color: borderColor })
+      applyWorldCurve(new THREE.LineBasicMaterial({ color: borderColor }))
     );
     szBorderMesh.renderOrder = 1;
     szBorderMesh.rotation.x = -Math.PI / 2;
@@ -1199,7 +1356,9 @@ export function createScene(canvas) {
     // the geometric end-of-diagonal so the piece is visibly out of frame before
     // it's removed (rather than blinking out at the moment of arrival).
     if (variantProposePiece) {
-      const elapsed = Math.max(0, nowMs - gameStartTime - variantProposePiece.spawnTimeMs);
+      // Unclamped: negative while the start time is still future, so the piece
+      // approaches from beyond SPAWN_Z (out of the fog) instead of parking there.
+      const elapsed = nowMs - gameStartTime - variantProposePiece.spawnTimeMs;
       variantProposePiece.mesh.position.z = SPAWN_Z + elapsed * variantProposePiece.speedPxMs * 0.5;
       if (variantProposePiece.mesh.position.z > STRAIGHT_LEN / 2 + DIAG_LEN) {
         if (variantProposePiece.despawnAtMs == null) {
@@ -1230,7 +1389,9 @@ export function createScene(canvas) {
         }
         lastVariantTickMs = nowMs;
         const adjSpawnMs = variantSafeZoneMesh.userData.spawnMs;
-        const elapsed = Math.max(0, nowMs - gameStartTime - adjSpawnMs);
+        // Unclamped: negative while waiting, so the safe zone approaches from beyond
+        // SPAWN_Z (out of the fog) in lockstep with the propose track piece.
+        const elapsed = nowMs - gameStartTime - adjSpawnMs;
         const z = SPAWN_Z + elapsed * speedPxMs * 0.5 + VARIANT_SZ_DEPTH / 2;
         variantSafeZoneMesh.position.z = z;
         if (variantSafeZoneBorderMesh) variantSafeZoneBorderMesh.position.z = z;
@@ -1407,6 +1568,21 @@ export function createScene(canvas) {
             const rearZ = arr.reduce((min, g2) => Math.min(min, g2.position.z), Infinity);
             g.position.z = rearZ - LAMP_POST_SPACING;
             g.position.x = g.userData.baseX + _bldgTrackedOffsetX;
+          }
+        }
+      }
+
+      // Pre-transition variant lamppost preview pool (story 7-3 fix): scroll +
+      // recycle at the variant offset so the new track shows lampposts during the
+      // decision/ride window. Light-less — adopted (lights reparented) at landing.
+      for (const arr of [variantLeftLampposts, variantRightLampposts]) {
+        for (const g of arr) {
+          g.position.z += lampDelta;
+          g.position.x = g.userData.baseX + _variantLampOffsetX;
+          if (g.position.z > BLDG_CULL_Z) {
+            const rearZ = arr.reduce((min, g2) => Math.min(min, g2.position.z), Infinity);
+            g.position.z = rearZ - LAMP_POST_SPACING;
+            g.position.x = g.userData.baseX + _variantLampOffsetX;
           }
         }
       }
@@ -1641,6 +1817,87 @@ export function createScene(canvas) {
     onVariantMissedCb = null;
     lastVariantTickMs = 0;
   }
+
+  // ─── Shader pre-warm ───────────────────────────────────────────────────────
+  // The first time a material is drawn, WebGL compiles its GPU program on the
+  // render thread — a synchronous stall that shows up as a lag spike. Carts
+  // (DANGER material + roof) first draw when the opening waves spawn; the variant
+  // track, safe-zone fill, neon border and number sprite first draw on propose.
+  // Compile all of those up front (during load, before the countdown) by building
+  // throwaway prototypes and calling renderer.compile(), so the spike never lands
+  // during play. Compile runs under the live light rig (12 lamppost SpotLights),
+  // which matches runtime — the variant preview lamps add no lights and the light
+  // count stays constant across transitions, so these programs are reused as-is.
+  //
+  // Retains the prewarm-only fill/border materials for the scene's lifetime. Three
+  // reference-counts compiled programs per material; disposing the sole holder frees
+  // the program, so we must keep these alive or the warmed safe-zone programs are
+  // evicted before the first wave uses them (re-introducing the spike).
+  const _prewarmKeepAlive = [];
+  function prewarmShaders() {
+    const cart  = makeCart(bodyMaterial(COLORS.DANGER));       // DANGER body + roofMat
+    const track = buildVariantTrackGroup('RIGHT', 0);          // trackMat
+    const szGeo = new THREE.PlaneGeometry(1.2, VARIANT_SZ_DEPTH, 1, 16);
+    const szMat = applyWorldCurve(new THREE.MeshStandardMaterial({
+      color: STRING_SAFE_ZONE_FILLS[0], transparent: true, opacity: 0.75,
+      depthWrite: false, polygonOffset: true, polygonOffsetFactor: 1,
+      polygonOffsetUnits: 1, side: THREE.DoubleSide, dithering: true,
+    }));
+    const szMesh = new THREE.Mesh(szGeo, szMat);
+    szMesh.rotation.x = -Math.PI / 2;
+    const border = new THREE.LineSegments(
+      new THREE.EdgesGeometry(szGeo),
+      applyWorldCurve(new THREE.LineBasicMaterial({ color: STRING_COLORS[0] })),
+    );
+    const label = makeFretLabel('0');                           // flat curve-wrapped MeshBasic + CanvasTexture
+    szMesh.add(label);
+
+    // Park the prototypes far below the track — out of the camera frustum so they
+    // never flash on screen while the async compile is pending, but still walked by
+    // compile() (which does not frustum-cull). Compiling inside the LIVE scene is
+    // deliberate: it gives the warmed programs the exact same fog + light state the
+    // runtime draws use, so they are reused with no first-wave/propose spike.
+    const protos = [cart, track, szMesh, border];
+    for (const p of protos) { p.position.set(0, -1000, 0); scene.add(p); }
+
+    const finish = () => {
+      for (const p of protos) scene.remove(p);
+      // Dispose ONLY throwaway geometry + the label's throwaway texture. Do NOT
+      // dispose the prewarm-only materials (szMat fill, border LineBasic, label
+      // MeshBasic): three reference-counts compiled GPU programs per material, so
+      // disposing the sole holder drops the refcount to 0 and FREES the program.
+      // Those programs are exactly what the safe-zone fill / border / number label
+      // need on the first wave — freeing them here is what made the prewarm
+      // ineffective and the spike return. Instead we retain these materials for the
+      // scene's lifetime (see _prewarmKeepAlive) so their programs stay cached and the
+      // runtime safe-zone materials reuse them. The shared cart/track/roof materials
+      // are already retained elsewhere, so they need no dispose.
+      cart.traverse(c => { if (c.isMesh) c.geometry?.dispose(); });
+      track.traverse(c => { if (c.isMesh) c.geometry?.dispose(); });
+      szGeo.dispose();
+      border.geometry.dispose();
+      label.geometry.dispose();
+      label.material.map?.dispose(); // per-label throwaway texture; the program is not
+      // Retain the refcounted mesh/line programs (fill + border + label) for the scene's life.
+      _prewarmKeepAlive.push(szMat, border.material, label.material);
+    };
+
+    // compileAsync waits for KHR_parallel_shader_compile to finish LINKING the
+    // programs (compile() only starts the link; the blocking link-status check then
+    // lands on the first real draw — i.e. the first-wave spike). Awaiting it means
+    // the first draw finds the program ready. Fall back to sync compile if absent.
+    // NOTE: compileAsync's readiness poll would otherwise crash on the Sprite label's
+    // program (undefined currentProgram) — guarded by a local patch in
+    // vendor/three.module.js (checkMaterialsReady).
+    if (typeof renderer.compileAsync === 'function') {
+      renderer.compileAsync(scene, camera).then(finish, finish);
+    } else {
+      if (typeof renderer.compile === 'function') renderer.compile(scene, camera);
+      finish();
+    }
+  }
+  prewarmShaders();
+  // ─────────────────────────────────────────────────────────────────────────
 
   return {
     threeScene: scene,

@@ -22,6 +22,18 @@ export const COLORS = {
   DANGER:        0xFF4411,
 };
 
+// ===== CURVED WORLD (story 7-5) =====
+// Cylindrical vertex bend applied to world geometry (floor, tracks, buildings,
+// lampposts) via material.onBeforeCompile. Toggle OFF to render flat (debug/compare);
+// when false, applyWorldCurve() is a no-op and materials compile to stock shaders.
+export const CURVED_WORLD = true;
+// View-space curvature strength — the canonical tuning knob. Surface Y is dropped
+// by (viewZ^2 * strength). viewZ is negative ahead of camera, so the square term
+// drops far geometry. Tuned so the horizon (~fog far, ~100 view units ahead) sits
+// ~5-10° below flat. Larger = more aggressive bend. Keep small — subtle PS1 cue,
+// not a fisheye. Final value tuned in-engine (story 7-5 Task 5).
+export const WORLD_CURVE_STRENGTH = 0.0009;
+
 // ===== STRING COLORS (Slopsmith / Rocksmith standard palette) =====
 // Indexed low→high pitch. Index 0 = lowest pitch string of the instrument.
 // Note: backend Note.string is 1-based from HIGH (tabulator convention);
