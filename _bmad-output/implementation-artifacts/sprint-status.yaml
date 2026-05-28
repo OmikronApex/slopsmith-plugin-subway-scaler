@@ -92,4 +92,4 @@ development_status:
   7-3-lamppost-geometry-and-point-lighting: done
   7-4-procedural-buildings-variant-geometry: cancelled  # retired — implementation no longer needed
   7-5-vertex-shader-curved-world-surface: review
-  7-6-animated-character-sprite: ready-for-dev
+  7-6-animated-character-sprite: review
