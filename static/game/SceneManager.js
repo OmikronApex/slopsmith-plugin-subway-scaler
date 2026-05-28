@@ -341,6 +341,34 @@ export function createScene(canvas) {
     variantRightBuildings = [];
   }
 
+  // Reservation-based recycle: each building is respawned behind the pool if
+  // it (a) passes the cull plane, or (b) overlaps any active gap reservation
+  // on its side. placeBuildingBehindPool() jumps over reservations so the
+  // respawn point itself can never land inside a gap.
+  //
+  // To add/modify/remove a gap, use setBuildingGap / clearBuildingGap.
+  // All gap geometry lives in the reservation's zRangeAt() closure.
+  function recyclePool(arr, side, kind, offsetX, bldgDelta) {
+    const res = reservationsFor(side, kind);
+    for (const g of arr) {
+      g.position.z += bldgDelta;
+      g.position.x = g.userData.baseX + offsetX;
+      const cz = g.position.z;
+      const d  = g.children[0].geometry.parameters.depth;
+      let inGap = false;
+      for (const r of res) {
+        const { z0, z1 } = r.zRangeAt();
+        if (z1 > z0 && cz + d / 2 > z0 && cz - d / 2 < z1) { inGap = true; break; }
+      }
+      if (cz > BLDG_CULL_Z || inGap) {
+        const rear = arr.reduce((a, b) => a.position.z < b.position.z ? a : b);
+        const rearFaceZ = rear.position.z - rear.children[0].geometry.parameters.depth / 2;
+        placeBuildingBehindPool(g, side, arr, rearFaceZ, kind);
+        g.position.x = g.userData.baseX + offsetX;
+      }
+    }
+  }
+
   createBuildingPool();
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -1010,7 +1038,7 @@ export function createScene(canvas) {
   }
 
   function render(nowMs) {
-    const dt = lastTime ? Math.min(0.05, (nowMs - lastTime) / 1000) : 0.016;
+    const dt = lastTime ? Math.max(0, Math.min(0.05, (nowMs - lastTime) / 1000)) : 0.016;
     lastTime = nowMs;
 
     if (tween) {
@@ -1239,45 +1267,21 @@ export function createScene(canvas) {
         _bldgTrackedOffsetX = _worldOffsetX;
       }
 
-      // Reservation-based recycle: each building is respawned behind the pool if
-      // it (a) passes the cull plane, or (b) overlaps any active gap reservation
-      // on its side. placeBuildingBehindPool() jumps over reservations so the
-      // respawn point itself can never land inside a gap.
-      //
-      // To add/modify/remove a gap, use setBuildingGap / clearBuildingGap.
-      // All gap geometry lives in the reservation's zRangeAt() closure.
-      function recyclePool(arr, side, kind, offsetX) {
-        const res = reservationsFor(side, kind);
-        for (const g of arr) {
-          g.position.z += bldgDelta;
-          g.position.x = g.userData.baseX + offsetX;
-          const cz = g.position.z;
-          const d  = g.children[0].geometry.parameters.depth;
-          let inGap = false;
-          for (const r of res) {
-            const { z0, z1 } = r.zRangeAt();
-            if (z1 > z0 && cz + d / 2 > z0 && cz - d / 2 < z1) { inGap = true; break; }
-          }
-          if (cz > BLDG_CULL_Z || inGap) {
-            const rear = arr.reduce((a, b) => a.position.z < b.position.z ? a : b);
-            const rearFaceZ = rear.position.z - rear.children[0].geometry.parameters.depth / 2;
-            placeBuildingBehindPool(g, side, arr, rearFaceZ, kind);
-            g.position.x = g.userData.baseX + offsetX;
-          }
-        }
-      }
-
-      recyclePool(leftBuildings,         'left',  'main',    _worldOffsetX);
-      recyclePool(rightBuildings,        'right', 'main',    _worldOffsetX);
-      recyclePool(variantLeftBuildings,  'left',  'variant', _variantBldgOffsetX);
-      recyclePool(variantRightBuildings, 'right', 'variant', _variantBldgOffsetX);
+      recyclePool(leftBuildings,         'left',  'main',    _worldOffsetX, bldgDelta);
+      recyclePool(rightBuildings,        'right', 'main',    _worldOffsetX, bldgDelta);
+      recyclePool(variantLeftBuildings,  'left',  'variant', _variantBldgOffsetX, bldgDelta);
+      recyclePool(variantRightBuildings, 'right', 'variant', _variantBldgOffsetX, bldgDelta);
 
       _updateGapDebug();
 
       // Scroll retiring buildings (X frozen at old offset); dispose when they pass the cull plane.
+      // Use a minimum scroll rate (0.25 units/frame ≈ 15 units/sec at 60fps) so retirees always
+      // make progress even if lastWaveSpeed drops to zero (edge case: wave-free initial state or
+      // zero-speed wave config). Without this guard, retirees would freeze mid-scene and leak geometry.
+      const retireDelta = Math.max(bldgDelta, 0.25);
       for (let i = retiringBuildings.length - 1; i >= 0; i--) {
         const g = retiringBuildings[i];
-        g.position.z += bldgDelta;
+        g.position.z += retireDelta;
         if (g.position.z > BLDG_CULL_Z) {
           scene.remove(g);
           for (const child of g.children) child.geometry.dispose();

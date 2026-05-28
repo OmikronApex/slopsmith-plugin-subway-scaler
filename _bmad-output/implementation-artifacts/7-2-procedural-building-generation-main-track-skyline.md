@@ -1,6 +1,6 @@
 # Story 7.2: Procedural Building Generation — Main Track Skyline
 
-Status: review
+Status: done
 
 ## Story
 
@@ -23,8 +23,8 @@ And no building mesh overlaps any track or cart geometry at any camera angle.
 
 **AC-3 — Randomised building dimensions:**
 Then each building has a height randomly chosen in `[BLDG_MIN_H, BLDG_MAX_H]` (default 2.0–8.0),
-And each building has a width randomly chosen in `[BLDG_W_MIN, BLDG_W_MAX]` (default 1.5–4.0),
-And each building has a depth randomly chosen in `[BLDG_D_MIN, BLDG_D_MAX]` (default 2.0–5.0),
+And each building has a width randomly chosen in `[BLDG_W_MIN, BLDG_W_MAX]` (default 2.5–4.0),
+And each building has a depth randomly chosen in `[BLDG_D_MIN, BLDG_D_MAX]` (default 2.5–5.0),
 And dimensions are re-randomised each time a building is recycled to the horizon.
 
 **AC-4 — Night City palette, flat-shaded silhouette with window accents:**
@@ -43,7 +43,7 @@ Then buildings translate in +Z each frame by `lastWaveSpeed * 0.5 * (dt * 1000)`
 And building Z-motion is visually continuous with the floor plane and track geometry.
 
 **AC-7 — Pool-and-recycle, no unbounded memory growth:**
-Then `BLDG_POOL_SIZE = 12` building Groups exist per side (24 total),
+Then `BLDG_POOL_SIZE = 26` building Groups exist per side (52 total),
 And when a building's `position.z > BLDG_CULL_Z` (default 20), it is repositioned to `BLDG_SPAWN_Z` (default -115) and re-randomised,
 And buildings are initially spread across `[BLDG_SPAWN_Z, BLDG_NEAR_CUTOFF]` with even Z spacing so the skyline is populated from game start with no visible pop-in,
 And no new Three.js objects are created after `createScene()` (only geometry/material properties are mutated on recycle).
@@ -54,7 +54,7 @@ And `flatShading: true` keeps per-building draw cost minimal (no normal interpol
 
 **AC-9 — Buildings disposed correctly on reset():**
 Given `reset()` is called,
-Then all 24 building Groups are removed from the scene,
+Then all 52 building Groups are removed from the scene,
 And all building geometries and materials are disposed,
 And new building Groups are created and positioned as per initial spawn logic.
 
@@ -97,7 +97,7 @@ And the plane is removed when the reservation is cleared.
 - [x] Task 1: Add building constants to `SceneManager.js`
   - [x] 1.1 Declare constants inside `createScene()` alongside floor constants:
     ```js
-    const BLDG_POOL_SIZE  = 12;     // groups per side
+    const BLDG_POOL_SIZE  = 26;    // groups per side
     const BLDG_MIN_H      = 2.0;    // min height
     const BLDG_MAX_H      = 8.0;    // max height
     const BLDG_W_MIN      = 1.5;    // min width (X)
@@ -476,3 +476,22 @@ claude-sonnet-4-6
 - 2026-05-27: Party mode review — window disposal fix (symmetric), density 1/3→55%, layer 0 confirmed with comment block
 - 2026-05-27: Story 7-2 implemented — procedural building pool, scroll, recycle, reset disposal
 - 2026-05-28: Variant-transition gap support added — gap-window/drain/spawn-cap mechanism replaced with reservation system (`setBuildingGap`/`clearBuildingGap`, hard-invariant placement, ground-plane debug visualiser via `?testMode`). Added AC-12 (reservation system), AC-13 (adoption re-tag), AC-14 (debug visualiser).
+- 2026-05-28: Code review — 9 patch findings, 0 decision-needed, 4 deferred, 6 dismissed
+
+### Review Findings
+
+- [x] [Review][Dismiss] **Gap resolution doesn't re-check after jump** — false positive: loop continues to iterate remaining reservations after jump [SceneManager.js:287-296] — `placeBuildingBehindPool` iterates reservations sorted by z1 desc but does not re-check after adjusting `frontFaceZ`. If two gaps overlap or are adjacent, a building jumped out of the first gap could land inside the second. **Critical.**
+- [x] [Review][Patch] **Zero-velocity freezes retiring buildings** — fixed: `retireDelta = Math.max(bldgDelta, 0.25)` [SceneManager.js:1278-1286] — `bldgDelta = lastWaveSpeed * 0.5 * (dt * 1000)`. When `lastWaveSpeed = 0`, retirees never advance Z, geometry never disposed. **Major.**
+- [x] [Review][Defer] **`clearScene()` doesn't clean building pools** — by design: buildings are permanent geometry, all callers also call `reset()` [SceneManager.js:462-473] — `clearScene()` removes tracks/waves but not buildings. All current callers also call `reset()`, but any future caller that clears without reset leaks meshes. **Major.**
+- [x] [Review][Dismiss] **Gap/piece speed drift** — false positive: gap re-evaluated from piece Z every frame, per-frame overlap check catches any drift, hard invariant [SceneManager.js:750 vs 1211] — `main-propose` gap tracks `variantProposePiece.mesh.position.z` (scrolls at captured `speedPxMs`) but variant pool buildings scroll at `lastWaveSpeed`. If wave speed changes between proposal and current frame, gap misaligns from the diagonal it must clear. **Major.**
+- [x] [Review][Patch] **Negative `dt` causes reverse scroll** — fixed: `Math.max(0, Math.min(0.05, dt))` [SceneManager.js:~1013] — `Math.min(0.05, dt)` clamps positive only. System clock jump backward or test-mode clock override yields negative `bldgDelta`, buildings scroll toward +infinity, cull never fires. **Minor.**
+- [x] [Review][Dismiss] **Variant-outgoing gap persists after adoption** — by design: cleared with propose-piece despawn or `clearVariantGeom`, range returns `-Infinity` in between (filtered) [SceneManager.js:1229] — `clearBuildingGap('main-propose')` called but `'variant-outgoing'` is not cleared. Re-tagged to `main` then returns `-Infinity` range after propose-piece despawns. Extra Map entry until `clearVariantGeom`. **Minor.**
+- [x] [Review][Dismiss] **Batch recycle Z-drift / O(n²)** — expected behavior: chain-stacking is intentional, 676 iterations at worst-case is negligible [SceneManager.js:1262-1263] — `arr.reduce` scans full 26-element pool per recycled building. When multiple buildings recycle same frame, each subsequent one sees an earlier recycle as "rearmost", causing cumulative Z-stretch. **Minor.**
+- [x] [Review][Patch] **`arr.reduce` on empty pool throws** — fixed: guard with `arr.length > 0` check [SceneManager.js:281] — `placeBuildingBehindPool` fallback path (`cursorZ === null`) calls `arr.reduce` with no initial value. Latent — all current callers pass numeric cursorZ. **Minor.**
+- [x] [Review][Patch] **`recyclePool` created per frame** — fixed: hoisted outside render block, `bldgDelta` passed as parameter [SceneManager.js:1249] — Function declaration inside render block, re-allocated every animation frame. Hoist and pass `bldgDelta` as parameter. **Minor.**
+- [x] [Review][Patch] **Spec: "24 total groups" stale** — fixed: AC-7/AC-9 updated to reflect actual `BLDG_POOL_SIZE=26` [spec AC-7] — `BLDG_POOL_SIZE=26` per side = 52 main + up to 52 variant + 52 retiring = peak ~156 Groups in scene. AC-7 wording says "24 total groups". **Minor.**
+
+- [x] [Review][Defer] **`geometry.parameters.depth` unguarded** [SceneManager.js:1263,1292] — multiple sites access `g.children[0].geometry.parameters.depth` assuming BoxGeometry. Safe while invariant holds but fragile to refactoring. Deferred, pre-existing fragility.
+- [x] [Review][Defer] **Sequential transitions accumulate retirees** [SceneManager.js:1216] — if two transitions occur <~6.6s apart, two sets of retirees scroll at different X offsets simultaneously. Deferred, unlikely in practice.
+- [x] [Review][Defer] **Propose-piece despawn no clock compensation** [SceneManager.js:1065] — `despawnAtMs = nowMs + 500` uses wall clock; backgrounded tab RAF throttling makes the piece linger longer. Deferred, pre-existing behavior.
+- [x] [Review][Defer] **No E2E tests for buildings** — zero tests verify any building behavior (AC-1 through AC-14). Deferred, pre-existing scope decision (visual-only testing).

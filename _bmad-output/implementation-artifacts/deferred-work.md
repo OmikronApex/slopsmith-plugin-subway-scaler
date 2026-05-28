@@ -101,4 +101,11 @@
 
 - Use-after-free risk: `floorMat.dispose()` called in `reset()` could theoretically race a mid-flight render frame — JS is single-threaded so RAF frames never interleave; theoretical only [SceneManager.js].
 - `makeFloorTile` closure captures `floorMat` by variable reference; correctness depends on `floorMat` being reassigned before `makeFloorTile()` is called in `reset()` — fragile to reordering; consider extracting a `createFloorTiles()` helper [SceneManager.js].
+
+## Deferred from: code review of 7-2-procedural-building-generation-main-track-skyline (2026-05-28)
+
+- `geometry.parameters.depth` unguarded — multiple sites access `g.children[0].geometry.parameters.depth` assuming BoxGeometry. Safe while invariant holds but fragile to refactoring. [SceneManager.js]
+- Sequential transitions accumulate retirees — if two transitions occur <~6.6s apart, two sets of retirees scroll at different X offsets simultaneously. Unlikely in practice. [SceneManager.js]
+- Propose-piece despawn no clock compensation — `despawnAtMs = nowMs + 500` uses wall clock; backgrounded tab RAF throttling makes the piece linger longer. Pre-existing behavior. [SceneManager.js]
+- No E2E tests for buildings — zero E2E tests verify any building behavior (AC-1 through AC-14). Pre-existing scope decision (visual-only testing).
 - `PlaneGeometry(400, 300, 32, 32)` alloc/dealloc on every `reset()` — 1024 quads × 2 tiles recreated each call; on low-end hardware or rapid resets this causes GPU memory churn; tiles could be repositioned instead of destroyed [SceneManager.js].
