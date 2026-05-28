@@ -117,8 +117,8 @@ export function createScene(canvas) {
   });
 
   // ─── Lampposts (story 7-3) ──────────────────────────────────────────────
-  const LAMP_POST_SPACING = 12;     // Z spacing between consecutive lampposts
-  const LAMP_POOL_SIZE     = 12;     // lampposts per side (24 total — 12 visible + buffer each side)
+  const LAMP_POST_SPACING = 18;     // Z spacing between consecutive lampposts
+  const LAMP_POOL_SIZE     = 6;      // lampposts per side (12 total)
   const LAMP_X_OFFSET      = 10.5;   // X = ±(BLDG_X_INNER - 1.5) — between track edge and building line
   const LAMP_POLE_H        = 3.0;    // pole height
   const LAMP_POLE_R        = 0.08;   // pole radius (thin — reads as distant)
@@ -168,12 +168,10 @@ export function createScene(canvas) {
   function createLamppostPool() {
     leftLampposts  = [];
     rightLampposts = [];
-    const zRange = Math.abs(BLDG_NEAR_CUTOFF - BLDG_SPAWN_Z);
     for (let i = 0; i < LAMP_POOL_SIZE; i++) {
       for (const [arr, side] of [[leftLampposts, 'left'], [rightLampposts, 'right']]) {
         const g = makeLamppostGroup(side);
-        const zBase = BLDG_SPAWN_Z + (i / LAMP_POOL_SIZE) * zRange;
-        g.position.z = zBase + (Math.random() - 0.5) * LAMP_POST_SPACING * 0.5;
+        g.position.z = BLDG_SPAWN_Z + i * LAMP_POST_SPACING;
         arr.push(g);
       }
     }
@@ -412,8 +410,8 @@ export function createScene(canvas) {
   //
   // To add/modify/remove a gap, use setBuildingGap / clearBuildingGap.
   // All gap geometry lives in the reservation's zRangeAt() closure.
-  function recyclePool(arr, side, kind, offsetX, bldgDelta) {
-    const res = reservationsFor(side, kind);
+  function recyclePool(arr, side, kind, offsetX, bldgDelta, skipGaps = false) {
+    const res = skipGaps ? [] : reservationsFor(side, kind);
     for (const g of arr) {
       g.position.z += bldgDelta;
       g.position.x = g.userData.baseX + offsetX;
@@ -431,6 +429,28 @@ export function createScene(canvas) {
         g.position.x = g.userData.baseX + offsetX;
       }
     }
+  }
+
+  // Commit a pending building/lamppost world-offset transition.
+  // Called explicitly at traversal completion and as a safety net in clearVariantGeom().
+  // Never called from the per-frame scroll block — that block only reads _bldgTrackedOffsetX.
+  function _commitBuildingTransition() {
+    if (_worldOffsetX === _bldgTrackedOffsetX) return;
+    retiringBuildings.push(...leftBuildings, ...rightBuildings);
+    if (variantLeftBuildings.length > 0) {
+      leftBuildings  = variantLeftBuildings;
+      rightBuildings = variantRightBuildings;
+      variantLeftBuildings  = [];
+      variantRightBuildings = [];
+      _adoptVariantReservations();
+      clearBuildingGap('main-propose');
+    } else {
+      createBuildingPool();
+    }
+    for (const g of [...leftBuildings, ...rightBuildings]) {
+      g.position.x = g.userData.baseX + _worldOffsetX;
+    }
+    _bldgTrackedOffsetX = _worldOffsetX;
   }
 
   createBuildingPool();
@@ -706,6 +726,7 @@ export function createScene(canvas) {
   }
 
   function clearVariantGeom() {
+    _commitBuildingTransition(); // safety net: flush any pending env swap before clearing state
     clearVariantBuildingPool();
     clearBuildingGap('main-propose');
     clearBuildingGap('main-dismiss');
@@ -1148,7 +1169,10 @@ export function createScene(canvas) {
       const tRaw = Math.min(1, (nowMs - t.startMs) / t.durMs);
       const e = _easeInOutCubic(tRaw);
       character.position.x = t.startX + (t.targetX - t.startX) * e;
-      if (tRaw >= 1) _charTraversal = null;
+      if (tRaw >= 1) {
+        _charTraversal = null;
+        _commitBuildingTransition(); // character arrived — commit env offset swap now
+      }
     }
 
     // Bend midpoint reached callback — fires once when incoming diagonal midpoint hits player (z ≥ 0).
@@ -1322,42 +1346,21 @@ export function createScene(canvas) {
     }
 
     // Building scroll (story 7-2) — same speed formula as floor and pending tracks.
-    // On variant-track transition (_worldOffsetX changes): retire current pool (frozen X, scroll out,
-    // then dispose) and spawn a fresh pool at the new world offset — both visible simultaneously.
+    // The world-offset swap is no longer detected here — it is committed explicitly
+    // by _commitBuildingTransition() at traversal completion and in clearVariantGeom().
     {
       const bldgDelta = lastWaveSpeed * 0.5 * (dt * 1000);
 
-      // Detect world-offset change (variant track transition).
-      if (_worldOffsetX !== _bldgTrackedOffsetX) {
-        // Push active pools into retiring list — X positions stay frozen at old offset.
-        retiringBuildings.push(...leftBuildings, ...rightBuildings);
-        if (variantLeftBuildings.length > 0) {
-          // Variant buildings pre-populated at proposal time — adopt as new main pool.
-          // vx (used at proposal) ≈ centerX but may differ slightly; snap X to the
-          // exact new _worldOffsetX so there is no sustained drift.
-          leftBuildings  = variantLeftBuildings;
-          rightBuildings = variantRightBuildings;
-          variantLeftBuildings  = [];
-          variantRightBuildings = [];
-          // Same buildings, new pool kind tag — re-tag reservations so they keep applying.
-          _adoptVariantReservations();
-          // 'main-propose' was for the OLD main pool (now retired). Propose piece
-          // sits on the inner side of the new main pool; the re-tagged variant gap
-          // already covers that. Drop the outer-side reservation to avoid spurious
-          // drains on the new main pool's outer side.
-          clearBuildingGap('main-propose');
-        } else {
-          createBuildingPool();
-        }
-        // Snap X to the exact new offset (corrects any vx vs centerX delta).
-        for (const g of [...leftBuildings, ...rightBuildings]) {
-          g.position.x = g.userData.baseX + _worldOffsetX;
-        }
-        _bldgTrackedOffsetX = _worldOffsetX;
-      }
-
-      recyclePool(leftBuildings,         'left',  'main',    _worldOffsetX, bldgDelta);
-      recyclePool(rightBuildings,        'right', 'main',    _worldOffsetX, bldgDelta);
+      // Suppress gap-based recycling across the full accept→arrival window:
+      //   variantAcceptState: set at accept, before _worldOffsetX has even changed
+      //   _charTraversal:     active during the actual diagonal slide
+      //   _worldOffsetX !== _bldgTrackedOffsetX: covers the gap between _worldOffsetX
+      //     changing (spawnVariantTracks) and traversal starting (_bendMidpointCb firing)
+      // All three together ensure no near-camera building or lamppost is gap-kicked
+      // at any point during the transition.
+      const suppressEnvGaps = variantAcceptState !== null || _charTraversal !== null || _worldOffsetX !== _bldgTrackedOffsetX;
+      recyclePool(leftBuildings,         'left',  'main',    _bldgTrackedOffsetX, bldgDelta, suppressEnvGaps);
+      recyclePool(rightBuildings,        'right', 'main',    _bldgTrackedOffsetX, bldgDelta, suppressEnvGaps);
       recyclePool(variantLeftBuildings,  'left',  'variant', _variantBldgOffsetX, bldgDelta);
       recyclePool(variantRightBuildings, 'right', 'variant', _variantBldgOffsetX, bldgDelta);
 
@@ -1380,31 +1383,31 @@ export function createScene(canvas) {
     }
 
     // Lamppost scroll + flicker (story 7-3) — same speed formula as buildings.
+    // Gap-based recycling is suppressed during the variant accept→arrival window,
+    // matching the same suppressEnvGaps logic applied to main building recyclePool calls.
     {
       const lampDelta = lastWaveSpeed * 0.5 * (dt * 1000);
       const flickerNow = nowMs / 1000;
-      for (const g of leftLampposts) {
-        g.position.z += lampDelta;
-        g.position.x = g.userData.baseX + _worldOffsetX;
-        if (g.userData.hasFlicker && g.userData.spot) {
-          const s = 0.5 + 0.5 * Math.sin(g.userData.flickerHz * flickerNow * Math.PI * 2 + g.userData.flickerPhase);
-          g.userData.spot.intensity = 0.4 + s * 0.4;
-        }
-        if (g.position.z > BLDG_CULL_Z) {
-          g.position.z = BLDG_SPAWN_Z + Math.random() * LAMP_POST_SPACING;
-          g.position.x = g.userData.baseX + _worldOffsetX;
-        }
-      }
-      for (const g of rightLampposts) {
-        g.position.z += lampDelta;
-        g.position.x = g.userData.baseX + _worldOffsetX;
-        if (g.userData.hasFlicker && g.userData.spot) {
-          const s = 0.5 + 0.5 * Math.sin(g.userData.flickerHz * flickerNow * Math.PI * 2 + g.userData.flickerPhase);
-          g.userData.spot.intensity = 0.4 + s * 0.4;
-        }
-        if (g.position.z > BLDG_CULL_Z) {
-          g.position.z = BLDG_SPAWN_Z + Math.random() * LAMP_POST_SPACING;
-          g.position.x = g.userData.baseX + _worldOffsetX;
+      const suppressLampGaps = variantAcceptState !== null || _charTraversal !== null || _worldOffsetX !== _bldgTrackedOffsetX;
+      for (const [arr, side] of [[leftLampposts, 'left'], [rightLampposts, 'right']]) {
+        const lampRes = suppressLampGaps ? [] : reservationsFor(side, 'main');
+        for (const g of arr) {
+          g.position.z += lampDelta;
+          g.position.x = g.userData.baseX + _bldgTrackedOffsetX;
+          if (g.userData.hasFlicker && g.userData.spot) {
+            const s = 0.5 + 0.5 * Math.sin(g.userData.flickerHz * flickerNow * Math.PI * 2 + g.userData.flickerPhase);
+            g.userData.spot.intensity = 0.4 + s * 0.4;
+          }
+          let inGap = false;
+          for (const r of lampRes) {
+            const { z0, z1 } = r.zRangeAt();
+            if (z1 > z0 && g.position.z > z0 && g.position.z < z1) { inGap = true; break; }
+          }
+          if (g.position.z > BLDG_CULL_Z || inGap) {
+            const rearZ = arr.reduce((min, g2) => Math.min(min, g2.position.z), Infinity);
+            g.position.z = rearZ - LAMP_POST_SPACING;
+            g.position.x = g.userData.baseX + _bldgTrackedOffsetX;
+          }
         }
       }
     }

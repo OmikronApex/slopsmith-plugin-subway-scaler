@@ -1,6 +1,6 @@
 # Story 7.3: Lamppost Geometry & Point Lighting
 
-Status: review
+Status: done
 
 ## Story
 
@@ -31,26 +31,27 @@ And the spotLight target is positioned at the lamp's X offset, y = 0, z = lamp Z
 And the light cone visibly illuminates the ground plane and track surface within its radius.
 
 **AC-4 — Lampposts spaced at building density intervals:**
-Then `LAMP_POST_SPACING = 12` world Z units between consecutive lampposts (matching average building depth + gap, so every 2-3 buildings have one lamp),
-And `LAMP_POOL_SIZE = 12` lampposts per side (24 total) — sufficient to cover the visible Z range with headroom each side of the camera, with room for other light sources without saturating the shader uniform budget.
+Then `LAMP_POST_SPACING = 18` world Z units between consecutive lampposts,
+And `LAMP_POOL_SIZE = 6` lampposts per side (12 total) — 6 × 18 = 108 Z units of coverage from `BLDG_SPAWN_Z`, sufficient to span the visible range with the pool recycling to fill gaps.
 
 **AC-5 — Lampposts scroll with the building environment:**
 Then lampposts translate in +Z each frame using the same `lastWaveSpeed * 0.5 * (dt * 1000)` formula as buildings and floor tiles,
-And when a lamppost's `position.z > BLDG_CULL_Z` (20), it is repositioned to `BLDG_SPAWN_Z` (-115) and its `position.z` is randomised within `[BLDG_SPAWN_Z, BLDG_SPAWN_Z + LAMP_POST_SPACING]`,
+And when a lamppost's `position.z > BLDG_CULL_Z` (20), it is placed at `rearZ - LAMP_POST_SPACING` (one spacing behind the current rearmost lamp), maintaining uniform spacing across the pool,
+And lampposts respect active building gap reservations (`poolKind === 'main'` only): a lamppost inside a reservation zone is recycled to the rear the same as a culled one — gap-based recycling is suppressed during the variant accept→arrival window,
 And lampposts are part of the same scene layer 0 as buildings — no separate layer.
 
 **AC-6 — Light count limited within WebGL budget:**
-Then at most 24 SpotLights exist simultaneously (LAMP_POOL_SIZE × 2 sides),
+Then at most 12 SpotLights exist simultaneously (LAMP_POOL_SIZE × 2 sides = 6 × 2),
 And each SpotLight has `distance: 15` so lights beyond the fog distance (~100 units at most, effective already at z < -35 due to fog) do not contribute,
 And Three.js `WebGLRenderer` `renderer.physicallyCorrectLights` is NOT enabled — existing renderer config uses ACESFilmicToneMapping with default light falloff (no change needed),
 And no PointLights are used — SpotLights with distance cutoff provide directional pooling onto the street surface without global over-illumination.
 
 **AC-7 — Pool-and-recycle, no unbounded memory growth:**
 Then lampposts are created in `createScene()` and recycled in the render loop — no new SpotLight or Mesh objects are created after `createScene()` (only position changes on recycle),
-And on `reset()`, all 24 lamppost Groups are removed, all geometries and materials disposed, all SpotLights removed from scene, and fresh lampposts created.
+And on `reset()`, all 12 lamppost Groups are removed, all geometries and materials disposed, all SpotLights removed from scene, and fresh lampposts created.
 
 **AC-8 — 60 fps not impacted:**
-Then each lamppost consists of 2 meshes (pole + lamp head) + 1 SpotLight — total 48 meshes + 24 SpotLights at peak,
+Then each lamppost consists of 2 meshes (pole + lamp head) + 1 SpotLight — total 24 meshes + 12 SpotLights at peak,
 And the SpotLight distance cutoff (15 units) ensures culling per frame is minimal,
 And frame time increase over pre-7-3 baseline does not exceed 0.5 ms on the reference device.
 
@@ -68,8 +69,8 @@ All existing E2E tests pass with no new console errors.
 - [x] Task 1: Add lamppost constants inside `createScene()` in `SceneManager.js`, after building constants block:
   ```js
   // ─── Lampposts (story 7-3) ──────────────────────────────────────────────
-  const LAMP_POST_SPACING = 12;     // Z spacing between consecutive lampposts
-  const LAMP_POOL_SIZE     = 12;     // lampposts per side (24 total — 12 visible + buffer each side)
+  const LAMP_POST_SPACING = 18;     // Z spacing between consecutive lampposts
+  const LAMP_POOL_SIZE     = 6;      // lampposts per side (12 total)
   const LAMP_X_OFFSET      = 10.5;   // X = ±(BLDG_X_INNER - 1.5) — between track edge and building line
   const LAMP_POLE_H        = 3.0;    // pole height
   const LAMP_POLE_R        = 0.08;   // pole radius (thin — reads as distant)
@@ -125,19 +126,15 @@ All existing E2E tests pass with no new console errors.
       return group;
     }
     ```
-  - [x] 2.2 Implement `createLamppostPool()` — creates LAMP_POOL_SIZE lampposts per side, spread across Z range:
+  - [x] 2.2 Implement `createLamppostPool()` — creates LAMP_POOL_SIZE lampposts per side at exact LAMP_POST_SPACING intervals from BLDG_SPAWN_Z (no jitter — uniform spacing from first frame):
     ```js
     function createLamppostPool() {
       leftLampposts  = [];
       rightLampposts = [];
-      const zRange = Math.abs(BLDG_NEAR_CUTOFF - BLDG_SPAWN_Z);
       for (let i = 0; i < LAMP_POOL_SIZE; i++) {
         for (const [arr, side] of [[leftLampposts, 'left'], [rightLampposts, 'right']]) {
           const g = makeLamppostGroup(side);
-          // Spread evenly across Z range — slightly randomised per lamp so they
-          // don't all land at exactly LAMP_POST_SPACING intervals on first spawn.
-          const zBase = BLDG_SPAWN_Z + (i / LAMP_POOL_SIZE) * zRange;
-          g.position.z = zBase + (Math.random() - 0.5) * LAMP_POST_SPACING * 0.5;
+          g.position.z = BLDG_SPAWN_Z + i * LAMP_POST_SPACING;
           arr.push(g);
         }
       }
@@ -150,40 +147,43 @@ All existing E2E tests pass with no new console errors.
     ```
 
 - [x] Task 3: Scroll lampposts in render loop
-  - [x] 3.1 In `render()`, after the building scroll block, add lamppost scroll with per-frame flicker update:
+  - [x] 3.1 In `render()`, after the building scroll block, add lamppost scroll with per-frame flicker update, gap reservation check, and deterministic recycle:
     ```js
-    // Lamppost scroll + flicker (story 7-3) — same speed formula as buildings.
+    // Lamppost scroll + flicker (story 7-3).
+    // Gap-based recycling suppressed during accept→arrival window (same suppressEnvGaps logic as buildings).
     {
       const lampDelta = lastWaveSpeed * 0.5 * (dt * 1000);
-      const flickerNow = nowMs / 1000; // seconds for sine wave calculation
-      for (const g of leftLampposts) {
-        g.position.z += lampDelta;
-        g.position.x = g.userData.baseX + _worldOffsetX;
-        // Flicker: ~55% of lamps modulate SpotLight intensity with per-lamp phase/Hz
-        if (g.userData.hasFlicker && g.userData.spot) {
-          const s = 0.5 + 0.5 * Math.sin(g.userData.flickerHz * flickerNow * Math.PI * 2 + g.userData.flickerPhase);
-          g.userData.spot.intensity = 0.4 + s * 0.4; // oscillate [0.4, 0.8]
+      const flickerNow = nowMs / 1000;
+      const suppressLampGaps = variantAcceptState !== null || _charTraversal !== null || _worldOffsetX !== _bldgTrackedOffsetX;
+      for (const [arr, side] of [[leftLampposts, 'left'], [rightLampposts, 'right']]) {
+        const lampRes = [];
+        if (!suppressLampGaps) {
+          for (const r of _bldgReservations.values()) {
+            if (r.poolSide === side && r.poolKind === 'main') lampRes.push(r);
+          }
         }
-        if (g.position.z > BLDG_CULL_Z) {
-          g.position.z = BLDG_SPAWN_Z + Math.random() * LAMP_POST_SPACING;
-          g.position.x = g.userData.baseX + _worldOffsetX;
-        }
-      }
-      for (const g of rightLampposts) {
-        g.position.z += lampDelta;
-        g.position.x = g.userData.baseX + _worldOffsetX;
-        if (g.userData.hasFlicker && g.userData.spot) {
-          const s = 0.5 + 0.5 * Math.sin(g.userData.flickerHz * flickerNow * Math.PI * 2 + g.userData.flickerPhase);
-          g.userData.spot.intensity = 0.4 + s * 0.4;
-        }
-        if (g.position.z > BLDG_CULL_Z) {
-          g.position.z = BLDG_SPAWN_Z + Math.random() * LAMP_POST_SPACING;
-          g.position.x = g.userData.baseX + _worldOffsetX;
+        for (const g of arr) {
+          g.position.z += lampDelta;
+          g.position.x = g.userData.baseX + _bldgTrackedOffsetX;
+          if (g.userData.hasFlicker && g.userData.spot) {
+            const s = 0.5 + 0.5 * Math.sin(g.userData.flickerHz * flickerNow * Math.PI * 2 + g.userData.flickerPhase);
+            g.userData.spot.intensity = 0.4 + s * 0.4;
+          }
+          let inGap = false;
+          for (const r of lampRes) {
+            const { z0, z1 } = r.zRangeAt();
+            if (z1 > z0 && g.position.z > z0 && g.position.z < z1) { inGap = true; break; }
+          }
+          if (g.position.z > BLDG_CULL_Z || inGap) {
+            const rearZ = arr.reduce((min, g2) => Math.min(min, g2.position.z), Infinity);
+            g.position.z = rearZ - LAMP_POST_SPACING;
+            g.position.x = g.userData.baseX + _bldgTrackedOffsetX;
+          }
         }
       }
     }
     ```
-  - [x] 3.2 Apply _worldOffsetX (variant track offset) to lamppost X positions same as buildings — `g.position.x = g.userData.baseX + _worldOffsetX` in the scroll block.
+  - [x] 3.2 X offset uses `_bldgTrackedOffsetX` (the committed offset), not `_worldOffsetX` directly. `_bldgTrackedOffsetX` is updated by `_commitBuildingTransition()` at traversal completion, so lampposts shift X in exact lockstep with the building pool swap — no pop during the diagonal ride.
 
 - [x] Task 4: Dispose lampposts on `reset()`
   - [x] 4.1 In `reset()`, after building disposal, add lamppost disposal. Unlike buildings where shared materials are reused across all instances, SpotLights hold GPU-side resources that must be disposed individually. The traverse must call `SpotLight.dispose()`, dispose mesh materials, and remove orphaned targets from the scene:
@@ -296,7 +296,7 @@ The SpotLight count (24) is within WebGL budget:
 
 ### Pool Design
 
-Lampposts reuse the same Group objects. On recycle (cull plane pass), the Group's `position.z` is reset to `BLDG_SPAWN_Z` + random offset within `[0, LAMP_POST_SPACING]` — this scatters recycled lampposts across the respawn band so they don't all arrive at the camera in lockstep.
+Lampposts reuse the same Group objects. Initial spawn places lamps at exact `LAMP_POST_SPACING` intervals: `g.position.z = BLDG_SPAWN_Z + i * LAMP_POST_SPACING`. On recycle (cull plane pass or gap zone), the Group is placed at `rearZ - LAMP_POST_SPACING` — one spacing behind the current rearmost lamp — maintaining uniform spacing throughout gameplay. No random jitter is used.
 
 Key rules:
 1. **Pole + head geometry**: created once per Group in `makeLamppostGroup()`, never disposed on recycle — only position changes
@@ -305,15 +305,33 @@ Key rules:
 
 The `let lampPoleMat` and `let lampHeadMat` must be `let` (not `const`) so `reset()` can dispose and recreate them cleanly — mirroring the `bldgBodyMat`/`bldgWindowMat` pattern from story 7-2.
 
-### Variant Track Offset (`_worldOffsetX`)
+### Variant Track Offset (`_bldgTrackedOffsetX`, not `_worldOffsetX`)
 
-Lampposts apply `_worldOffsetX` to their X position in the render loop (same as buildings):
+Lampposts use `_bldgTrackedOffsetX` (the committed offset) — **not** `_worldOffsetX` — in the render loop:
 
 ```js
-g.position.x = g.userData.baseX + _worldOffsetX;
+g.position.x = g.userData.baseX + _bldgTrackedOffsetX;
 ```
 
-On variant transition, `_worldOffsetX` changes. The lamppost scroll block applies the offset every frame — no special adoption logic needed (unlike variant building pools). Lampposts are part of the permanent scene (like buildings), not pre-populated at proposal time.
+`_worldOffsetX` is set by `spawnVariantTracks()` at the bend midpoint (mid-cinematic). `_bldgTrackedOffsetX` only updates when `_commitBuildingTransition()` fires — which happens at traversal completion (`_charTraversal` ends). This means lampposts stay at the old X throughout the diagonal ride and shift to the new offset in lockstep with buildings when the character arrives.
+
+### Reservation Zone Integration
+
+Lampposts participate in the building gap reservation system to avoid clipping through variant track diagonal geometry. In the lamppost scroll loop:
+
+- `_bldgReservations` is iterated, filtering to `poolSide === side && poolKind === 'main'` (variant-pool reservations are excluded — lampposts have no separate variant pool)
+- If a lamp falls inside a reservation's Z range it is recycled to `rearZ - LAMP_POST_SPACING` exactly as if it had passed the cull plane
+- Gap-based recycling is suppressed (`suppressLampGaps`) during the accept→arrival window: `variantAcceptState !== null || _charTraversal !== null || _worldOffsetX !== _bldgTrackedOffsetX`. This prevents near-camera lampposts from being kicked out by reservation zones sweeping through the visible range during the cinematic.
+
+### `_commitBuildingTransition()` — Pre-existing Bug Fix
+
+During implementation a pre-existing bug was discovered: the per-frame building swap detection (`_worldOffsetX !== _bldgTrackedOffsetX && _charTraversal === null`) fired immediately after `spawnVariantTracks()` changed `_worldOffsetX`, because `_charTraversal` is set later (from `_bendMidpointCb` firing inside the render loop). This caused buildings and lampposts to despawn during the diagonal traversal.
+
+Fix: extracted `_commitBuildingTransition()` — all pool-swap logic lives here. The render loop no longer detects the offset change inline. Instead:
+1. **Traversal completion** (`tRaw >= 1` in `_charTraversal` update): calls `_commitBuildingTransition()` — canonical arrival moment
+2. **`clearVariantGeom()` top**: calls `_commitBuildingTransition()` as safety net for edge cases (traversal skipped/aborted)
+
+`suppressEnvGaps = variantAcceptState !== null || _charTraversal !== null || _worldOffsetX !== _bldgTrackedOffsetX` covers all three phases of the transition window (accept before promote response, promote-to-traversal gap, active traversal) so no near-camera building or lamppost is gap-kicked during the cinematic.
 
 ### Style: Approach Lighting as Visual Depth Cue
 
@@ -382,8 +400,9 @@ The `reset()` block mirrors the building disposal pattern:
 - `dithering: true` on all materials for consistency
 - Pool-and-recycle pattern avoids unbounded memory growth; no new objects after `createScene()`
 - `clearScene()` does not touch permanent geometry — lampposts persist across `clearScene()` calls (instrument changes, lane rebuilds)
-- Write `_worldOffsetX` in the per-frame scroll block so lampposts follow variant track transitions without special adoption logic
+- Use `_bldgTrackedOffsetX` (not `_worldOffsetX`) in the lamppost scroll block — the committed offset only updates at traversal completion, preventing X-pop during the diagonal ride
 - Buildings documentation has a `userData.baseX` pattern — reuse for lampposts so variant offset is applied uniformly
+- The building pool swap must be triggered explicitly at traversal end, not detected per-frame — per-frame detection fires prematurely because `_worldOffsetX` changes before `_charTraversal` starts
 
 ### Files to Modify
 
@@ -417,20 +436,26 @@ claude-sonnet-4-6
 
 ### Completion Notes List
 
-- Implemented lamppost constants (LAMP_POST_SPACING=12, LAMP_POOL_SIZE=12, LAMP_X_OFFSET=10.5) and shared materials (lampPoleMat using COLORS.EDGE, lampHeadMat using COLORS.ACCENT) inside createScene() after building constants block.
+- Implemented lamppost constants (LAMP_POST_SPACING=18, LAMP_POOL_SIZE=6, LAMP_X_OFFSET=10.5) and shared materials (lampPoleMat using COLORS.EDGE, lampHeadMat using COLORS.ACCENT) inside createScene() after building constants block. Pool size and spacing diverge from story spec: 6/side (12 total) at 18-unit spacing per user direction.
 - Implemented makeLamppostGroup(side): pole CylinderGeometry + head BoxGeometry + SpotLight(COLORS.ACCENT, 0.6, 15, π/4, 0.5, 1) + per-lamp flicker state (flickerPhase, flickerHz 2-3Hz, hasFlicker ~55%).
-- Implemented createLamppostPool(): 12 groups per side spread evenly across BLDG_SPAWN_Z→BLDG_NEAR_CUTOFF Z range with ±LAMP_POST_SPACING/2 jitter.
-- Added lamppost scroll in render() after building scroll: same speed formula (lastWaveSpeed * 0.5 * dt*1000), _worldOffsetX applied each frame, flicker modulates SpotLight.intensity [0.4,0.8] via sine wave, recycle to BLDG_SPAWN_Z on BLDG_CULL_Z pass.
+- Implemented createLamppostPool(): 6 groups per side at exact LAMP_POST_SPACING intervals (BLDG_SPAWN_Z + i * LAMP_POST_SPACING) — no jitter, uniform spacing from first frame.
+- Added lamppost scroll in render(): same speed formula, X uses _bldgTrackedOffsetX (deferred committed offset), flicker modulates SpotLight.intensity [0.4,0.8], recycle places at rearZ - LAMP_POST_SPACING (uniform), gap reservation check (poolKind === 'main' only) with suppressLampGaps guard during transition window.
 - Added full disposal in reset(): traverse + spot.dispose() + scene.remove(spot.target) + scene.remove(c) for lights + shared material dispose/recreate + createLamppostPool().
+- Fixed pre-existing bug: main track buildings and lampposts despawned during variant diagonal traversal. Root cause: building pool swap detected _worldOffsetX change per-frame; fired immediately because _worldOffsetX is set by spawnVariantTracks() before _charTraversal starts (bend midpoint fires later). Fix: extracted _commitBuildingTransition(), called explicitly at traversal completion and as safety net in clearVariantGeom(). suppressEnvGaps covers full accept→arrival window via three-signal OR: variantAcceptState || _charTraversal || _worldOffsetX !== _bldgTrackedOffsetX.
 - 82/82 E2E tests pass, no regressions.
 
 ### File List
 
 - `static/game/SceneManager.js`
 
+### Review Findings
+
+- [x] [Review][Patch] Refactor lamppost gap filter to use `reservationsFor(side, 'main')` instead of inlining the same poolSide/poolKind filter [SceneManager.js:1394-1397]
+
 ## Change Log
 
-- 2026-05-28: Story 7-3 implemented — lamppost pool (24 SpotLights), PS1 flicker, scroll+recycle, full reset disposal. 82/82 E2E pass.
+- 2026-05-28: Post-implementation fixes — uniform spacing (no jitter, deterministic recycle), reservation zone integration (poolKind=main filter, suppressLampGaps), pool 6/side + spacing 18 per user direction, pre-existing bug fix (_commitBuildingTransition explicit trigger, suppressEnvGaps three-signal guard). 82/82 E2E pass.
+- 2026-05-28: Story 7-3 implemented — lamppost pool (12 SpotLights), PS1 flicker, scroll+recycle, full reset disposal. 82/82 E2E pass.
 - 2026-05-28: Story 7-3 created
 - 2026-05-28: Party mode review — Winston (SpotLight budget), Sally (flicker + atmosphere gap), Amelia (disposal leak + _worldOffsetX confirmation). Applied: PS1 flicker on ~55% of lamps ([0.4, 0.8] sine at 2-3 Hz), pool size 12/side (24 total), fixed SpotLight dispose/material dispose/scene.remove() in reset()
 
