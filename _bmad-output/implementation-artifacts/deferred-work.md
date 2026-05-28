@@ -89,3 +89,23 @@
 - AC-9 `timerMs` not always 0 — both note-trigger and poll paths write `Math.max(0, deadline_ms - Date.now())`; AC-9 permits the deviation and E2E sync uses `safeZoneZ`.
 - AC-5 `szSpawnMs` augmented with `+ VARIANT_SZ_DEPTH / 2` offset — change-logged 2026-05-25; spec wording stale but intent preserved.
 - AC-6 mechanism replaced (`variantPendingSpawn` + render-loop watcher vs spec's `pendingVariantPropose` + `updateVariantSafeZoneWave`) — functionally equivalent; doc fix is Patch P12 in 5-8 review.
+
+## Deferred from: code review of 7-0-visual-conformance-tracks-carts-safe-zones (2026-05-27)
+
+- `SafeZoneRenderer.this.geometry` has no disposal path on permanent renderer teardown — shared `PlaneGeometry` leaks GPU allocation if the renderer is GC'd without `reset()` being called; pre-existing architecture gap [SafeZoneRenderer.js].
+- `paletteIdx=0` fallback when `anchorString` is null ignores available `transitionWave.safe_string` — variant SZ always renders with red (index 0) for null-anchor case; consider using `transitionWave.safe_string` as a better fallback [SceneManager.js:388].
+- `paletteIdx` conversion (`stringCount - string`) duplicated in both `SceneManager.js` and `SafeZoneRenderer.js` without a shared utility — if string indexing convention changes, both sites must be updated independently [SceneManager.js:388, SafeZoneRenderer.js:109].
+- Stale-zone cleanup intentionally skips `fill.geometry.dispose()` (it's the shared `this.geometry`) but no comment explains this invariant — future refactor could accidentally add the dispose call and corrupt all remaining zones [SafeZoneRenderer.js:95].
+
+## Deferred from: code review of 7-1-floor-plane-ground-surface-beneath-tracks (2026-05-27)
+
+- Use-after-free risk: `floorMat.dispose()` called in `reset()` could theoretically race a mid-flight render frame — JS is single-threaded so RAF frames never interleave; theoretical only [SceneManager.js].
+- `makeFloorTile` closure captures `floorMat` by variable reference; correctness depends on `floorMat` being reassigned before `makeFloorTile()` is called in `reset()` — fragile to reordering; consider extracting a `createFloorTiles()` helper [SceneManager.js].
+
+## Deferred from: code review of 7-2-procedural-building-generation-main-track-skyline (2026-05-28)
+
+- `geometry.parameters.depth` unguarded — multiple sites access `g.children[0].geometry.parameters.depth` assuming BoxGeometry. Safe while invariant holds but fragile to refactoring. [SceneManager.js]
+- Sequential transitions accumulate retirees — if two transitions occur <~6.6s apart, two sets of retirees scroll at different X offsets simultaneously. Unlikely in practice. [SceneManager.js]
+- Propose-piece despawn no clock compensation — `despawnAtMs = nowMs + 500` uses wall clock; backgrounded tab RAF throttling makes the piece linger longer. Pre-existing behavior. [SceneManager.js]
+- No E2E tests for buildings — zero E2E tests verify any building behavior (AC-1 through AC-14). Pre-existing scope decision (visual-only testing).
+- `PlaneGeometry(400, 300, 32, 32)` alloc/dealloc on every `reset()` — 1024 quads × 2 tiles recreated each call; on low-end hardware or rapid resets this causes GPU memory churn; tiles could be repositioned instead of destroyed [SceneManager.js].

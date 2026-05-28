@@ -29443,7 +29443,14 @@ class WebGLRenderer {
 						const materialProperties = properties.get( material );
 						const program = materialProperties.currentProgram;
 
-						if ( program.isReady() ) {
+						// LOCAL PATCH (subway-scaler, story 7-5): guard undefined program.
+						// compile() adds some materials to this set without ever assigning a
+						// currentProgram (e.g. materials drawn by dedicated plugins such as
+						// SpriteMaterial). Upstream r1xx dereferences `program.isReady()` here
+						// and throws "can't access property isReady, program is undefined"
+						// (uncaught, breaks bootstrap on Firefox). A material with no program
+						// has nothing to wait on, so treat it as ready and drop it from the poll.
+						if ( program === undefined || program.isReady() ) {
 
 							// remove any programs that report they're ready to use from the list
 							materials.delete( material );

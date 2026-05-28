@@ -25,3 +25,5 @@ temp/
 /.venv/
 tests/e2e/screenshots/
 tests/e2e/results/
+# User-provided game assets (animated sprite spritesheet, etc.)
+static/assets/

@@ -14,7 +14,25 @@ export const COLORS = {
   TEXT_PRIMARY:  0xE8E8F0,
   TEXT_DISABLED: 0x555570,
   EDGE:          0x08080F,
+  // NPC cart threat colour — reserved solely for hazard state signals.
+  // Hot coral: hue-shifted away from String Red (0xCC0000) and String Orange (0xCC6600).
+  // Contrast vs strings is low (~1.1:1) but acceptable — carts are 3D geometry, never on the
+  // safe lane, and will be replaced by proper 3D models (Epic 7+). Revisit colour after model swap.
+  // ACCENT (0xFFB800) is reserved for world lighting (lampposts, story 7-3).
+  DANGER:        0xFF4411,
 };
+
+// ===== CURVED WORLD (story 7-5) =====
+// Cylindrical vertex bend applied to world geometry (floor, tracks, buildings,
+// lampposts) via material.onBeforeCompile. Toggle OFF to render flat (debug/compare);
+// when false, applyWorldCurve() is a no-op and materials compile to stock shaders.
+export const CURVED_WORLD = true;
+// View-space curvature strength — the canonical tuning knob. Surface Y is dropped
+// by (viewZ^2 * strength). viewZ is negative ahead of camera, so the square term
+// drops far geometry. Tuned so the horizon (~fog far, ~100 view units ahead) sits
+// ~5-10° below flat. Larger = more aggressive bend. Keep small — subtle PS1 cue,
+// not a fisheye. Final value tuned in-engine (story 7-5 Task 5).
+export const WORLD_CURVE_STRENGTH = 0.0009;
 
 // ===== STRING COLORS (Slopsmith / Rocksmith standard palette) =====
 // Indexed low→high pitch. Index 0 = lowest pitch string of the instrument.
@@ -32,6 +50,36 @@ export const STRING_COLORS = [
   0x00CCCC, // 7 — Teal
 ];
 
+// ===== SAFE ZONE FILL COLOURS (darkened string colours for translucent safe-zone planes) =====
+// Indexed low→high pitch — same index as STRING_COLORS.
+// Each value is a darkened variant of STRING_COLORS[i] for use as the translucent fill material.
+// The opaque neon border uses STRING_COLORS[i] at full value.
+export const STRING_SAFE_ZONE_FILLS = [
+  0x330000, // 0 — Red    (darkened)
+  0x332A00, // 1 — Yellow (darkened)
+  0x001A33, // 2 — Blue   (darkened)
+  0x331900, // 3 — Orange (darkened)
+  0x003319, // 4 — Green  (darkened)
+  0x260033, // 5 — Purple (darkened)
+  0x330029, // 6 — Magenta(darkened)
+  0x003333, // 7 — Teal   (darkened)
+];
+
+// Emissive intensity for safe-zone border LineBasicMaterial (full-brightness string colour).
+// PROVISIONAL — retune after lamppost lighting (story 7-3) lands.
+// Do NOT raise above 0.8 before testing with ACESFilmicToneMapping.
+export const EMISSIVE_SAFE_ZONE_BORDER = 0.7;
+
+// ===== CHARACTER SPRITE (story 7-6) =====
+// Animated pixel-art runner replacing the abstract capsule.
+// Frames extracted from a .gif or .png spritesheet in static/assets/.
+export const CHARACTER_SPRITE_PATH = '/plugins/subway-scaler/static/assets/Character_running_north.gif';
+export const CHARACTER_FRAME_COUNT = 4;
+export const CHARACTER_FRAME_W = 124;    // px — single frame width
+export const CHARACTER_FRAME_H = 124;    // px — single frame height
+export const CHARACTER_FPS = 6;          // animation speed (tune in-engine)
+
+// ===== STRING COLOUR LOOKUP =====
 // Look up a string color by low→high index, clamping to instrument.stringCount.
 export function colourForString(stringIdx, instrument) {
   if (stringIdx == null || typeof stringIdx !== 'number' || isNaN(stringIdx)) return STRING_COLORS[0];

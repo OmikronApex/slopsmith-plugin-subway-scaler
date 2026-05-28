@@ -376,11 +376,79 @@ The game world transitions from a bare track-in-void to a lived-in night city en
 
 | Story | Title | Status | Depends on |
 |---|---|---|---|
-| 7-1 | Floor Plane — Ground Surface Beneath Tracks | todo | — |
+| 7-0 | Visual Conformance — Tracks, Carts & Safe Zones | todo | — |
+| 7-1 | Floor Plane — Ground Surface Beneath Tracks | todo | 7-0 |
 | 7-2 | Procedural Building Generation — Main Track Skyline | todo | 7-1 |
 | 7-3 | Lamppost Geometry & Point Lighting | todo | 7-2 |
 | 7-4 | Procedural Buildings — Variant Geometry | todo | 7-2, Epic 6 |
 | 7-5 | Vertex Shader — Curved World Surface | todo | 7-1 |
+
+### Story 7-0: Visual Conformance — Tracks, Carts & Safe Zones
+
+As a **player**, I want the track geometry, carts, and safe-zone indicators to use the correct Night City palette colours and a polished neon-border safe-zone treatment, so the game world reads consistently before new environment elements are added.
+
+**Background:**
+
+The existing geometry (track lanes, cart meshes, safe-zone planes) was built for logic correctness. Before the world-environment stories layer on top, all existing elements must match the `tokens.js` Night City palette and the agreed UX safe-zone specification: a translucent plane with an opaque, slightly emissive neon border that matches the lane's string colour.
+
+**Token additions required in `tokens.js` before implementation:**
+
+```js
+// Add to COLORS object:
+DANGER: 0xFF2233,  // NPC cart threat colour — reserved solely for hazard state signals
+
+// Add as new top-level export (parallel to STRING_COLORS):
+export const STRING_SAFE_ZONE_FILLS = [
+  0x330000, // 0 — Red    (darkened)
+  0x332A00, // 1 — Yellow (darkened)
+  0x001A33, // 2 — Blue   (darkened)
+  0x331900, // 3 — Orange (darkened)
+  0x003319, // 4 — Green  (darkened)
+  0x260033, // 5 — Purple (darkened)
+  0x330029, // 6 — Magenta(darkened)
+  0x003333, // 7 — Teal   (darkened)
+];
+// Same index as STRING_COLORS (0 = lowest pitch string).
+// Each fill is a darkened variant of the string colour for use as
+// translucent safe-zone plane material. Border uses STRING_COLORS[i] at full value.
+
+export const EMISSIVE_SAFE_ZONE_BORDER = 0.7;
+// Provisional — retune after lighting stories (7-3) land.
+// Designed for ACESFilmicToneMapping; do not raise above 0.8 before testing tone mapping.
+```
+
+**Acceptance Criteria:**
+
+**Given** the game scene loads
+**When** track lane geometry is rendered
+**Then** each track lane surface uses `COLORS.BG_STAGE` (`0x1A1A2E`) as its base material colour
+**And** no track geometry uses raw hex colour literals — all colours referenced from `tokens.js` exports
+
+**Given** the game scene loads
+**When** cart meshes are rendered
+**Then** all NPC / obstacle carts use `COLORS.DANGER`
+**And** no cart material references colour values outside `tokens.js` exports
+**And** `COLORS.ACCENT` (`0xFFB800`) is not used on any cart — it is reserved for world lighting (lampposts)
+
+**Given** a safe zone is active on track lane at string index `i`
+**When** the safe-zone indicator is rendered
+**Then** a translucent plane fills the safe-zone bounds with material colour `STRING_SAFE_ZONE_FILLS[i]`, `opacity: 0.15`, `transparent: true`, `depthWrite: false`, `polygonOffset: true`, `polygonOffsetFactor: 1`, `polygonOffsetUnits: 1`
+**And** a border mesh (`EdgesGeometry` on a `PlaneGeometry` matching the fill plane) surrounds the perimeter with colour `STRING_COLORS[i]`, `emissive: STRING_COLORS[i]`, `emissiveIntensity: EMISSIVE_SAFE_ZONE_BORDER`
+**And** the border mesh has `renderOrder` set 1 higher than the fill plane, guaranteeing it draws on top
+**And** the safe-zone plane and border are children of the track lane group (not scene root), so they scroll with the track without manual Z translation
+**And** no safe-zone geometry is visible outside the lane bounds at any camera angle
+
+**Given** all three element types (tracks, carts, safe zones) are visible simultaneously
+**When** the scene is inspected at runtime
+**Then** no `MeshBasicMaterial` or `MeshStandardMaterial` constructor call contains a colour literal — all colours sourced from `tokens.js`
+**And** the browser console shows zero Three.js warnings attributable to these elements
+
+**Out of scope for this story:** floor plane, buildings, lampposts, vertex shader (covered in 7-1 through 7-5). Safe-zone pulse animation (emissive oscillation) noted as backlog item for post-7-1.
+
+**Implementation notes:**
+- `EdgesGeometry` must wrap a `PlaneGeometry` (not `BoxGeometry`) to produce only the 4 perimeter edges — no internal diagonals
+- `EMISSIVE_SAFE_ZONE_BORDER = 0.7` is provisional; add an inline comment noting tone-mapping dependency so future devs do not raise it blindly
+- `COLORS.DANGER` is reserved for transient hazard signals only — do not reuse for UI warnings or low-health indicators
 
 ### Story 7-1: Floor Plane — Ground Surface Beneath Tracks
 
@@ -467,6 +535,7 @@ As a **player**, I want the world surface (floor + track area) to appear slightl
 
 | Requirement | Story | Coverage |
 |---|---|---|
+| FR-VP-000: Existing geometry (tracks, carts, safe zones) uses Night City palette tokens | 7-0 | Token conformance, neon border safe zones |
 | FR-VP-001: Floor plane rendered beneath tracks | 7-1 | Ground surface with scrolling texture |
 | FR-VP-002: Procedural buildings flanking main tracks at 3-track distance | 7-2 | Skyline generation, pool recycling, variant gap |
 | FR-VP-003: Lampposts with `color-accent` lighting | 7-3 | Point/spot lights, pool recycling, light budget |
