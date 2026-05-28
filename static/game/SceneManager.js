@@ -116,6 +116,70 @@ export function createScene(canvas) {
     dithering: true,
   });
 
+  // ─── Lampposts (story 7-3) ──────────────────────────────────────────────
+  const LAMP_POST_SPACING = 12;     // Z spacing between consecutive lampposts
+  const LAMP_POOL_SIZE     = 12;     // lampposts per side (24 total — 12 visible + buffer each side)
+  const LAMP_X_OFFSET      = 10.5;   // X = ±(BLDG_X_INNER - 1.5) — between track edge and building line
+  const LAMP_POLE_H        = 3.0;    // pole height
+  const LAMP_POLE_R        = 0.08;   // pole radius (thin — reads as distant)
+  const LAMP_HEAD_W        = 0.4;    // lamp head width
+  const LAMP_HEAD_H        = 0.15;   // lamp head height
+  const LAMP_HEAD_D        = 0.4;    // lamp head depth
+
+  let lampPoleMat = new THREE.MeshStandardMaterial({
+    color: COLORS.EDGE,
+    flatShading: true,
+    dithering: true,
+  });
+  let lampHeadMat = new THREE.MeshStandardMaterial({
+    color: COLORS.ACCENT,
+    emissive: COLORS.ACCENT,
+    emissiveIntensity: 0.8,
+    flatShading: true,
+    dithering: true,
+  });
+
+  let leftLampposts  = [];
+  let rightLampposts = [];
+
+  function makeLamppostGroup(side) {
+    const group = new THREE.Group();
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(LAMP_POLE_R, LAMP_POLE_R * 1.5, LAMP_POLE_H, 6), lampPoleMat);
+    pole.position.set(0, LAMP_POLE_H / 2, 0);
+    group.add(pole);
+    const head = new THREE.Mesh(new THREE.BoxGeometry(LAMP_HEAD_W, LAMP_HEAD_H, LAMP_HEAD_D), lampHeadMat);
+    head.position.set(0, LAMP_POLE_H, 0);
+    group.add(head);
+    const spot = new THREE.SpotLight(COLORS.ACCENT, 0.6, 15, Math.PI / 4, 0.5, 1);
+    spot.position.set(0, LAMP_POLE_H, 0);
+    spot.target.position.set(0, 0, 0);
+    group.add(spot);
+    group.add(spot.target);
+    const flickerPhase = Math.random() * Math.PI * 2;
+    const flickerHz   = 2 + Math.random() * 1;
+    const hasFlicker  = Math.random() < 0.55;
+    group.userData = { flickerPhase, flickerHz, hasFlicker, spot };
+    group.userData.baseX = side === 'left' ? -LAMP_X_OFFSET : LAMP_X_OFFSET;
+    group.position.x = group.userData.baseX;
+    scene.add(group);
+    return group;
+  }
+
+  function createLamppostPool() {
+    leftLampposts  = [];
+    rightLampposts = [];
+    const zRange = Math.abs(BLDG_NEAR_CUTOFF - BLDG_SPAWN_Z);
+    for (let i = 0; i < LAMP_POOL_SIZE; i++) {
+      for (const [arr, side] of [[leftLampposts, 'left'], [rightLampposts, 'right']]) {
+        const g = makeLamppostGroup(side);
+        const zBase = BLDG_SPAWN_Z + (i / LAMP_POOL_SIZE) * zRange;
+        g.position.z = zBase + (Math.random() - 0.5) * LAMP_POST_SPACING * 0.5;
+        arr.push(g);
+      }
+    }
+  }
+  // ─────────────────────────────────────────────────────────────────────────
+
   function randomiseBuildingGroup(group, side) {
     const h = BLDG_MIN_H + Math.random() * (BLDG_MAX_H - BLDG_MIN_H);
     const w = BLDG_W_MIN + Math.random() * (BLDG_W_MAX - BLDG_W_MIN);
@@ -370,6 +434,7 @@ export function createScene(canvas) {
   }
 
   createBuildingPool();
+  createLamppostPool();  // story 7-3
   // ─────────────────────────────────────────────────────────────────────────
 
   const bodyMatByColour = new Map();
@@ -586,6 +651,30 @@ export function createScene(canvas) {
     });
     _bldgTrackedOffsetX = 0;
     createBuildingPool();
+
+    // Dispose lampposts (story 7-3)
+    for (const g of [...leftLampposts, ...rightLampposts]) {
+      scene.remove(g);
+      g.traverse(c => {
+        if (c.isMesh) {
+          c.geometry?.dispose();
+          if (Array.isArray(c.material)) c.material.forEach(m => m.dispose());
+          else c.material?.dispose();
+        }
+        if (c.isSpotLight) {
+          c.dispose();
+          scene.remove(c.target);
+        }
+        if (c.isLight) scene.remove(c);
+      });
+    }
+    lampPoleMat.dispose();
+    lampHeadMat.dispose();
+    lampPoleMat = new THREE.MeshStandardMaterial({ color: COLORS.EDGE, flatShading: true, dithering: true });
+    lampHeadMat = new THREE.MeshStandardMaterial({ color: COLORS.ACCENT, emissive: COLORS.ACCENT, emissiveIntensity: 0.8, flatShading: true, dithering: true });
+    leftLampposts = [];
+    rightLampposts = [];
+    createLamppostPool();
   }
 
   // ─── Variant geometry helpers (story 5-5) ─────────────────────────────────
@@ -1286,6 +1375,36 @@ export function createScene(canvas) {
           scene.remove(g);
           for (const child of g.children) child.geometry.dispose();
           retiringBuildings.splice(i, 1);
+        }
+      }
+    }
+
+    // Lamppost scroll + flicker (story 7-3) — same speed formula as buildings.
+    {
+      const lampDelta = lastWaveSpeed * 0.5 * (dt * 1000);
+      const flickerNow = nowMs / 1000;
+      for (const g of leftLampposts) {
+        g.position.z += lampDelta;
+        g.position.x = g.userData.baseX + _worldOffsetX;
+        if (g.userData.hasFlicker && g.userData.spot) {
+          const s = 0.5 + 0.5 * Math.sin(g.userData.flickerHz * flickerNow * Math.PI * 2 + g.userData.flickerPhase);
+          g.userData.spot.intensity = 0.4 + s * 0.4;
+        }
+        if (g.position.z > BLDG_CULL_Z) {
+          g.position.z = BLDG_SPAWN_Z + Math.random() * LAMP_POST_SPACING;
+          g.position.x = g.userData.baseX + _worldOffsetX;
+        }
+      }
+      for (const g of rightLampposts) {
+        g.position.z += lampDelta;
+        g.position.x = g.userData.baseX + _worldOffsetX;
+        if (g.userData.hasFlicker && g.userData.spot) {
+          const s = 0.5 + 0.5 * Math.sin(g.userData.flickerHz * flickerNow * Math.PI * 2 + g.userData.flickerPhase);
+          g.userData.spot.intensity = 0.4 + s * 0.4;
+        }
+        if (g.position.z > BLDG_CULL_Z) {
+          g.position.z = BLDG_SPAWN_Z + Math.random() * LAMP_POST_SPACING;
+          g.position.x = g.userData.baseX + _worldOffsetX;
         }
       }
     }
