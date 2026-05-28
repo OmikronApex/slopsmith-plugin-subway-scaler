@@ -73,11 +73,11 @@ export const EMISSIVE_SAFE_ZONE_BORDER = 0.7;
 // ===== CHARACTER SPRITE (story 7-6) =====
 // Animated pixel-art runner replacing the abstract capsule.
 // Frames extracted from a .gif or .png spritesheet in static/assets/.
-export const CHARACTER_SPRITE_PATH = 'assets/Character_running_north.gif';
+export const CHARACTER_SPRITE_PATH = '/plugins/subway-scaler/static/assets/Character_running_north.gif';
 export const CHARACTER_FRAME_COUNT = 4;
 export const CHARACTER_FRAME_W = 124;    // px — single frame width
 export const CHARACTER_FRAME_H = 124;    // px — single frame height
-export const CHARACTER_FPS = 10;          // animation speed (tune in-engine)
+export const CHARACTER_FPS = 6;          // animation speed (tune in-engine)
 
 // ===== STRING COLOUR LOOKUP =====
 // Look up a string color by low→high index, clamping to instrument.stringCount.

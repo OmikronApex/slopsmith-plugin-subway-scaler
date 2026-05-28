@@ -6,15 +6,16 @@
 
 import * as THREE from './vendor/three.module.js';
 import { laneX, cameraForPitch, SPAWN_Z, LANE_X_SCALE } from './TrackSystem.js';
-import { COLORS, colourForString, STRING_COLORS, STRING_SAFE_ZONE_FILLS, CURVED_WORLD, WORLD_CURVE_STRENGTH } from './ui/tokens.js';
+import { COLORS, colourForString, STRING_COLORS, STRING_SAFE_ZONE_FILLS, CURVED_WORLD, WORLD_CURVE_STRENGTH, CHARACTER_SPRITE_PATH, CHARACTER_FRAME_COUNT, CHARACTER_FRAME_W, CHARACTER_FRAME_H, CHARACTER_FPS } from './ui/tokens.js';
+import { parseGifFrames } from './ui/gif-parser.js';
 
-const CHAR_Y = 1.1;
 const FRONT_Z = 0;
 const LATERAL_MS = 120;
 const CAMERA_PITCH = 30; // Shallower angle (deg) to see more upcoming track
 const CAMERA_DISTANCE = 15; // Euclidean distance
 const TRACK_DEPTH = 120;
 const ROOF_COLOUR = 0x444444;
+const CHAR_FRAME_DURATION = 1000 / CHARACTER_FPS;  // ms per frame for sprite animation (story 7-6)
 const VARIANT_SZ_DEPTH = 20;      // Safe zone depth for variant lane (matches SafeZoneRenderer)
 const LANE_W = 1.4;               // Lane box width (matches BoxGeometry in rebuildTracks)
 const PIECE_H = 0.06;             // Track piece height
@@ -638,12 +639,136 @@ export function createScene(canvas) {
     return mesh;
   }
 
-  const character = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.28, 0.6, 4, 8),
-    new THREE.MeshStandardMaterial({ color: 0xff4488, dithering: true }),
-  );
-  character.position.set(0, CHAR_Y, FRONT_Z + 0.1);
+  // ─── Character sprite (story 7-6) ───────────────────────────────────────────
+  // Generates a procedural placeholder pixel-art running character (4 frames)
+  // drawn on canvases. Used when the real .gif asset is unavailable.
+  function generatePlaceholderFrames(count = 4, size = 24) {
+    const frames = [];
+    const cx = size / 2, cy = size / 2;
+    for (let i = 0; i < count; i++) {
+      const c = document.createElement('canvas');
+      c.width = size; c.height = size;
+      const ctx = c.getContext('2d');
+      // Body colour — dark silhouette with ACCENT glow
+      ctx.fillStyle = '#222';
+      ctx.strokeStyle = '#FFB800';
+      ctx.lineWidth = 1.5;
+      // Head (circle)
+      ctx.beginPath(); ctx.arc(cx, cy - 6, 4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      // Torso (rectangle)
+      ctx.fillRect(cx - 3, cy - 1, 6, 8);
+      ctx.strokeRect(cx - 3, cy - 1, 6, 8);
+      // Legs — animated based on frame
+      const legSwing = [0, 2, 0, -2][i];
+      ctx.fillRect(cx - 4, cy + 7, 3, 5 + legSwing);
+      ctx.fillRect(cx + 1, cy + 7, 3, 5 - legSwing);
+      ctx.strokeRect(cx - 4, cy + 7, 3, 5 + legSwing);
+      ctx.strokeRect(cx + 1, cy + 7, 3, 5 - legSwing);
+      // Arms
+      const armSwing = [0, -2, 0, 2][i];
+      ctx.fillRect(cx - 6, cy, 3, 3 + armSwing);
+      ctx.fillRect(cx + 3, cy, 3, 3 - armSwing);
+      frames.push(c);
+    }
+    return frames;
+  }
+
+  // Build the character sprite frame array, using the real asset if available
+  // or falling back to the procedural placeholder. Each frame is an HTMLCanvasElement.
+  // THIS FUNCTION IS CALLED ASYNCHRONOUSLY (CharacterSpriteFrames) — the sprite
+  // renders a placeholder until the real asset loads.
+  let _spriteFrames = null;   // Array<HTMLCanvasElement>
+  let _spriteFrameDelays = null; // Array<number> — ms per frame (from GIF)
+  let _spriteFramesReady = false;  // true once frames are loaded and drawable
+
+  function initSpriteFrames() {
+    _spriteFrames = generatePlaceholderFrames(CHARACTER_FRAME_COUNT, 24);
+    _spriteFrameDelays = null;
+    _spriteFramesReady = true;
+
+    // Attempt to load the real animated GIF asynchronously; on success, replace frames.
+    fetch(CHARACTER_SPRITE_PATH)
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.arrayBuffer();
+      })
+      .then(buf => {
+        const { frames, delays } = parseGifFrames(buf);
+        if (frames.length >= 1) {
+          _spriteFrames = frames;
+          _spriteFrameDelays = delays;
+          _frameTimelineFn = _frameTimeline(delays);
+        }
+      })
+      .catch(() => { /* fallback: keep placeholder */ });
+  }
+  initSpriteFrames();
+
+  // Create the character sprite mesh. Replaces the old CapsuleGeometry (story 7-6).
+  // Uses a PlaneGeometry (not THREE.Sprite) so the feet anchor at world y=0 and
+  // there's no screen-aligned X parallax at lane edges. Manually billboarded in
+  // render() to always face the camera.
+  const characterGeometry = new THREE.PlaneGeometry(1, 1);
+  // Shift geometry origin to bottom edge so position.y = 0 places feet on track surface.
+  characterGeometry.translate(0, 0.5, 0);
+  const character = new THREE.Mesh(characterGeometry, new THREE.MeshBasicMaterial({
+    map: null,
+    transparent: true,
+    depthWrite: false,
+    toneMapped: false,
+    depthTest: true,
+  }));
+  character.renderOrder = 999; // draw after all safe-zone planes (default renderOrder=0)
+  // 4× larger than original capsule proxy (0.7 → 2.8) for readable pixel art at gameplay scale.
+  character.scale.set(2.8, 2.8, 1);
+  // Position so feet (bottom of plane) rest at y=0 on the track surface.
+  // Plane is 2.8 tall → half-height 1.4, shifted up 0.5 → origin at bottom.
+  character.position.set(0, 0, FRONT_Z + 0.1);
   scene.add(character);
+
+  let _charLastFrameIdx = -1;
+
+  // Timeline-based frame advancement. Uses GIF per-frame delays (which include
+  // the accumulated display time of all prior frames) when available; falls back
+  // to uniform CHARACTER_FRAME_DURATION for placeholder frames.
+  function _frameTimeline(delays) {
+    if (delays && delays.length > 0) {
+      // Build cumulative timeline from per-frame delays
+      let total = 0;
+      const tl = delays.map(d => { total += d; return total; });
+      return (elapsed, len) => {
+        const t = elapsed % total;
+        for (let i = 0; i < tl.length; i++) {
+          if (t < tl[i]) return i % len;
+        }
+        return 0;
+      };
+    } else {
+      // Uniform frame durations (placeholder)
+      const dur = CHAR_FRAME_DURATION;
+      return (elapsed, len) => Math.floor(elapsed / dur) % len;
+    }
+  }
+
+  let _frameTimelineFn = _frameTimeline(null);
+
+  // Update the character sprite's texture for the current game-time frame.
+  // Called from render() each tick — only triggers texture upload on frame change.
+  function updateCharacterSprite(nowGameMs) {
+    if (!_spriteFramesReady || !_spriteFrames || _spriteFrames.length === 0) return;
+    const elapsed = nowGameMs - gameStartTime;
+    const frameIdx = _frameTimelineFn(elapsed, _spriteFrames.length);
+    if (frameIdx !== _charLastFrameIdx) {
+      _charLastFrameIdx = frameIdx;
+      const tex = new THREE.CanvasTexture(_spriteFrames[frameIdx]);
+      tex.colorSpace = THREE.SRGBColorSpace; // canvas pixels are sRGB — correct identity pipeline
+      tex.minFilter = THREE.NearestFilter;
+      tex.magFilter = THREE.NearestFilter;
+      character.material.map = tex;
+      character.material.needsUpdate = true;
+    }
+  }
+  // ───────────────────────────────────────────────────────────────────────────
 
   let instrument = null;
   let tracks = []; // { mesh, label }
@@ -766,7 +891,10 @@ export function createScene(canvas) {
     succeeded = false;
     _worldOffsetX = 0;
     _cinematicExit = null;
-    character.position.set(laneX(0, numLanes), CHAR_Y, FRONT_Z + 0.1);
+    // Dispose character sprite texture to prevent GPU memory accumulation on replay (story 7-6).
+    if (character.material.map) { character.material.map.dispose(); character.material.map = null; }
+    _charLastFrameIdx = -1;
+    character.position.set(laneX(0, numLanes), 0, FRONT_Z + 0.1);
     character.rotation.set(0, 0, 0);
     targetCameraX = 0;
     currentCameraX = 0;
@@ -1308,6 +1436,12 @@ export function createScene(canvas) {
     const dt = lastTime ? Math.max(0, Math.min(0.05, (nowMs - lastTime) / 1000)) : 0.016;
     lastTime = nowMs;
 
+    // Animate character sprite frame (story 7-6).
+    updateCharacterSprite(nowMs);
+
+    // Billboard: plane always faces camera — feet stay anchored on track surface.
+    character.quaternion.copy(camera.quaternion);
+
     if (tween) {
       const t = Math.min(1, (nowMs - tween.startMs) / tween.durMs);
       const e = 1 - (1 - t) * (1 - t);
@@ -1350,7 +1484,8 @@ export function createScene(canvas) {
       w.mesh.visible = elapsed > 0;
     }
 
-    if (succeeded) character.rotation.y += dt * 2;
+    // Note: character billboarded in render() (quaternion copy from camera).
+    // `succeeded` spin removed — plane always faces camera.
 
     // Variant propose piece — Z-scroll only (AC-8). Despawn deferred 500ms past
     // the geometric end-of-diagonal so the piece is visibly out of frame before
@@ -1603,7 +1738,7 @@ export function createScene(canvas) {
       const t = _easeInOutCubic(tRaw);
       character.position.x = e.fromX + (e.targetX - e.fromX) * t;
       effectiveYaw = e.fromCamYaw * (1 - t);
-      character.rotation.y = e.fromCharYaw * (1 - t);
+      // Note: character sprite is billboarded (plane faces camera), so no rotation.y set here.
       _currentCamYaw = effectiveYaw;
       _targetCamYaw = effectiveYaw;
       if (tRaw >= 1) {
@@ -1739,8 +1874,8 @@ export function createScene(canvas) {
     return variantProposePiece.mesh.position.z >= STRAIGHT_LEN / 2;
   }
 
-  function snapCharacterYaw(yaw) {
-    character.rotation.y = yaw;
+  function snapCharacterYaw(_yaw) {
+    // No-op: sprite is a PlaneGeometry billboarded in render() — always faces camera.
   }
 
   function setCharacterX(x) {
@@ -1857,7 +1992,14 @@ export function createScene(canvas) {
     // compile() (which does not frustum-cull). Compiling inside the LIVE scene is
     // deliberate: it gives the warmed programs the exact same fog + light state the
     // runtime draws use, so they are reused with no first-wave/propose spike.
-    const protos = [cart, track, szMesh, border];
+    // Also prewarm the character sprite — prime the MeshBasicMaterial program so
+    // the first gameplay frame has no shader compile stall.
+    const charProto = new THREE.Mesh(
+      new THREE.PlaneGeometry(1, 1),
+      new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, toneMapped: false }),
+    );
+    // Park far below with the others.
+    const protos = [cart, track, szMesh, border, charProto];
     for (const p of protos) { p.position.set(0, -1000, 0); scene.add(p); }
 
     const finish = () => {
