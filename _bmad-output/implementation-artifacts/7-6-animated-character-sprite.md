@@ -25,6 +25,12 @@ Then the sprite texture animates through the running frames of the spritesheet a
 And the animation frame updates based on game time (not wall-clock time, so pause does not advance frames),
 And the animation loops continuously while the character is on screen.
 
+**AC-2a — Frame count matches the real asset:**
+Given the actual asset is `Character_running_north.gif` (124×124 px, 4 frames),
+Then the implementation must handle exactly **4 frames** (indexed 0–3),
+And the frame count MUST be derived from a `CHARACTER_FRAME_COUNT` constant in `tokens.js` (not hardcoded),
+And each frame is the full canvas (124×124) — no sub-rect slicing needed.
+
 **AC-3 — Sprite faces the camera (billboard) with correct orientation:**
 Given the sprite is rendered in the 3D scene,
 When the camera is at its default position,
@@ -204,30 +210,47 @@ character.scale.set(0.7, 0.7, 1);  // match ~capsule visual size
 character.position.set(0, CHAR_Y, FRONT_Z + 0.1);
 ```
 
-### Frame animation approach
+### Frame animation approach — real asset: `Character_running_north.gif`
 
-**Option A — Pre-computed canvas array (recommended):**
+The actual asset is a **124×124 px GIF with 4 full-frame images** (no sub-rect, no disposal quirks). Each frame is the full canvas. Approach:
 
-Load the spritesheet once, slice into frame canvases, then in the render loop create/populate ONE `CanvasTexture` that is updated on frame change:
+1. Load the `.gif` as an `<img>` element
+2. Draw each frame onto a separate offscreen `<canvas>` using a custom GIF decoder or an `<img>` trick (see below)
+3. In the render loop, pick `frameIdx = Math.floor(gameElapsed / CHAR_FRAME_DURATION) % 4` and set the Sprite's map to the corresponding CanvasTexture
+
+**The simplest approach that works** — render the GIF onto a hidden `<canvas>` and use `drawImage()` to extract frames at time offsets. Since the browser's native GIF player handles decoding, you can:
 
 ```js
-const frames = [];  // Array<HTMLCanvasElement>, populated during init
-let currentFrameTexture = null;
-let lastFrameIdx = -1;
-
-// In render():
-const frameIdx = Math.floor(nowGameMs / CHAR_FRAME_DURATION) % totalFrames;
-if (frameIdx !== lastFrameIdx) {
-  currentFrameTexture = new THREE.CanvasTexture(frames[frameIdx]);
-  currentFrameTexture.minFilter = THREE.NearestFilter;
-  currentFrameTexture.magFilter = THREE.NearestFilter;
-  characterSprite.material.map = currentFrameTexture;
-  characterSprite.material.needsUpdate = true;
-  lastFrameIdx = frameIdx;
-}
+const img = new Image();
+img.onload = () => {
+  // Draw the GIF onto a canvas; the browser renders the current frame.
+  // For multi-frame extraction, either:
+  //   (a) Pre-pack each frame: create N canvases, seek through frames using a library
+  //   (b) Use a horizontal strip approach: the simplest is to just use the img.src
+  //       as a THREE.Texture and let the browser animate it natively (but we need
+  //       game-time sync, so we can't rely on native GIF timing)
+};
+img.src = CHARACTER_SPRITE_PATH;
 ```
 
-**Performance note**: Creating a new `CanvasTexture` each frame change is lightweight (no GPU upload until `needsUpdate`). The alternative — re-using one CanvasTexture and calling `context.putImageData()` / `context.drawImage()` — is also valid but slightly more code. Use whichever is simpler; both are more than fast enough for 12 fps.
+**Recommendation**: Since the GIF has 4 full frames (no sub-rect), the simplest correct approach is:
+- Use `new THREE.TextureLoader().load(CHARACTER_SPRITE_PATH)` to load the GIF
+- Let the browser decode it; the GIF animates natively on the texture
+- **BUT** this means the animation runs on wall-clock, not game-time — it won't pause
+
+**Better recommendation**: Use a **horizontal spritesheet approach**:
+- Manually slice the 124×124×4 GIF into 4 separate canvases during init
+- Or create a **496×124** horizontal strip from the frames, use one `TextureLoader`, and animate via `texture.offset.x` — frame 0 = offset 0, frame 1 = 0.25, frame 2 = 0.5, frame 3 = 0.75. This avoids creating 4 textures.
+- The story's Task 2 (GIF frame extraction) covers this.
+
+**Updated constants** (already in `tokens.js`):
+```js
+export const CHARACTER_SPRITE_PATH = 'assets/Character_running_north.gif';
+export const CHARACTER_FRAME_COUNT = 4;
+export const CHARACTER_FRAME_W = 124;    // px
+export const CHARACTER_FRAME_H = 124;    // px
+export const CHARACTER_FPS = 10;          // animation speed
+```
 
 ### Placeholder sprite implementation
 
