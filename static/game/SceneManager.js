@@ -6,7 +6,7 @@
 
 import * as THREE from './vendor/three.module.js';
 import { laneX, cameraForPitch, SPAWN_Z, LANE_X_SCALE, LANE_W, DIAG_LEN } from './TrackSystem.js';
-import { COLORS, colourForString, stringToLaneIndex, STRING_COLORS, STRING_SAFE_ZONE_FILLS, CURVED_WORLD, WORLD_CURVE_STRENGTH, CHARACTER_SPRITE_PATH, CHARACTER_FRAME_COUNT, CHARACTER_FRAME_W, CHARACTER_FRAME_H, CHARACTER_FPS } from './ui/tokens.js';
+import { COLORS, colourForString, stringToLaneIndex, STRING_COLORS, STRING_SAFE_ZONE_FILLS, CURVED_WORLD, WORLD_CURVE_STRENGTH, CHARACTER_SPRITE_PATH, CHARACTER_POWERSLIDE_SPRITE_PATH, CHARACTER_FRAME_COUNT, CHARACTER_FRAME_W, CHARACTER_FRAME_H, CHARACTER_FPS } from './ui/tokens.js';
 import { parseGifFrames } from './ui/gif-parser.js';
 
 const FRONT_Z = 0;
@@ -589,6 +589,43 @@ export function createScene(canvas) {
     return m;
   }
 
+  // Slide state (story 9-12)
+  let _isSliding = false;
+  let _slideUntilMs = 0;
+  const SLIDE_DURATION_MS = 400;
+
+  function enterSlide(nowMs) {
+    _isSliding = true;
+    _slideUntilMs = nowMs + SLIDE_DURATION_MS;
+  }
+
+  function makeSlideBarrier() {
+    const g = new THREE.Group();
+    const BARRIER_W = 10;
+    const BARRIER_H = 0.25;
+    const BARRIER_D = 0.5;
+    const beam = new THREE.Mesh(
+      new THREE.BoxGeometry(BARRIER_W, BARRIER_H, BARRIER_D),
+      applyWorldCurve(new THREE.MeshStandardMaterial({
+        color: 0xFFAA00,
+        roughness: 0.7,
+        metalness: 0.1,
+        dithering: true,
+      }))
+    );
+    beam.position.y = 1.2;
+    g.add(beam);
+    const postMat = applyWorldCurve(new THREE.MeshStandardMaterial({
+      color: 0x333333, roughness: 0.8, dithering: true,
+    }));
+    for (const side of [-1, 1]) {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.2, 0.12), postMat);
+      post.position.set(side * (BARRIER_W / 2 - 0.1), 0.6, 0);
+      g.add(post);
+    }
+    return g;
+  }
+
   function makeCart(bodyMat) {
     const g = new THREE.Group();
     const body = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.8, 1.3), bodyMat);
@@ -679,6 +716,7 @@ export function createScene(canvas) {
   let _spriteTextures = null; // Array<THREE.CanvasTexture> — cached per frame
   let _spriteFrameDelays = null; // Array<number> — ms per frame (from GIF)
   let _spriteFramesReady = false;  // true once frames are loaded and drawable
+  let _powerslideTextures = null; // Array<THREE.CanvasTexture> for powerslide pose (story 9-12)
 
   function _buildSpriteTextures(frames) {
     return frames.map(f => {
@@ -713,6 +751,18 @@ export function createScene(canvas) {
         }
       })
       .catch(() => { /* fallback: keep placeholder */ });
+
+    // Load powerslide GIF (single-frame static pose). Graceful fallback — slide
+    // state will use running frame[0] if this fails.
+    fetch(CHARACTER_POWERSLIDE_SPRITE_PATH)
+      .then(res => { if (!res.ok) throw new Error(); return res.arrayBuffer(); })
+      .then(buf => {
+        const { frames } = parseGifFrames(buf);
+        if (frames.length >= 1) {
+          _powerslideTextures = _buildSpriteTextures(frames);
+        }
+      })
+      .catch(() => {});
   }
   initSpriteFrames();
 
@@ -771,6 +821,18 @@ export function createScene(canvas) {
   // Called from render() each tick — only triggers texture upload on frame change.
   function updateCharacterSprite(nowGameMs) {
     if (!_spriteFramesReady || !_spriteFrames || _spriteFrames.length === 0) return;
+
+    // Slide state: show powerslide pose for duration, then resume running
+    if (_isSliding) {
+      if (nowGameMs >= _slideUntilMs) {
+        _isSliding = false;
+      } else if (_powerslideTextures?.length) {
+        character.material.map = _powerslideTextures[0];
+        character.material.needsUpdate = true;
+        return;
+      }
+    }
+
     const elapsed = nowGameMs - gameStartTime;
     const frameIdx = _frameTimelineFn(elapsed, _spriteFrames.length);
     if (frameIdx !== _charLastFrameIdx) {
@@ -1352,11 +1414,16 @@ export function createScene(canvas) {
           cart.position.x = laneX(i, numLanes) + _worldOffsetX;
           group.add(cart);
         }
+        if (waveData.requires_slide) {
+          const barrier = makeSlideBarrier();
+          barrier.position.x = _worldOffsetX;
+          group.add(barrier);
+        }
         scene.add(group);
         // Capture offset + lane count at creation so collision uses the same
         // world geometry the carts were positioned in (post-variant lanes/offset
         // changes must not retro-warp in-flight waves).
-        w = { mesh: group, data: waveData, offsetX: _worldOffsetX, numLanes };
+        w = { mesh: group, data: waveData, offsetX: _worldOffsetX, numLanes, requiresSlide: waveData.requires_slide };
         activeWaves.set(waveData.wave_id, w);
       }
       w.data = waveData; // Update data (speed might change)
@@ -1432,6 +1499,21 @@ export function createScene(canvas) {
             waveNoteIndex: w.data.note_index,
             numLanes: w.numLanes,
             baseFret,
+          };
+          return true;
+        }
+        // Barrier collision: character is on the safe lane but not sliding
+        if (w.requiresSlide && !_isSliding) {
+          _lastCollisionDebug = {
+            charX: Math.round(charX * 100) / 100,
+            charZ: Math.round(charZ * 100) / 100,
+            safeX: Math.round(safeX * 100) / 100,
+            safeTrack: w.data.safe_track,
+            waveId: w.data.wave_id,
+            waveNoteIndex: w.data.note_index,
+            numLanes: w.numLanes,
+            baseFret,
+            reason: 'barrier_no_slide',
           };
           return true;
         }
@@ -2059,6 +2141,7 @@ export function createScene(canvas) {
     setBaseFret,
     setLaneGeometry,
     checkCollision,
+    enterSlide,
     getWaveCount() { return activeWaves.size; },
     getActiveWaveCount() { return activeWaves.size; },
     getLastCollisionDebug,

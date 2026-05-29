@@ -60,6 +60,7 @@ export class NoteAcceptor {
     const result = run.onDetection(det);
 
     if (result === 'accepted') {
+      this.scene.enterSlide?.(performance.now());
       // Sync with backend
       const playResult = await this.gameClient.playNote(det.note.midi, nowFn() - run.startedAt);
       this.pushGameEvent('note.accepted', { midi: det.note.midi, cursor: prevIdx });

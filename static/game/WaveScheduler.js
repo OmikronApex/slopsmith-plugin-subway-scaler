@@ -9,6 +9,7 @@ export class WaveScheduler {
     this._nextWaveNoteIndex = 0;
     this._totalWavesSpawned = 0;
     this._queueingPaused = false;
+    this._prevSafeTrack = null;
   }
 
   tick(game_now, speedMultiplier) {
@@ -40,6 +41,7 @@ export class WaveScheduler {
     this._nextWaveNoteIndex = notes.length > 0 ? startIndex % notes.length : 0;
     this._nextDeadlineMs = gameNow != null ? gameNow : 0;
     this._queueingPaused = false;
+    this._prevSafeTrack = null;
     if (baseFret != null) this._baseFret = baseFret;
     if (numLanes != null) this._numLanes = numLanes;
     // Preserve in-flight outgoing-scale waves — they coexist with new-scale waves.
@@ -53,6 +55,8 @@ export class WaveScheduler {
     const { base_duration_ms } = this._timingParams;
     const basePxPerMs = 100.0 / base_duration_ms;
     const safeTrack = Math.max(0, Math.min(this._numLanes - 1, note.fret - this._baseFret));
+    const requiresSlide = (this._prevSafeTrack !== null && safeTrack === this._prevSafeTrack);
+    this._prevSafeTrack = safeTrack;
     const durationMs = base_duration_ms / speedMultiplier;
     const wave = {
       wave_id: `w-${this._totalWavesSpawned}`,
@@ -67,6 +71,7 @@ export class WaveScheduler {
       speed_px_per_ms: basePxPerMs * speedMultiplier,
       duration_ms: durationMs,
       cleared: false,
+      requires_slide: requiresSlide,
     };
     if (typeof window !== 'undefined' && window.pushGameEvent) {
       window.pushGameEvent('wave.spawn', { wave_id: wave.wave_id, note_index: wave.note_index, safe_track: wave.safe_track, safe_midi: wave.safe_midi });
@@ -88,5 +93,6 @@ export class WaveScheduler {
     this._nextDeadlineMs = 0;
     this._nextWaveNoteIndex = notes.length > 0 ? startIndex % notes.length : 0;
     this._totalWavesSpawned = 0;
+    this._prevSafeTrack = null;
   }
 }

@@ -74,6 +74,7 @@ export const EMISSIVE_SAFE_ZONE_BORDER = 0.7;
 // Animated pixel-art runner replacing the abstract capsule.
 // Frames extracted from a .gif or .png spritesheet in static/assets/.
 export const CHARACTER_SPRITE_PATH = '/plugins/subway-scaler/static/assets/Character_running_north.gif';
+export const CHARACTER_POWERSLIDE_SPRITE_PATH = '/plugins/subway-scaler/static/assets/Character_powerslide_north.gif';
 export const CHARACTER_FRAME_COUNT = 4;
 export const CHARACTER_FRAME_W = 124;    // px — single frame width
 export const CHARACTER_FRAME_H = 124;    // px — single frame height
