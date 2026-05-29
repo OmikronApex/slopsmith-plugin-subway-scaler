@@ -159,7 +159,6 @@ export async function bootstrap(root) {
     _pauseReason = reason;
     run.pause(performance.now());
     if (audio) audio.pause();
-    pauseBtn.textContent = 'Resume';
     if (window.__gameState) window.__gameState.session.phase = 'paused';
     hudShell.onPhaseChange(PHASES.PAUSED);
     gameClient.pause().catch(() => {});
@@ -184,7 +183,6 @@ export async function bootstrap(root) {
     }
     run.resume(performance.now());
     if (audio) audio.resume();
-    pauseBtn.textContent = 'Pause';
     if (window.__gameState) window.__gameState.session.phase = 'playing';
     hudShell.onPhaseChange(PHASES.PLAYING);
     gameClient.resume().catch(() => {});
@@ -279,10 +277,8 @@ export async function bootstrap(root) {
   const expectedEl = el('div', { class: 'expected' });
   const feedbackEl = el('div', { class: 'feedback' });
   const overlay = el('div', { class: 'overlay hidden' });
-  const pauseBtn = el('button', { class: 'pause-btn hidden' }, 'Pause');
   hud.appendChild(expectedEl);
   hud.appendChild(feedbackEl);
-  hud.appendChild(pauseBtn);
   // game-wrap fills the shell absolutely; canvas, overlay, hud all position within it.
   const gameWrap = el('div', { class: 'game-wrap', style: 'display:none' }, canvas, overlay, hud);
   shell.appendChild(gameWrap);
@@ -612,23 +608,7 @@ export async function bootstrap(root) {
         }, REPOSITION_SLIDE_MS);
       }
 
-      function applyPromoteResponse(resp, ctx) {
-        // Force-finalize the cinematic exit lerp BEFORE writing character.position.x,
-        // otherwise the next render frame's clamped p=1 overwrites our moveToTrack
-        // value back to landingX (Story 6.8 bugfix -- caused instant collision).
-        scene.clearCinematicExit?.();
-        // Park the default-mode camera at the new world offset so it stays with the
-        // offset tracks once cinematic exit hands control back (Story 6.8 AC-5).
-        scene.setTargetCameraX?.(scene.getWorldOffsetX?.() ?? 0);
-        // Demote in-flight pre-variant waves to visual-only -- they live in the old
-        // world frame and would otherwise collide with the character who is now in
-        // the new frame.
-        scene.ghostExistingWaves?.();
-        // Tear down retiring tracks + remove old-frame ghost wave meshes.
-        // Scheduler was already pre-staged at corner-fire so new waves are
-        // mid-scroll by now; we do NOT reset the scheduler or safe-zone
-        // renderer here (that would wipe the pre-staged new state).
-        scene.finalizeVariantTransition?.();
+      function _applyPromoteResponse(resp, ctx) {
         const startIdx = resp.current_note_index ?? 0;
         if (run && resp.notes) {
           run.sequence = resp.notes;
@@ -651,14 +631,31 @@ export async function bootstrap(root) {
         }
         pushGameEvent('variant.promote', { base_fret: resp.base_fret, num_lanes: resp.num_lanes, note_index: startIdx });
         if (_debugLogger) _debugLogger.log('variant.promote', { base_fret: resp.base_fret, num_lanes: resp.num_lanes, note_index: startIdx, current_track: resp.current_track });
-        // Sync speed multiplier after promote -- backend resets to 1.0, don't wait for next poll.
         if (resp.speed_multiplier != null && poller) {
           poller._speedMultiplier = resp.speed_multiplier;
-        } // it wipes the cached-X per-wave
-        // mesh state we rely on so in-flight old-scale safe zones stay at their
-        // original X. They despawn naturally as their wave passes.
+        }
         if (resp.notes) fretBox.render(resp);
         setTransitionPhase('active', ctx);
+      }
+
+      function applyPromoteResponse(resp, ctx) {
+        // Force-finalize the cinematic exit lerp BEFORE writing character.position.x,
+        // otherwise the next render frame's clamped p=1 overwrites our moveToTrack
+        // value back to landingX (Story 6.8 bugfix -- caused instant collision).
+        scene.clearCinematicExit?.();
+        // Park the default-mode camera at the new world offset so it stays with the
+        // offset tracks once cinematic exit hands control back (Story 6.8 AC-5).
+        scene.setTargetCameraX?.(scene.getWorldOffsetX?.() ?? 0);
+        // Demote in-flight pre-variant waves to visual-only -- they live in the old
+        // world frame and would otherwise collide with the character who is now in
+        // the new frame.
+        scene.ghostExistingWaves?.();
+        // Tear down retiring tracks + remove old-frame ghost wave meshes.
+        // Scheduler was already pre-staged at corner-fire so new waves are
+        // mid-scroll by now; we do NOT reset the scheduler or safe-zone
+        // renderer here (that would wipe the pre-staged new state).
+        scene.finalizeVariantTransition?.();
+        _applyPromoteResponse(resp, ctx);
       }
 
       // Phase-exit cleanup: reset camera mode and clear hooks on any riding exit.
@@ -703,37 +700,9 @@ export async function bootstrap(root) {
             return;
           }
           const startIdx = resp.current_note_index ?? 0;
-          if (run && resp.notes) {
-            run.sequence = resp.notes;
-            run.cursor = startIdx;
-            setExpected();
-          }
-          if (resp.ascending_note_count != null) {
-            ascendingNoteCount = resp.ascending_note_count;
-          variantController.ascendingNoteCount = ascendingNoteCount;
-          }
-          if (resp.notes) {
-            rootNote = resp.notes[0] ?? null;
-            apexNote = ascendingNoteCount > 0 ? resp.notes[ascendingNoteCount - 1] : null;
-            waveScheduler.resumeQueueing(resp.notes, startIdx, resp.base_fret, resp.num_lanes, gameNow());
-          }
-          // Snap character from variant track X to the correct main-track lane (Story 6.6 bugfix).
-          if (resp.current_track != null) {
-            scene.moveToTrack(resp.current_track, true);
-          }
-          // Sync scene lane geometry with new scale (numLanes may differ from original).
-          if (resp.base_fret != null && resp.num_lanes != null) {
-            scene.setLaneGeometry(resp.base_fret, resp.num_lanes);
-          }
-          pushGameEvent('variant.promote', { base_fret: resp.base_fret, num_lanes: resp.num_lanes, note_index: startIdx });
-          if (_debugLogger) _debugLogger.log('variant.promote', { base_fret: resp.base_fret, num_lanes: resp.num_lanes, note_index: startIdx, current_track: resp.current_track });
+          if (resp.notes) waveScheduler.resumeQueueing(resp.notes, startIdx, resp.base_fret, resp.num_lanes, gameNow());
           safeZoneRenderer.reset();
-          if (resp.notes) fretBox.render(resp);
-          // Sync speed multiplier after promote (backend resets to 1.0).
-          if (resp.speed_multiplier != null && poller) {
-            poller._speedMultiplier = resp.speed_multiplier;
-          }
-          setTransitionPhase('active', ctx);
+          _applyPromoteResponse(resp, ctx);
         }).catch((err) => {
           console.error('[main] promote error', err);
           waveScheduler.resumeQueueing(notesResp.notes, run?.cursor ?? 0, null, null, gameNow());
@@ -910,7 +879,6 @@ export async function bootstrap(root) {
       run.start(gameStartTime);
 
       overlay.classList.add('hidden');
-      pauseBtn.classList.remove('hidden');
 
       // HUD: show and render initial finger pattern
       hudShell.onPhaseChange(PHASES.PLAYING);
@@ -984,7 +952,6 @@ export async function bootstrap(root) {
     rafId = null;
     // Keep the mic stream alive for the next run; silence detection and error handlers.
     if (audio) { audio.onDetection(() => {}); audio.onError(() => {}); }
-    pauseBtn.classList.add('hidden');
     hudShell.onPhaseChange(PHASES.IDLE);
     scoreDisplay.update(0);
     if (_debugLogger) { _debugLogger.destroy(); _debugLogger = null; }
@@ -1011,7 +978,7 @@ export async function bootstrap(root) {
     overlay.classList.remove('hidden');
   }
 
-  // Wire _test hooks now that closure variables (run, audio, pauseBtn) are in scope
+  // Wire _test hooks now that closure variables (run, audio) are in scope
   if (window.__TEST_MODE) {
     window.__gameState._test = {
       forceCollision: () => {
@@ -1135,22 +1102,10 @@ export async function bootstrap(root) {
     tick();
   }
 
-  pauseBtn.addEventListener('click', () => {
-    if (!run) return;
-    if (run.state === 'running') {
-      pauseGame();
-    } else if (run.state === 'paused') {
-      resumeGame();
-      overlayMgr.hide();
-    }
-  });
   // Pause on window blur (silent -- no overlay, so E2E test hooks stay unblocked)
   window.addEventListener('blur', () => {
     if (!run || run.state !== 'running') return;
-    run.pause(performance.now());
-    if (audio) audio.pause();
-    pauseBtn.textContent = 'Resume';
-    if (window.__gameState) window.__gameState.session.phase = 'paused';
+    pauseGame();
   });
   // No auto-resume on focus -- user must click Resume explicitly to avoid
   // unintentionally resuming a manually-paused game after alt-tab.
