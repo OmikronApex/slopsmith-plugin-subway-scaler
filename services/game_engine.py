@@ -230,6 +230,7 @@ class GameEngine:
                     "score": session.current_score,
                     "current_track": session.current_track,
                 },
+                "speed_multiplier": session.speed_multiplier,
                 "scale_passes_completed": session.scale_passes_completed,
                 "last_pass_direction": session.last_pass_direction,
             }

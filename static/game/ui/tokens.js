@@ -79,6 +79,16 @@ export const CHARACTER_FRAME_W = 124;    // px — single frame width
 export const CHARACTER_FRAME_H = 124;    // px — single frame height
 export const CHARACTER_FPS = 6;          // animation speed (tune in-engine)
 
+// ===== STRING-TO-LANE-INDEX CONVERSION =====
+// Converts backend Note.string (1-based from high pitch) to a 0-based lane/palette
+// index (low→high pitch). This is the canonical implementation — all call sites
+// must use this function rather than computing inline.
+// Returns 0 for null/undefined as a safe fallback.
+export function stringToLaneIndex(string, stringCount) {
+  if (string == null) return 0;
+  return Math.max(0, stringCount - string);
+}
+
 // ===== STRING COLOUR LOOKUP =====
 // Look up a string color by low→high index, clamping to instrument.stringCount.
 export function colourForString(stringIdx, instrument) {

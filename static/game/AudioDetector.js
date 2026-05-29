@@ -83,6 +83,11 @@ export class YinDetector extends AudioDetector {
     }
     this._audioHandle = null;
     this._detectionReady = false;
+    // Reset observable state for test assertions (D1 — Story 9-8).
+    if (window.__audioState) {
+      window.__audioState.micActive = false;
+      window.__audioState.pipelineReady = false;
+    }
   }
 
   pause() {

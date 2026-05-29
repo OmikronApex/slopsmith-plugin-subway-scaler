@@ -215,6 +215,7 @@ async def get_session_route(session_id: str):
         "last_pass_direction": session.last_pass_direction,
         "active_variant": session.active_variant.model_dump() if session.active_variant else None,
         "active_window": session.active_window.model_dump() if session.active_window else None,
+        "speed_multiplier": session.speed_multiplier,
     }
 
 @router.post("/{session_id}/pause")

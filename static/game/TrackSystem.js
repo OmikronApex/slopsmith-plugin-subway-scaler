@@ -4,7 +4,7 @@
 // Rows (depth) = strings. Row 0 (lowest pitch) sits at the front (largest Z).
 // See specs/003-guitar-subway-scaler/research.md §4–§5.
 
-import { colourForString } from './ui/tokens.js';
+import { colourForString, stringToLaneIndex } from './ui/tokens.js';
 
 export const LANE_X_SCALE = 1.6;
 export const ROW_DZ = 3.0;
@@ -76,7 +76,7 @@ export class TrackSystem {
     for (let i = 0; i < sessionConfig.track_count; i++) {
       const note = notes[i];
       // note.string is 1-based from HIGH; convert to low→high palette index.
-      const paletteIdx = note?.string != null ? (stringCount - note.string) : 0;
+      const paletteIdx = stringToLaneIndex(note?.string, stringCount);
       gameState.scene.tracks.push({
         lane: i,
         note,

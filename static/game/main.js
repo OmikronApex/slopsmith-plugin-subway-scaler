@@ -5,9 +5,8 @@ import { createScene } from './SceneManager.js';
 import { startAudio } from './AudioDetector.js';
 import { Run, difficultyToTimePerNoteMs, PHASES } from './GameState.js';
 import {
-  setTransitionPhase,
   setTransitionPhaseListener,
-  registerPhaseCleanup,
+  setTransitionPhase,
   currentTransitionPhase,
   resetTransitionPhase,
 } from './TransitionPhases.js';
@@ -15,6 +14,9 @@ import { quantize, midiToName } from './notes.js';
 import { GameClient } from './game-client.js';
 import { DebugLogger } from './DebugLogger.js';
 import { SafeZoneRenderer } from './ui/SafeZoneRenderer.js';
+import { VariantController } from './VariantController.js';
+import { NoteAcceptor } from './NoteAcceptor.js';
+import { GamePoller } from './GamePoller.js';
 import { laneX, SPAWN_Z } from './TrackSystem.js';
 
 // Cinematic refinement constants (Story 6.8) — mirror SceneManager values.
@@ -349,19 +351,11 @@ export async function bootstrap(root) {
   let _debugLogger = null;          // debug logger (set by start(); flushes JSONL to server /logs/)
   let prevFretPos = null;
 
-  // Variant state mirrors backend (feature 008-track-variants).
-  // shownVariantId tracks which variant we've already rendered in the scene.
-  let proposePending = false;
-  let shownVariantId = null;
-  let activeVariant = null; // last seen from polling
-  let activeWindow = null;
-  // Wave-coupled spawn: set when variant is proposed; cleared once the target wave is found.
-  let variantPendingSpawn = null;  // { variant, targetNoteIndex }
-  let variantSpawnedForWave = null; // wave_id of the wave we already spawned for
+  // Variant state managed by VariantController (Story 9-4).
+  let variantController = null;
 
-  function updateVariantHud() {
-    // Variant HUD retired — transition track geometry is the sole signal.
-  }
+  // Stub retained for backward compatibility — variant HUD retired.
+  function updateVariantHud() {}
 
   function rangeWarning(notes) {
     const inst = currentInstrument();
@@ -379,6 +373,8 @@ export async function bootstrap(root) {
     expectedEl.textContent = `Play: ${exp.note.name}`;
     const upcoming = run.upcoming(3).map(e => e.name);
     scene.setUpcomingNotes(upcoming);
+    // Sync cursor to safe zone renderer for primary-wave filtering (Story 9-1).
+    safeZoneRenderer.setExpectedNoteIndex(run.cursor);
   }
 
   async function start() {
@@ -470,7 +466,17 @@ export async function bootstrap(root) {
       if (window.__gameState?.variant) {
         window.__gameState.variant.transitionPhase = 'idle';
       }
-
+      variantController = new VariantController({ gameClient, scene, waveScheduler, run, pushGameEvent });
+      const noteAcceptor = new NoteAcceptor({
+        safeZoneRenderer,
+        gameClient,
+        scene,
+        variantController,
+        feedbackEl,
+        pushGameEvent,
+        debugLogger: _debugLogger,
+      });
+      noteAcceptor.setExpectedFn = setExpected;
       // Universal phase change logger (debug-logging).
       setTransitionPhaseListener((next, prev) => {
         if (_debugLogger) _debugLogger.log('phase.change', { from: prev, to: next });
@@ -733,12 +739,7 @@ export async function bootstrap(root) {
       // Default active: reset variant tracking state and fade in fret box with new data.
       setTransitionPhaseListener((next, prev, ctx) => {
         if (next !== 'active') return;
-        shownVariantId = null;
-        activeVariant = null;
-        activeWindow = null;
-        variantPendingSpawn = null;
-        variantSpawnedForWave = null;
-        updateVariantHud();
+        variantController.reset();
         fretBox.fadeIn();
       });
 
@@ -752,6 +753,8 @@ export async function bootstrap(root) {
         setTransitionPhase('accepted', { resp });
       }
       _runAcceptTransitionFn = runAcceptTransition;
+      // Wire variantController accept gate into the transition response
+      window.__variantAcceptFn = (resp) => runAcceptTransition(resp);
 
       // Start the rendering loop so we can see the initial state
       let _pausedAt = null;
@@ -834,63 +837,12 @@ export async function bootstrap(root) {
         }
 
         const game_now = _now() - gameStartTime;
-        const speedMultiplier = 1.0; // TODO: wire run.speedMultiplier when available
+        const speedMultiplier = poller.speedMultiplier;
         waveScheduler.tick(game_now, speedMultiplier);
         const waves = waveScheduler.waves;
 
-        // Wave-coupled variant spawn: watch for the target wave (first note after
-        // apex for RIGHT, first note after root for LEFT) to enter the scheduler.
-        // When found, spawn geometry + safe zone anchored to that wave's timing.
-        if (variantPendingSpawn) {
-          const targetIdx = variantPendingSpawn.targetNoteIndex;
-          const targetWave = waves
-            .filter(w => w.note_index === targetIdx && w.spawn_time_ms + w.duration_ms >= game_now)
-            .sort((a, b) => a.spawn_time_ms - b.spawn_time_ms)[0] ?? null;
-          // Defensive timeout: if no matching wave appears within 15s, dismiss the
-          // variant gracefully — clearing variantPendingSpawn alone strands the variant
-          // in "proposed" forever (activeVariant stays set, no SZ ever spawns, so the
-          // proximity-miss path can't fire either). Subsequent variants would never be
-          // proposed because !activeVariant gates the next proposal.
-          if (!targetWave && variantPendingSpawn.queuedAtMs != null
-              && performance.now() - variantPendingSpawn.queuedAtMs > 15000) {
-            // Guard: only timeout if still in proposed phase — a concurrent accept
-            // may have already advanced past it (P8).
-            if (currentTransitionPhase() !== 'proposed') {
-              variantPendingSpawn = null;
-              variantSpawnedForWave = null;
-            } else {
-              if (_debugLogger) _debugLogger.log('variant.spawn.timeout', { targetNoteIndex: targetIdx });
-              gameClient.dismissVariant().catch(() => {});
-              if (waveScheduler.queueingPaused) {
-                waveScheduler.resumeQueueing(run.sequence, run.cursor, null, null, _now() - gameStartTime);
-              }
-              setTransitionPhase('idle', { reason: 'spawn-timeout' });
-              shownVariantId = null;
-              activeVariant = null;
-              activeWindow = null;
-              variantPendingSpawn = null;
-              variantSpawnedForWave = null;
-              if (window.__gameState) {
-                window.__gameState.variant.id = null;
-                window.__gameState.variant.timerRunning = false;
-                window.__gameState.variant.timerMs = 0;
-              }
-              updateVariantHud();
-            }
-          } else if (targetWave && targetWave.wave_id !== variantSpawnedForWave) {
-            // Anchor note = note at wave.note_index - 1 (apex for RIGHT, root for LEFT).
-            const anchorIdx = targetWave.note_index - 1;
-            const anchorNote = (anchorIdx >= 0 && run.sequence[anchorIdx]) ? run.sequence[anchorIdx] : null;
-            // Anchor wave: the wave carrying the anchor note. Used to align variant Z
-            // with the anchor note (root/apex), not the target wave one step behind.
-            const anchorWave = waves
-              .filter(w => w.note_index === anchorIdx && w.spawn_time_ms <= targetWave.spawn_time_ms)
-              .sort((a, b) => b.spawn_time_ms - a.spawn_time_ms)[0] ?? null;
-            scene.proposeVariantTracks(variantPendingSpawn.variant, targetWave, anchorNote, anchorWave);
-            variantSpawnedForWave = targetWave.wave_id;
-            variantPendingSpawn = null;
-          }
-        }
+        // Wave-coupled variant spawn: delegated to VariantController (Story 9-4).
+        variantController.processVariantSpawn(waves, game_now);
 
         scene.setWaves(waves, _now());
         const _safeZoneOffset = scene.getWorldOffsetX?.() ?? 0;
@@ -928,6 +880,15 @@ export async function bootstrap(root) {
       // wave scheduler ticks during countdown use a consistent clock (P1).
       scene.setGameStartTime(gameStartTime);
       if (_debugLogger) _debugLogger.setGameStartTime(gameStartTime);
+      // Wire poller after gameStartTime is known.
+      const poller = new GamePoller({
+        gameClient, scoreDisplay, variantController, scene,
+        onGameOver: (reason) => {},
+      });
+      poller.feedbackEl = feedbackEl;
+      poller.run = run;
+      poller._nowFn = _now;
+      poller.gameStartTime = gameStartTime;
 
       rafId = requestAnimationFrame(loop);
 
@@ -952,29 +913,7 @@ export async function bootstrap(root) {
 
       // Proximity dismiss: SceneManager fires this when safe zone passes player (AC-2, AC-3)
       scene.setOnVariantMissed(() => {
-        // Guard: only dismiss during proposed or riding — after breather the variant is
-        // being committed, not missed. Without this guard a late miss fires during breather
-        // and overwrites the phase to idle, aborting the transition.
-        const _missPhase = currentTransitionPhase();
-        if (_missPhase !== 'proposed' && _missPhase !== 'riding') return;
-        if (activeVariant) {
-          gameClient.dismissVariant().catch(() => {});
-          if (waveScheduler.queueingPaused) {
-            waveScheduler.resumeQueueing(run.sequence, run.cursor, null, null, _now() - gameStartTime);
-          }
-          setTransitionPhase('idle', { reason: 'missed' });
-          shownVariantId = null;
-          activeVariant = null;
-          activeWindow = null;
-          variantPendingSpawn = null;
-          variantSpawnedForWave = null;
-          if (window.__gameState) {
-            window.__gameState.variant.id = null;
-            window.__gameState.variant.timerRunning = false;
-            window.__gameState.variant.timerMs = 0;
-          }
-          updateVariantHud();
-        }
+        variantController.handleMissed(_now, gameStartTime);
       });
 
       const detectionHandler = async (det) => {
@@ -982,179 +921,37 @@ export async function bootstrap(root) {
         _onDetection = detectionHandler;
         if (!det?.note || det.note.midi == null) return;
 
-        // Variant accept: gate on adjacency — safe zone must be at player position (AC-1).
-        if (activeVariant && activeWindow && det.note.midi === activeWindow.trigger_midi
+        // Variant accept gate (stays in main.js — needs runAcceptTransition closure).
+        if (variantController.activeVariant && variantController.activeWindow && det.note.midi === variantController.activeWindow.trigger_midi
             && scene.isVariantSafeZoneAdjacent()) {
-          let resp = null;
-          try { resp = await gameClient.acceptVariant(det.note.midi); }
-          catch (_) {
-            // Guard: another concurrent callback may have already advanced the phase.
-            if (currentTransitionPhase() !== 'proposed') {
-              if (_debugLogger) _debugLogger.log('variant.accept.stale', { phase: currentTransitionPhase(), error: 'network' });
-              return;
+          const acceptResult = await variantController.handleAccept(det, _now, gameStartTime, run);
+          if (acceptResult?.accepted) {
+            pushGameEvent('variant.accept', { variant_id: acceptResult.resp.variant_id, midi: det.note.midi });
+            if (_debugLogger) _debugLogger.log('variant.accept', { variant_id: acceptResult.resp.variant_id, midi: det.note.midi });
+            // Reset breatherMs from new scale's timing
+            if (acceptResult.resp.timing_params?.variant_breather_ms) {
+              _variantBreatherMs = acceptResult.resp.timing_params.variant_breather_ms;
             }
-            if (waveScheduler.queueingPaused) {
-                waveScheduler.resumeQueueing(run.sequence, run.cursor, null, null, _now() - gameStartTime);
-              }
-              setTransitionPhase('idle', { reason: 'accept-failed' });
-            shownVariantId = null;
-            activeVariant = null;
-            activeWindow = null;
-            variantPendingSpawn = null;
-            variantSpawnedForWave = null;
-            updateVariantHud();
+            runAcceptTransition(acceptResult.resp);
             return;
           }
-          if (resp && resp.success) {
-            pushGameEvent('variant.accept', { variant_id: activeVariant?.variant_id ?? resp.variant_id, midi: det.note.midi });
-            if (_debugLogger) _debugLogger.log('variant.accept', { variant_id: activeVariant?.variant_id ?? resp.variant_id, midi: det.note.midi });
-            runAcceptTransition(resp);
-            return;
-          }
-          // Accept attempted but backend rejected (success:false). Clear stale variant
-          // state and consume the trigger note — do NOT also process as a regular note.
-          // Guard: if another detection callback already advanced the phase (accepted→riding→breather)
-          // via a successful concurrent acceptVariant call, do NOT overwrite to idle.
-          if (currentTransitionPhase() !== 'proposed') {
-            if (_debugLogger) _debugLogger.log('variant.accept.stale', { phase: currentTransitionPhase() });
-            return;
-          }
-          if (waveScheduler.queueingPaused) {
-            waveScheduler.resumeQueueing(run.sequence, run.cursor, null, null, _now() - gameStartTime);
-          }
-          setTransitionPhase('idle', { reason: 'accept-rejected' });
-          shownVariantId = null;
-          activeVariant = null;
-          activeWindow = null;
-          variantPendingSpawn = null;
-          variantSpawnedForWave = null;
-          updateVariantHud();
+          // Error / rejected / stale — handler already cleared state; consume the det.
           return;
         }
 
-        if (!safeZoneRenderer.isAnyPrimarySafeZoneAdjacent(det.note.midi)) {
-          run.onMissOutsideWindow?.(det);
-          return;
-        }
-
-        const prevIdx = run.cursor;
-        const result = run.onDetection(det);
-        if (result === 'accepted') {
-          // Sync with backend
-          const playResult = await gameClient.playNote(det.note.midi, _now() - run.startedAt);
-          pushGameEvent('note.accepted', { midi: det.note.midi, cursor: prevIdx });
-            if (_debugLogger) _debugLogger.log('note.accepted', { midi: det.note.midi, cursor: prevIdx, track: playResult?.game_state?.current_track });
-            if (playResult && playResult.success) {
-            if (playResult.game_state && playResult.game_state.current_track !== undefined) {
-              scene.moveToTrack(playResult.game_state.current_track);
-            }
-            if (playResult.next_wave) {
-              currentWaves.push(playResult.next_wave);
-            }
-
-            // Note-triggered variant proposal: root → RIGHT, apex → LEFT.
-            // Either trigger fires at the milestone (passes >= 2). Backend picks side
-            // from last_pass_direction, which alternates RIGHT/LEFT across cycles.
-            const passes = playResult.scale_passes_completed ?? 0;
-            if (!activeVariant && !proposePending && passes >= 2) {
-              const isRoot = prevIdx === 0;
-              const isApex = ascendingNoteCount > 0 && prevIdx === ascendingNoteCount - 1;
-              if (isRoot || isApex) {
-                proposePending = true;
-                try {
-                  const resp = await gameClient.proposeVariant();
-                  if (resp && resp.success) {
-                    pushGameEvent('variant.propose', { variant_id: resp.variant.variant_id, side: resp.variant.side, root_midi: resp.variant.root_midi });
-                    if (_debugLogger) _debugLogger.log('variant.propose', { variant_id: resp.variant.variant_id, side: resp.variant.side, root_midi: resp.variant.root_midi, base_fret: resp.variant.base_fret, num_lanes: resp.variant.num_lanes });
-                    activeVariant = resp.variant;
-                    activeWindow = resp.window;
-                    shownVariantId = resp.variant.variant_id;
-                    if (window.__gameState) {
-                      window.__gameState.variant.id = resp.variant.variant_id;
-                      window.__gameState.variant.timerRunning = true;
-                      window.__gameState.variant.timerMs = Math.max(0, resp.window.deadline_ms - Date.now());
-                      window.__gameState.variant.timerExpired = false;
-                    }
-                    setTransitionPhase('proposed', { variant: resp.variant });
-                    _queueVariantSpawn(resp.variant);
-                  }
-                } finally {
-                  proposePending = false;
-                }
-              }
-            }
-          }
-
-          feedbackEl.textContent = '✓';
-          setExpected();
-        } else if (result === 'rejected') {
-          feedbackEl.textContent = '·';
+        // Standard note detection — delegated to NoteAcceptor.
+        noteAcceptor.ascendingNoteCount = ascendingNoteCount;
+        const noteResult = await noteAcceptor.handle(det, { run, nowFn: _now, gameStartTime });
+        if (noteResult.accepted) {
+          // NoteAcceptor updated cursor, feedback, and triggered variant propose.
+          // Re-read cursor for subsequent frames.
         }
       };
       audio.onDetection(detectionHandler);
 
       setExpected();
 
-      // Queue a wave-coupled variant spawn. The render loop picks up the first
-      // matching wave (note after apex for RIGHT, note after root for LEFT).
-      function _queueVariantSpawn(variant) {
-        if (variantPendingSpawn) return; // already queued
-        const seqLen = run?.sequence?.length ?? 0;
-        let targetNoteIndex = variant.side === 'RIGHT' ? ascendingNoteCount : 1;
-        // Defensive: clamp into a valid range for tiny/degenerate sequences so the
-        // render-loop watcher can actually find a matching wave.
-        if (seqLen > 0 && (targetNoteIndex < 0 || targetNoteIndex >= seqLen)) {
-          targetNoteIndex = 0;
-        }
-        variantPendingSpawn = { variant, targetNoteIndex, queuedAtMs: performance.now() };
-        variantSpawnedForWave = null;
-      }
-
-      gameClient.startPolling((pollState) => {
-        if (!pollState) return;
-        if (run && run.state === 'paused') return;
-
-        if (pollState.score !== undefined) {
-          feedbackEl.textContent = `Score: ${pollState.score}`;
-          if (window.__gameState) window.__gameState.score.current = pollState.score;
-          scoreDisplay.update(pollState.score);
-        }
-
-        if (pollState.status === 'failed') {
-          run.state = 'failed';
-        }
-
-        // Variant lifecycle (feature 008-track-variants).
-        const prevVariant = activeVariant;
-        activeVariant = pollState.active_variant || null;
-        activeWindow = pollState.active_window || null;
-        // Polling-driven dismiss: backend cleared the variant without frontend initiating it.
-        if (prevVariant && !activeVariant && currentTransitionPhase() === 'proposed') {
-          if (waveScheduler.queueingPaused) {
-            waveScheduler.resumeQueueing(run.sequence, run.cursor, null, null, _now() - gameStartTime);
-          }
-          setTransitionPhase('idle', { reason: 'dismissed' });
-          shownVariantId = null;
-          variantPendingSpawn = null;
-          variantSpawnedForWave = null;
-        }
-        if (window.__gameState) {
-          window.__gameState.variant.id = activeVariant ? activeVariant.variant_id : null;
-          window.__gameState.variant.timerRunning = !!(activeVariant && activeWindow &&
-            activeWindow.state === 'OPEN' && Date.now() < activeWindow.deadline_ms);
-          window.__gameState.variant.timerMs = activeWindow
-            ? Math.max(0, activeWindow.deadline_ms - Date.now()) : 0;
-        }
-
-        // Render variant if backend reports one we haven't shown yet
-        // (proposed via note-triggered flow in detection handler).
-        if (activeVariant && shownVariantId !== activeVariant.variant_id) {
-          shownVariantId = activeVariant.variant_id;
-          _queueVariantSpawn(activeVariant);
-        }
-
-        updateVariantHud();
-      }, 200);
+      poller.start();
 
     } catch (err) {
       const code = (err && err.name) || '';
@@ -1193,18 +990,9 @@ export async function bootstrap(root) {
       window.__gameState.gameOver.reason = null;
       window.__gameState.gameOver.triggeredAt = null;
     }
-    // Variant cleanup.
-    if (window.__gameState) {
-      window.__gameState.variant = { id: null, timerMs: 0, timerRunning: false, timerExpired: false };
-    }
+    // Variant cleanup — delegate to controller.
+    if (variantController) variantController.reset();
     if (scene.dismissVariantTracks) scene.dismissVariantTracks();
-    shownVariantId = null;
-    activeVariant = null;
-    activeWindow = null;
-    proposePending = false;
-    variantPendingSpawn = null;
-    variantSpawnedForWave = null;
-    updateVariantHud();
   }
 
   function showOverlay(msg, isMessage = true) {
@@ -1318,7 +1106,7 @@ export async function bootstrap(root) {
       if (k === 'q') {
         midi = run?.currentExpected?.()?.note?.midi ?? null;
       } else if (k === 'w') {
-        midi = activeWindow?.trigger_midi ?? null;
+        midi = variantController.activeWindow?.trigger_midi ?? null;
       }
       if (midi == null) return;
       _burstInjectNote(midi);

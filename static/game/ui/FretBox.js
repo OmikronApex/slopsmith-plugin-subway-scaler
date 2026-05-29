@@ -1,3 +1,5 @@
+import { stringToLaneIndex } from './tokens.js';
+
 const HUD_DETAIL_KEY = 'subway-scaler-hud-detail';
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -111,7 +113,7 @@ export class FretBox {
     stringsLayer.style.gridAutoRows = '16px';
     for (let r = 0; r < stringCount; r++) {
       const backendString = r + 1;
-      const paletteIdx = stringCount - backendString;
+      const paletteIdx = stringToLaneIndex(backendString, stringCount);
       const line = document.createElement('div');
       line.className = 'fret-string-line';
       line.style.background = `var(--color-string-${paletteIdx})`;
@@ -126,7 +128,7 @@ export class FretBox {
 
     for (let r = 0; r < stringCount; r++) {
       const backendString = r + 1;
-      const paletteIdx = stringCount - backendString;
+      const paletteIdx = stringToLaneIndex(backendString, stringCount);
 
       for (let f = startFret; f <= endFret; f++) {
         const noteAtCell = noteMap.get(`${backendString}:${f}`);

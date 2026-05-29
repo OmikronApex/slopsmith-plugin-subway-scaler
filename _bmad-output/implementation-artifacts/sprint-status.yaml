@@ -103,3 +103,14 @@ development_status:
   8-4-hud-update-on-variant-transition: review
   8-5-hud-detail-toggle-basic-full-mode: review
   8-6-accessibility-audit-hud-focus-aria-reduced-motion: review
+
+  # Epic 9 — Gameplay Correctness & Code Health
+  epic-9: review
+  9-1-fix-wide-span-scale-note-sync: review
+  9-2-fix-cartsystem-carts-alias: review
+  9-3-extract-stringtolaneindex-shared-utility: review
+  9-4-extract-variant-controller: review
+  9-5-extract-note-acceptor: review
+  9-6-extract-game-poller: review
+  9-7-wire-speed-multiplier: review
+  9-8-deferred-work-resolution: review

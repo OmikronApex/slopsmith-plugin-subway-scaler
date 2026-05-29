@@ -6,7 +6,7 @@
 
 import * as THREE from './vendor/three.module.js';
 import { laneX, cameraForPitch, SPAWN_Z, LANE_X_SCALE } from './TrackSystem.js';
-import { COLORS, colourForString, STRING_COLORS, STRING_SAFE_ZONE_FILLS, CURVED_WORLD, WORLD_CURVE_STRENGTH, CHARACTER_SPRITE_PATH, CHARACTER_FRAME_COUNT, CHARACTER_FRAME_W, CHARACTER_FRAME_H, CHARACTER_FPS } from './ui/tokens.js';
+import { COLORS, colourForString, stringToLaneIndex, STRING_COLORS, STRING_SAFE_ZONE_FILLS, CURVED_WORLD, WORLD_CURVE_STRENGTH, CHARACTER_SPRITE_PATH, CHARACTER_FRAME_COUNT, CHARACTER_FRAME_W, CHARACTER_FRAME_H, CHARACTER_FPS } from './ui/tokens.js';
 import { parseGifFrames } from './ui/gif-parser.js';
 
 const FRONT_Z = 0;
@@ -1197,7 +1197,7 @@ export function createScene(canvas) {
     // Palette index for variant safe zone colours (story 7-0).
     // Uses STRING_SAFE_ZONE_FILLS for fill and STRING_COLORS for the neon border.
     const stringCount = instrument?.stringCount ?? 6;
-    const paletteIdx = anchorString != null ? (stringCount - anchorString) : 0;
+    const paletteIdx = stringToLaneIndex(anchorString, stringCount);
     // Safe zone fill — dim translucent plane using STRING_SAFE_ZONE_FILLS (story 7-0).
     const szGeo = new THREE.PlaneGeometry(1.2, VARIANT_SZ_DEPTH, 1, 16);
     const fillColor = paletteIdx < STRING_SAFE_ZONE_FILLS.length
@@ -2205,7 +2205,7 @@ export class SceneManager {
     if (!instance._scene || !THREE.RingGeometry) return;
     // stringIndex is 1-based from HIGH (tabulator); convert to low→high palette index.
     const stringCount = instrument?.stringCount ?? 6;
-    const color = colourForString(stringCount - stringIndex, instrument);
+    const color = colourForString(stringToLaneIndex(stringIndex, stringCount), instrument);
     const geometry = new THREE.RingGeometry(0.1, 0.3, 16);
     const material = new THREE.MeshBasicMaterial({
       color,
