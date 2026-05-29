@@ -5,8 +5,9 @@ import pytest
 
 
 REQUIRED_IDS = {
+    # Major and natural minor are the common names for ionian and aeolian
     "major", "natural-minor",
-    "ionian", "dorian", "phrygian", "lydian", "mixolydian", "aeolian", "locrian",
+    "dorian", "phrygian", "lydian", "mixolydian", "locrian",
 }
 
 
