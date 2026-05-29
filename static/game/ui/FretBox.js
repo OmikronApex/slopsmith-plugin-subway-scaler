@@ -89,8 +89,7 @@ export class FretBox {
 
     const colTemplate = `repeat(${numFrets}, 1fr)`;
 
-    // Fret number row — same grid template as the main grid, so numbers sit
-    // directly above their columns.
+    // Fret number row — same grid template as the main grid
     const fretNumRow = document.createElement('div');
     fretNumRow.className = 'fret-numbers-row';
     fretNumRow.style.gridTemplateColumns = colTemplate;
@@ -102,8 +101,29 @@ export class FretBox {
     }
     this._panel.appendChild(fretNumRow);
 
-    // Flat CSS grid — one cell per (string × fret). CSS grid 1fr columns require
-    // the panel to have an explicit width (set in hud.css) to compute correctly.
+    // Diagram wrapper: strings layer behind, grid in front
+    const diagram = document.createElement('div');
+    diagram.className = 'fret-diagram';
+
+    // String lines layer — one thin coloured line per string row, sitting behind
+    // the note grid. Transparent empty cells let the lines show through; note fills
+    // cover them where a note lands.
+    const stringsLayer = document.createElement('div');
+    stringsLayer.className = 'fret-strings-layer';
+    stringsLayer.style.gridAutoRows = '16px';
+    for (let r = 0; r < stringCount; r++) {
+      const backendString = r + 1;
+      const paletteIdx = stringCount - backendString;
+      const line = document.createElement('div');
+      line.className = 'fret-string-line';
+      line.style.background = `var(--color-string-${paletteIdx})`;
+      stringsLayer.appendChild(line);
+    }
+    diagram.appendChild(stringsLayer);
+
+    // Flat CSS grid — one cell per (string × fret).
+    // CSS grid 1fr columns require the panel to have an explicit width (set in
+    // hud.css) so that fractions resolve correctly.
     const grid = document.createElement('div');
     grid.className = 'fret-grid';
     grid.style.gridTemplateColumns = colTemplate;
@@ -129,12 +149,20 @@ export class FretBox {
         } else {
           const cell = document.createElement('div');
           cell.className = 'fret-cell';
+          // Fret wire: right border on every empty cell except the last column.
+          // Applied only to empty cells so note boxes keep their full string-colour
+          // border unmodified.
+          if (f < endFret) {
+            cell.style.borderRight = '1.5px solid rgba(85, 85, 112, 0.85)';
+            cell.style.boxSizing = 'border-box';
+          }
           grid.appendChild(cell);
         }
       }
     }
 
-    this._panel.appendChild(grid);
+    diagram.appendChild(grid);
+    this._panel.appendChild(diagram);
 
     this._applyDetailClass();
     return this;

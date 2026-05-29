@@ -96,28 +96,51 @@
   line-height: 1;
 }
 
-/* Fret grid — CSS grid with explicit column template (set inline) and fixed row
-   height. column-gap is the visual fret wire; row-gap separates strings.
-   grid-auto-rows must be set here so every row is the same height and note
-   boxes are always landscape (wider than tall). */
+/* Wrapper that stacks strings layer behind the note grid */
+.subway-scaler .fret-diagram {
+  position: relative;
+}
+
+/* String lines — absolutely positioned behind the grid, one row per string.
+   grid-auto-rows and row-gap set inline to match .fret-grid geometry exactly.
+   Transparent grid cells let the lines show through; note fills cover them. */
+.subway-scaler .fret-strings-layer {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  /* grid-auto-rows: 16px set inline to match fret-grid */
+  row-gap: 4px;
+  pointer-events: none;
+  z-index: 0;
+  align-items: center;
+}
+
+/* Each string is a 1.5 px horizontal bar centred in its row */
+.subway-scaler .fret-string-line {
+  height: 1.5px;
+  opacity: 0.3;
+}
+
+/* Fret grid sits above the strings layer */
 .subway-scaler .fret-grid {
   display: grid;
   /* grid-template-columns set inline: repeat(N, 1fr) */
   grid-auto-rows: 16px;
   column-gap: 4px;
   row-gap: 4px;
+  position: relative;
+  z-index: 1;
 }
 
-/* Empty fret cell — occupies the grid track, nothing drawn */
+/* Empty fret cell — transparent so string layer shows through */
 .subway-scaler .fret-cell {
-  /* intentionally empty */
+  /* no background: strings visible behind */
 }
 
-/* Note cell — horizontal margin creates visible space between the note box and
-   the fret-wire gaps on each side (fret column wider than note indicator).
+/* Note cell — wider margin so the box is clearly narrower than the fret column.
    box-sizing keeps the border inside, not expanding the cell beyond its track. */
 .subway-scaler .fret-cell-note {
-  margin: 0 3px;
+  margin: 0 5px;
   border: 2px solid;
   position: relative;
   box-sizing: border-box;
