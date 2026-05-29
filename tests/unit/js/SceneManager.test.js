@@ -59,47 +59,88 @@ vi.mock('../../../static/game/vendor/three.module.js', () => {
     updateProjectionMatrix: vi.fn(),
     position: { x: 0, y: 0, z: 0, set: vi.fn() },
     rotation: { x: 0, y: 0, z: 0 },
+    quaternion: { copy: vi.fn() },
     lookAt: vi.fn(),
+    layers: { enable: vi.fn() },
   };
   return {
+    // Constants
+    SRGBColorSpace: 'srgb',
+    ACESFilmicToneMapping: 4,
+    NearestFilter: 1003,
+    DoubleSide: 2,
+    // Renderer
     WebGLRenderer: vi.fn(() => mockRenderer),
+    // Scene / camera
     Scene: vi.fn(() => mockScene),
     PerspectiveCamera: vi.fn(() => mockCamera),
     Color: vi.fn(),
     DirectionalLight: vi.fn(() => ({ position: { set: vi.fn() } })),
-    AmbientLight: vi.fn(),
+    AmbientLight: vi.fn(() => ({ layers: { set: vi.fn() } })),
     Fog: vi.fn(),
-    BoxGeometry: vi.fn(() => ({ dispose: vi.fn() })),
+    SpotLight: vi.fn(() => ({
+      position: { set: vi.fn() },
+      target: { position: { set: vi.fn() } },
+      dispose: vi.fn(),
+      isSpotLight: true,
+      isLight: true,
+    })),
+    // Geometries
+    BoxGeometry: vi.fn(() => ({ dispose: vi.fn(), parameters: { depth: 1 } })),
     CapsuleGeometry: vi.fn(() => ({ dispose: vi.fn() })),
-    PlaneGeometry: vi.fn(() => ({ dispose: vi.fn() })),
+    PlaneGeometry: vi.fn(() => ({ dispose: vi.fn(), translate: vi.fn() })),
+    CylinderGeometry: vi.fn(() => ({ dispose: vi.fn() })),
+    BufferGeometry: vi.fn(() => ({ dispose: vi.fn() })),
+    EdgesGeometry: vi.fn(() => ({ dispose: vi.fn() })),
+    RingGeometry: vi.fn(() => ({ dispose: vi.fn() })),
+    // Materials
     MeshStandardMaterial: vi.fn(() => ({ dispose: vi.fn(), color: 0 })),
+    MeshBasicMaterial: vi.fn(() => ({ dispose: vi.fn(), map: null, needsUpdate: false })),
+    MeshPhysicalMaterial: vi.fn(() => ({ dispose: vi.fn() })),
+    LineBasicMaterial: vi.fn(() => ({ dispose: vi.fn() })),
     SpriteMaterial: vi.fn(() => ({})),
-    CanvasTexture: vi.fn(() => ({})),
-    DoubleSide: 2,
+    // Textures
+    CanvasTexture: vi.fn(() => ({ colorSpace: null, minFilter: null, magFilter: null, dispose: vi.fn() })),
+    // Objects
     Mesh: vi.fn(() => {
       const m = {
         isMesh: true,
         position: { x: 0, y: 0, z: 0, set: (x, y, z) => { m.position.x = x; m.position.y = y; m.position.z = z; } },
         rotation: { x: 0, y: 0, z: 0, set: vi.fn() },
-        geometry: { dispose: vi.fn() },
-        material: { dispose: vi.fn() },
+        quaternion: { copy: vi.fn() },
+        geometry: { dispose: vi.fn(), translate: vi.fn() },
+        material: { dispose: vi.fn(), map: null, needsUpdate: false },
         visible: true,
         userData: {},
         add: vi.fn(),
-        scale: { set: vi.fn() },
+        remove: vi.fn(),
+        traverse: vi.fn(),
+        scale: { set: vi.fn(), setScalar: vi.fn() },
+        layers: { set: vi.fn() },
+        renderOrder: 0,
       };
       return m;
     }),
+    LineSegments: vi.fn(() => ({
+      position: { x: 0, y: 0, z: 0, set: vi.fn() },
+      rotation: { x: 0, y: 0, z: 0 },
+      geometry: { dispose: vi.fn() },
+      material: { dispose: vi.fn() },
+      renderOrder: 0,
+    })),
     Sprite: vi.fn(() => ({
       position: { x: 0, y: 0, z: 0, set: vi.fn() },
       scale: { set: vi.fn() },
+      isSprite: true,
+      material: { map: null, dispose: vi.fn() },
     })),
     Group: vi.fn(() => {
       const children = [];
       const g = {
         position: { x: 0, y: 0, z: 0, set: (x, y, z) => { g.position.x = x; g.position.y = y; g.position.z = z; } },
         rotation: { x: 0, y: 0, z: 0, set: vi.fn() },
-        add: vi.fn(c => children.push(c)),
+        userData: {},
+        add: vi.fn((...args) => args.forEach(c => children.push(c))),
         remove: vi.fn(),
         traverse: vi.fn(fn => { children.forEach(c => fn(c)); }),
         children,
@@ -118,6 +159,31 @@ function makeMockContainer() {
   };
 }
 
+// Full 2D canvas context stub — covers all methods used by SceneManager internals
+// (generatePlaceholderFrames, makeFretLabel, etc.)
+function makeCtxMock() {
+  return {
+    font: '',
+    textAlign: '',
+    textBaseline: '',
+    fillStyle: '',
+    strokeStyle: '',
+    lineWidth: 0,
+    strokeText: vi.fn(),
+    fillText: vi.fn(),
+    beginPath: vi.fn(),
+    arc: vi.fn(),
+    fill: vi.fn(),
+    stroke: vi.fn(),
+    fillRect: vi.fn(),
+    strokeRect: vi.fn(),
+    clearRect: vi.fn(),
+    moveTo: vi.fn(),
+    lineTo: vi.fn(),
+    closePath: vi.fn(),
+  };
+}
+
 // Mock canvas for createScene (needs clientWidth/clientHeight + getContext)
 function makeMockCanvas() {
   return {
@@ -125,16 +191,7 @@ function makeMockCanvas() {
     clientHeight: 600,
     width: 800,
     height: 600,
-    getContext: vi.fn(() => ({
-      font: '',
-      textAlign: '',
-      textBaseline: '',
-      fillStyle: '',
-      strokeStyle: '',
-      lineWidth: 0,
-      strokeText: vi.fn(),
-      fillText: vi.fn(),
-    })),
+    getContext: vi.fn(() => makeCtxMock()),
   };
 }
 
@@ -149,20 +206,7 @@ describe('createScene — isBendMidpointReached (Story 6.2)', () => {
   beforeEach(() => {
     // Mock document.createElement for makeTextSprite
     vi.stubGlobal('document', {
-      createElement: vi.fn(() => ({
-        width: 64,
-        height: 64,
-        getContext: vi.fn(() => ({
-          font: '',
-          textAlign: '',
-          textBaseline: '',
-          fillStyle: '',
-          strokeStyle: '',
-          lineWidth: 0,
-          strokeText: vi.fn(),
-          fillText: vi.fn(),
-        })),
-      })),
+      createElement: vi.fn(() => ({ width: 64, height: 64, getContext: vi.fn(() => makeCtxMock()) })),
     });
     vi.stubGlobal('performance', { now: vi.fn(() => 0) });
     vi.stubGlobal('window', {
@@ -227,14 +271,7 @@ describe('createScene — Story 6.8 cinematic refinement', () => {
   beforeEach(async () => {
     nowMs = 0;
     vi.stubGlobal('document', {
-      createElement: vi.fn(() => ({
-        width: 64, height: 64,
-        getContext: vi.fn(() => ({
-          font: '', textAlign: '', textBaseline: '',
-          fillStyle: '', strokeStyle: '', lineWidth: 0,
-          strokeText: vi.fn(), fillText: vi.fn(),
-        })),
-      })),
+      createElement: vi.fn(() => ({ width: 64, height: 64, getContext: vi.fn(() => makeCtxMock()) })),
     });
     vi.stubGlobal('performance', { now: vi.fn(() => nowMs) });
     vi.stubGlobal('window', { __gameState: { variant: { safeZoneZ: null }, scene: {} } });
@@ -514,14 +551,7 @@ describe.skip('createScene — character rotation and diagonal movement (legacy 
 
   beforeEach(() => {
     vi.stubGlobal('document', {
-      createElement: vi.fn(() => ({
-        width: 64, height: 64,
-        getContext: vi.fn(() => ({
-          font: '', textAlign: '', textBaseline: '',
-          fillStyle: '', strokeStyle: '', lineWidth: 0,
-          strokeText: vi.fn(), fillText: vi.fn(),
-        })),
-      })),
+      createElement: vi.fn(() => ({ width: 64, height: 64, getContext: vi.fn(() => makeCtxMock()) })),
     });
     vi.stubGlobal('performance', { now: vi.fn(() => 0) });
     vi.stubGlobal('window', { __gameState: { variant: { safeZoneZ: null }, scene: {} } });
@@ -682,14 +712,7 @@ describe('createScene — dual-wave cohort rendering (Story 6.6)', () => {
 
   beforeEach(() => {
     vi.stubGlobal('document', {
-      createElement: vi.fn(() => ({
-        width: 64, height: 64,
-        getContext: vi.fn(() => ({
-          font: '', textAlign: '', textBaseline: '',
-          fillStyle: '', strokeStyle: '', lineWidth: 0,
-          strokeText: vi.fn(), fillText: vi.fn(),
-        })),
-      })),
+      createElement: vi.fn(() => ({ width: 64, height: 64, getContext: vi.fn(() => makeCtxMock()) })),
     });
     vi.stubGlobal('performance', { now: vi.fn(() => 0) });
     vi.stubGlobal('window', { __gameState: { variant: { safeZoneZ: null }, scene: {} } });

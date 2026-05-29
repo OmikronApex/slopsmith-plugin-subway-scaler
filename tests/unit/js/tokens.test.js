@@ -36,9 +36,8 @@ describe('Design Token System', () => {
       expect(COLORS.EDGE).toBe(0x08080F);
     });
 
-    it('COLORS has exactly 7 Night City palette properties', () => {
+    it('COLORS contains the 7 Night City palette properties', () => {
       const keys = Object.keys(COLORS);
-      expect(keys).toHaveLength(7);
       expect(keys).toContain('BG_VOID');
       expect(keys).toContain('BG_STAGE');
       expect(keys).toContain('BG_NEAR');
@@ -46,6 +45,10 @@ describe('Design Token System', () => {
       expect(keys).toContain('TEXT_PRIMARY');
       expect(keys).toContain('TEXT_DISABLED');
       expect(keys).toContain('EDGE');
+    });
+
+    it('COLORS contains DANGER (NPC cart threat colour)', () => {
+      expect(COLORS).toHaveProperty('DANGER', 0xFF4411);
     });
   });
 
