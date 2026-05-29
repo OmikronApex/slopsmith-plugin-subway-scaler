@@ -5,7 +5,7 @@
 // Character slides X-only between strings.
 
 import * as THREE from './vendor/three.module.js';
-import { laneX, cameraForPitch, SPAWN_Z, LANE_X_SCALE } from './TrackSystem.js';
+import { laneX, cameraForPitch, SPAWN_Z, LANE_X_SCALE, LANE_W, DIAG_LEN } from './TrackSystem.js';
 import { COLORS, colourForString, stringToLaneIndex, STRING_COLORS, STRING_SAFE_ZONE_FILLS, CURVED_WORLD, WORLD_CURVE_STRENGTH, CHARACTER_SPRITE_PATH, CHARACTER_FRAME_COUNT, CHARACTER_FRAME_W, CHARACTER_FRAME_H, CHARACTER_FPS } from './ui/tokens.js';
 import { parseGifFrames } from './ui/gif-parser.js';
 
@@ -17,10 +17,8 @@ const TRACK_DEPTH = 120;
 const ROOF_COLOUR = 0x444444;
 const CHAR_FRAME_DURATION = 1000 / CHARACTER_FPS;  // ms per frame for sprite animation (story 7-6)
 const VARIANT_SZ_DEPTH = 20;      // Safe zone depth for variant lane (matches SafeZoneRenderer)
-const LANE_W = 1.4;               // Lane box width (matches BoxGeometry in rebuildTracks)
 const PIECE_H = 0.06;             // Track piece height
 const STRAIGHT_LEN = 60;          // Z length of variant parallel track = 3 wave spacings (story 5-7 adjustment)
-const DIAG_LEN = 45;              // Z length of diagonal section in bend piece (~3× to reach frame edge)
 // SEG_LEN = 25 removed — variant track uses fixed 3-piece group (story 5-7)
 
 // ─── Curved world vertex bend (story 7-5) ──────────────────────────────────
@@ -678,11 +676,23 @@ export function createScene(canvas) {
   // THIS FUNCTION IS CALLED ASYNCHRONOUSLY (CharacterSpriteFrames) — the sprite
   // renders a placeholder until the real asset loads.
   let _spriteFrames = null;   // Array<HTMLCanvasElement>
+  let _spriteTextures = null; // Array<THREE.CanvasTexture> — cached per frame
   let _spriteFrameDelays = null; // Array<number> — ms per frame (from GIF)
   let _spriteFramesReady = false;  // true once frames are loaded and drawable
 
+  function _buildSpriteTextures(frames) {
+    return frames.map(f => {
+      const t = new THREE.CanvasTexture(f);
+      t.colorSpace = THREE.SRGBColorSpace;
+      t.minFilter = THREE.NearestFilter;
+      t.magFilter = THREE.NearestFilter;
+      return t;
+    });
+  }
+
   function initSpriteFrames() {
     _spriteFrames = generatePlaceholderFrames(CHARACTER_FRAME_COUNT, 24);
+    _spriteTextures = _buildSpriteTextures(_spriteFrames);
     _spriteFrameDelays = null;
     _spriteFramesReady = true;
 
@@ -698,6 +708,8 @@ export function createScene(canvas) {
           _spriteFrames = frames;
           _spriteFrameDelays = delays;
           _frameTimelineFn = _frameTimeline(delays);
+          if (_spriteTextures) _spriteTextures.forEach(t => t.dispose());
+          _spriteTextures = _buildSpriteTextures(_spriteFrames);
         }
       })
       .catch(() => { /* fallback: keep placeholder */ });
@@ -763,11 +775,8 @@ export function createScene(canvas) {
     const frameIdx = _frameTimelineFn(elapsed, _spriteFrames.length);
     if (frameIdx !== _charLastFrameIdx) {
       _charLastFrameIdx = frameIdx;
-      const tex = new THREE.CanvasTexture(_spriteFrames[frameIdx]);
-      tex.colorSpace = THREE.SRGBColorSpace; // canvas pixels are sRGB — correct identity pipeline
-      tex.minFilter = THREE.NearestFilter;
-      tex.magFilter = THREE.NearestFilter;
-      character.material.map = tex;
+      if (!_spriteTextures) return;
+      character.material.map = _spriteTextures[frameIdx];
       character.material.needsUpdate = true;
     }
   }
@@ -804,10 +813,6 @@ export function createScene(canvas) {
   const CAMERA_RESET_DURATION_MS = 500;
 
   // Cinematic refinement constants (Story 6.8 rewrite)
-  const MAX_BEND_YAW = Math.PI / 4;          // 45° — character snap & camera target
-  const DIAG_CROSS_MS = 1200;                // X crossing duration (breather window)
-  const FIRST_WAVE_ARRIVAL_DELAY_MS = 500;   // ms after landing before first new-scale wave
-  const REPOSITION_SLIDE_MS = 200;           // quick slide to variant note fret after landing
   const CAMERA_YAW_RATE = 0.02;              // rad/frame camera ease rate
 
   let _cameraMode = 'default';
@@ -2123,8 +2128,6 @@ export function createScene(canvas) {
     },
   };
 }
-
-// ===== SceneManager — Story 3.1: static class owning renderer, camera, scene =====
 
 export class SceneManager {
   static _instances = new WeakMap(); // Per-container instance storage

@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 from services.schemas import (
-    Note, GameState, Track, SpeedMultiplier, Instrument,
+    Note, Instrument,
     VariantTrackSet, SwitchWindow,
 )
 from services.scales import expand
@@ -259,10 +259,6 @@ class GameEngine:
         session.started_at_ms += pause_duration
         session.paused_at_ms = None
         session.status = "running"
-
-    def fail_session(self, session: GameSession, reason: str):
-        session.status = "failed"
-        session.ended_at_ms = int(time.time() * 1000)
 
     def get_session(self, session_id: str) -> Optional[GameSession]:
         return self.sessions.get(session_id)

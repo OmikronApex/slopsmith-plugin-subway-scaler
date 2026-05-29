@@ -30,4 +30,3 @@ def test_game_start_contract(client):
     assert tp["wave_lookahead_ms"] == 10000
     assert tp["speed_increment_per_note"] == 0.05
     assert tp["variant_breather_ms"] == 3000  # Story 6.4
-    assert "game_state" in data

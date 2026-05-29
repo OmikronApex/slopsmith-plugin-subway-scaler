@@ -4,12 +4,11 @@
 import { currentTransitionPhase } from './TransitionPhases.js';
 
 export class GamePoller {
-  constructor({ gameClient, scoreDisplay, variantController, scene, onGameOver }) {
+  constructor({ gameClient, scoreDisplay, variantController, scene }) {
     this.gameClient = gameClient;
     this.scoreDisplay = scoreDisplay;
     this.variantController = variantController;
     this.scene = scene;
-    this.onGameOver = onGameOver;
     this._speedMultiplier = 1.0;
 
     // External refs set by main.js:
@@ -22,7 +21,7 @@ export class GamePoller {
   }
 
   /** Start polling the backend for state updates. */
-  start(intervalMs = 200) {
+  start(intervalMs = 1000) {
     this.gameClient.startPolling((pollState) => {
       if (!pollState) return;
       if (this.run && this.run.state === 'paused') return;

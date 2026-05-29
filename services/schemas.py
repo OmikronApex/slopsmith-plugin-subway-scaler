@@ -139,23 +139,6 @@ class ErrorBody(BaseModel):
 class ErrorResponse(BaseModel):
     error: ErrorBody
 
-class SpeedMultiplier(BaseModel):
-    current_value: float = 1.0
-    base_increment: float = 1.02
-    notes_played: int = 0
-
-class Track(BaseModel):
-    length: float
-    spawn_z: float
-    exit_boundary: float
-    interaction_point_z: float
-    queue_positions: list[float]
-
-class GameState(BaseModel):
-    carts: list[dict]
-    track: Track
-    speed_multiplier: SpeedMultiplier
-
 VariantSide = Literal["LEFT", "RIGHT"]
 VariantStateLit = Literal["SPAWNING", "ACTIVE", "ACCEPTED", "PROMOTED", "TIMEOUT", "DISMISSED"]
 WindowStateLit = Literal["OPEN", "ACCEPTED", "CLOSED"]

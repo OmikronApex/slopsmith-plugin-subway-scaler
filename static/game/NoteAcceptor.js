@@ -2,8 +2,6 @@
 // Processes audio detection events: safe-zone check, run acceptance, backend sync,
 // score feedback, and variant proposal delegation.
 
-import { Run } from './GameState.js';
-
 export class NoteAcceptor {
   constructor({
     safeZoneRenderer,

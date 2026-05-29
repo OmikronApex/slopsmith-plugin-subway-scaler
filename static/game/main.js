@@ -11,22 +11,19 @@ import {
   registerPhaseCleanup,
   resetTransitionPhase,
 } from './TransitionPhases.js';
-import { quantize, midiToName } from './notes.js';
+import { midiToName } from './notes.js';
 import { GameClient } from './game-client.js';
 import { DebugLogger } from './DebugLogger.js';
 import { SafeZoneRenderer } from './ui/SafeZoneRenderer.js';
 import { VariantController } from './VariantController.js';
 import { NoteAcceptor } from './NoteAcceptor.js';
 import { GamePoller } from './GamePoller.js';
-import { laneX, SPAWN_Z } from './TrackSystem.js';
+import { laneX, SPAWN_Z, LANE_W, DIAG_LEN } from './TrackSystem.js';
 
 // Cinematic refinement constants (Story 6.8) -- mirror SceneManager values.
 const MAX_BEND_YAW = Math.PI / 4;
-const DIAG_CROSS_MS = 1200;
 const FIRST_WAVE_ARRIVAL_DELAY_MS = 500;
 const REPOSITION_SLIDE_MS = 400;
-const DIAG_LEN = 45;
-const LANE_W = 1.4;
 
 // URL-driven test-mode keyboard shortcuts (Story 6.8 T12).
 // Setting window.__TEST_MODE here ensures the _test.playNote hook (gated on it later
@@ -47,8 +44,6 @@ import { FretBox } from './ui/FretBox.js';
 
 const API = '/api/plugins/subway-scaler';
 const STATIC = '/plugins/subway-scaler/static/game';
-
-const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
 function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
@@ -355,9 +350,6 @@ export async function bootstrap(root) {
   // Variant state managed by VariantController (Story 9-4).
   let variantController = null;
 
-  // Stub retained for backward compatibility -- variant HUD retired.
-  function updateVariantHud() {}
-
   function rangeWarning(notes) {
     const inst = currentInstrument();
     const min = inst.tuning[0] + 1;
@@ -557,7 +549,7 @@ export async function bootstrap(root) {
           const tp = notesResp.timing_params;
           const waveGapMs = (tp?.base_duration_ms ?? 4000) * (tp?.wave_spacing_factor ?? 0.5);
           const landingGameNow =
-            (_now() - gameStartTime) + dynamicDiagMs + REPOSITION_SLIDE_MS - 1.5 * waveGapMs;
+            gameNow() + dynamicDiagMs + REPOSITION_SLIDE_MS - 1.5 * waveGapMs;
           const promotePromise = gameClient.promoteVariant().catch(err => {
             console.error('[main] promote error', err);
             return null;
@@ -599,8 +591,7 @@ export async function bootstrap(root) {
           scene.clearCinematicExit?.();
           scene.setCameraMode('default');
           waveScheduler.clearWavesForTesting();
-          const gameNow = _now() - gameStartTime;
-          waveScheduler.resumeQueueing(notesResp.notes, run?.cursor ?? 0, null, null, gameNow);
+          waveScheduler.resumeQueueing(notesResp.notes, run?.cursor ?? 0, null, null, gameNow());
           setTransitionPhase('idle', ctx);
           return;
         }
@@ -707,7 +698,7 @@ export async function bootstrap(root) {
         gameClient.promoteVariant().then((resp) => {
           if (!resp || !resp.success) {
             console.error('[main] promote failed', resp);
-            waveScheduler.resumeQueueing(notesResp.notes, run?.cursor ?? 0, null, null, _now() - gameStartTime);
+            waveScheduler.resumeQueueing(notesResp.notes, run?.cursor ?? 0, null, null, gameNow());
             setTransitionPhase('idle', ctx);
             return;
           }
@@ -724,8 +715,7 @@ export async function bootstrap(root) {
           if (resp.notes) {
             rootNote = resp.notes[0] ?? null;
             apexNote = ascendingNoteCount > 0 ? resp.notes[ascendingNoteCount - 1] : null;
-            const gameNow = _now() - gameStartTime;
-            waveScheduler.resumeQueueing(resp.notes, startIdx, resp.base_fret, resp.num_lanes, gameNow);
+            waveScheduler.resumeQueueing(resp.notes, startIdx, resp.base_fret, resp.num_lanes, gameNow());
           }
           // Snap character from variant track X to the correct main-track lane (Story 6.6 bugfix).
           if (resp.current_track != null) {
@@ -746,7 +736,7 @@ export async function bootstrap(root) {
           setTransitionPhase('active', ctx);
         }).catch((err) => {
           console.error('[main] promote error', err);
-          waveScheduler.resumeQueueing(notesResp.notes, run?.cursor ?? 0, null, null, _now() - gameStartTime);
+          waveScheduler.resumeQueueing(notesResp.notes, run?.cursor ?? 0, null, null, gameNow());
           setTransitionPhase('idle', ctx);
         });
       });
@@ -851,7 +841,7 @@ export async function bootstrap(root) {
           _pausedAt = null;
         }
 
-        const game_now = _now() - gameStartTime;
+        const game_now = gameNow();
         const speedMultiplier = poller.speedMultiplier;
         waveScheduler.tick(game_now, speedMultiplier);
         const waves = waveScheduler.waves;
@@ -877,7 +867,6 @@ export async function bootstrap(root) {
         if (_perFrameHook) _perFrameHook();
 
         scene.render(now);
-        updateVariantHud(); // AC-4: update each frame to catch brief adjacency window
         rafId = requestAnimationFrame(loop);
       };
       // Ensure mic pipeline is ready before countdown; start fresh only if setup-screen grab failed.
@@ -893,12 +882,12 @@ export async function bootstrap(root) {
       const countdownStart = _now();
       gameStartTime = countdownStart + 3500; // Do NOT overwrite after countdown -- set once so
       // wave scheduler ticks during countdown use a consistent clock (P1).
+      const gameNow = () => _now() - gameStartTime;
       scene.setGameStartTime(gameStartTime);
       if (_debugLogger) _debugLogger.setGameStartTime(gameStartTime);
       // Wire poller after gameStartTime is known.
       const poller = new GamePoller({
         gameClient, scoreDisplay, variantController, scene,
-        onGameOver: (reason) => {},
       });
       poller.feedbackEl = feedbackEl;
       poller.run = run;

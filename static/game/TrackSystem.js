@@ -11,6 +11,8 @@ export const ROW_DZ = 3.0;
 export const WINDOW = 9;
 export const QUEUE_DZ = 2.2;
 export const SPAWN_Z = -100;
+export const LANE_W = 1.4;
+export const DIAG_LEN = 45;
 
 export function queueZ(queueIndex) {
   const z = -queueIndex * QUEUE_DZ;
