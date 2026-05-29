@@ -121,6 +121,24 @@
   opacity: 0.3;
 }
 
+/* Fret wires overlay — positioned above the grid so wires appear at every
+   column gap regardless of cell contents. Left positions are set inline by JS. */
+.subway-scaler .fret-wires-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.subway-scaler .fret-wire {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1.5px;
+  margin-left: -0.75px;
+  background: rgba(85, 85, 112, 0.85);
+}
+
 /* Fret grid sits above the strings layer */
 .subway-scaler .fret-grid {
   display: grid;

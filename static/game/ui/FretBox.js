@@ -101,13 +101,11 @@ export class FretBox {
     }
     this._panel.appendChild(fretNumRow);
 
-    // Diagram wrapper: strings layer behind, grid in front
+    // Diagram wrapper: layers stacked bottom→top: strings, grid, fret-wires
     const diagram = document.createElement('div');
     diagram.className = 'fret-diagram';
 
-    // String lines layer — one thin coloured line per string row, sitting behind
-    // the note grid. Transparent empty cells let the lines show through; note fills
-    // cover them where a note lands.
+    // String lines — one 1.5px coloured bar per string row, behind everything.
     const stringsLayer = document.createElement('div');
     stringsLayer.className = 'fret-strings-layer';
     stringsLayer.style.gridAutoRows = '16px';
@@ -121,15 +119,13 @@ export class FretBox {
     }
     diagram.appendChild(stringsLayer);
 
-    // Flat CSS grid — one cell per (string × fret).
-    // CSS grid 1fr columns require the panel to have an explicit width (set in
-    // hud.css) so that fractions resolve correctly.
+    // Flat CSS grid
     const grid = document.createElement('div');
     grid.className = 'fret-grid';
     grid.style.gridTemplateColumns = colTemplate;
 
     for (let r = 0; r < stringCount; r++) {
-      const backendString = r + 1; // 1 = highest pitch = top row
+      const backendString = r + 1;
       const paletteIdx = stringCount - backendString;
 
       for (let f = startFret; f <= endFret; f++) {
@@ -149,19 +145,34 @@ export class FretBox {
         } else {
           const cell = document.createElement('div');
           cell.className = 'fret-cell';
-          // Fret wire: right border on every empty cell except the last column.
-          // Applied only to empty cells so note boxes keep their full string-colour
-          // border unmodified.
-          if (f < endFret) {
-            cell.style.borderRight = '1.5px solid rgba(85, 85, 112, 0.85)';
-            cell.style.boxSizing = 'border-box';
-          }
           grid.appendChild(cell);
         }
       }
     }
-
     diagram.appendChild(grid);
+
+    // Fret wires overlay — one absolutely-positioned 1.5px vertical bar per
+    // column gap, computed from known panel geometry. The overlay sits above the
+    // grid (z-index: 2) and covers every inter-column boundary regardless of
+    // whether adjacent cells are empty or occupied.
+    //
+    // Layout constants must match hud.css: width:240px, padding-inline:10px,
+    // .fret-grid column-gap:4px.
+    const PANEL_CONTENT_W = 220; // 240 - 2*10
+    const COL_GAP = 4;
+    const colW = (PANEL_CONTENT_W - (numFrets - 1) * COL_GAP) / numFrets;
+
+    const wiresLayer = document.createElement('div');
+    wiresLayer.className = 'fret-wires-layer';
+    for (let i = 0; i < numFrets - 1; i++) {
+      const wire = document.createElement('div');
+      wire.className = 'fret-wire';
+      // Centre of gap i: right edge of column i + half the gap
+      wire.style.left = `${(i + 1) * (colW + COL_GAP) - COL_GAP / 2}px`;
+      wiresLayer.appendChild(wire);
+    }
+    diagram.appendChild(wiresLayer);
+
     this._panel.appendChild(diagram);
 
     this._applyDetailClass();
