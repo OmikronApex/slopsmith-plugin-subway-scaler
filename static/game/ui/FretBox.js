@@ -138,8 +138,7 @@ export class FretBox {
           const fill = document.createElement('div');
           fill.className = 'fret-cell-note-fill';
           fill.style.background = `var(--color-string-${paletteIdx})`;
-          fill.style.opacity = '0.75';
-          fill.style.filter = 'brightness(1.2)';
+          fill.style.opacity = '1';
           cell.appendChild(fill);
           grid.appendChild(cell);
         } else {
