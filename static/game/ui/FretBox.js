@@ -133,7 +133,6 @@ export class FretBox {
         if (noteAtCell) {
           const cell = document.createElement('div');
           cell.className = 'fret-cell-note';
-          if (noteAtCell.midi === root_midi) cell.classList.add('fret-cell-root');
           cell.style.borderColor = `var(--color-string-${paletteIdx})`;
           const fill = document.createElement('div');
           fill.className = 'fret-cell-note-fill';
