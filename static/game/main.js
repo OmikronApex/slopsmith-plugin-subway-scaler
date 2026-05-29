@@ -110,9 +110,15 @@ export async function bootstrap(root) {
   };
   pushGameEvent('init');
 
-  // Persistent RAF loop keeps loop.frameCount ticking for E2E liveness checks
+  // Persistent RAF loop keeps loop.frameCount ticking for E2E liveness checks.
+  // Capped at 60 fps in test mode to avoid CPU saturation under software WebGL.
+  const _BG_FRAME_MS = 1000 / 60;
   (function _bgLoop(last) {
     requestAnimationFrame((now) => {
+      if (window.__TEST_MODE && now - last < _BG_FRAME_MS) {
+        _bgLoop(last);
+        return;
+      }
       if (window.__gameState) {
         window.__gameState.loop.frameCount++;
         window.__gameState.loop.deltaTime = last ? now - last : 0;
@@ -291,12 +297,7 @@ export async function bootstrap(root) {
   const fretBox = new FretBox();
   fretBox.register(hudShell);
 
-  // Wire HUD detail preference change from pause overlay
-  gameWrap.addEventListener('hud-detail-change', (e) => {
-    fretBox.setDetailMode(e.detail);
-  });
-
-  const scene = createScene(canvas);
+const scene = createScene(canvas);
 
   // Keep Three.js renderer resolution in sync with the shell's actual pixel size
   new ResizeObserver(entries => {
@@ -733,8 +734,21 @@ export async function bootstrap(root) {
       // Start the rendering loop so we can see the initial state
       let _pausedAt = null;
       let gameStartTime = 0; // set after audio setup so countdownStart is accurate
+      // In test mode cap the render loop at 60 fps to avoid maxing out the CPU
+      // under software WebGL (SwiftShader) in headless Chromium. Real browsers are
+      // uncapped — if your hardware supports 240 Hz, the game runs at 240 Hz.
+      const _TEST_FRAME_MS = 1000 / 60;
+      let _lastLoopTime = 0;
+
       const loop = (now) => {
         if (!run) return;
+        if (window.__TEST_MODE) {
+          if (now - _lastLoopTime < _TEST_FRAME_MS) {
+            rafId = requestAnimationFrame(loop);
+            return;
+          }
+          _lastLoopTime = now;
+        }
 
         // Use visual collision detection as the primary failure source.
         // Invincible mode (debug): skip the failure transition entirely.
