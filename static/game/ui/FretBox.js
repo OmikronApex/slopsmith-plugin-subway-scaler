@@ -96,46 +96,55 @@ export class FretBox {
       noteMap.set(`${note.string}:${note.fret}`, note);
     }
 
-    // Fret number row
+    const colTemplate = `repeat(${numFrets}, 1fr)`;
+
+    // Header row: spacer (matches strip width) + fret number grid
+    // The spacer keeps numbers aligned over the grid columns when strip is visible.
+    const header = document.createElement('div');
+    header.className = 'fret-header';
+
+    const spacer = document.createElement('div');
+    spacer.className = 'fret-header-spacer';
+    header.appendChild(spacer);
+
     const fretNumRow = document.createElement('div');
     fretNumRow.className = 'fret-numbers-row';
+    fretNumRow.style.gridTemplateColumns = colTemplate;
     for (let f = startFret; f <= endFret; f++) {
       const fn = document.createElement('span');
       fn.className = 'fret-number';
       fn.textContent = String(f);
       fretNumRow.appendChild(fn);
     }
+    header.appendChild(fretNumRow);
+    this._panel.appendChild(header);
 
-    // Content row: strip + grid
+    // Content row: strip + flat CSS grid
     const contentRow = document.createElement('div');
     contentRow.className = 'fret-content-row';
 
-    // String colour strip (Full mode)
+    // String colour strip — always in DOM so layout is stable in both detail modes.
+    // Opacity is toggled by CSS class instead of display:none.
     const strip = document.createElement('div');
     strip.className = 'fret-string-strip';
     for (let r = 0; r < stringCount; r++) {
       const stripRow = document.createElement('div');
       stripRow.className = 'fret-string-strip-row';
-      // r=0 is top row (highest pitch string), paletteIdx = r (same as row)
       stripRow.style.background = `var(--color-string-${r})`;
       strip.appendChild(stripRow);
     }
     contentRow.appendChild(strip);
 
-    // Grid
+    // Flat CSS grid — one cell per (string × fret) combination.
+    // Using CSS grid guarantees every column is exactly the same width regardless
+    // of whether a cell is empty or occupied by a note box.
     const grid = document.createElement('div');
     grid.className = 'fret-grid';
-    grid.style.flex = '1';
+    grid.style.gridTemplateColumns = colTemplate;
 
     for (let r = 0; r < stringCount; r++) {
-      // r=0 = top row = highest pitch string
-      // backend string: 1-based from high. row 0 top → string 1 (highest)
-      const backendString = r + 1; // string 1 = highest = top row
-      // paletteIdx: low→high index. highest string (string=1) → paletteIdx = stringCount-1
+      const backendString = r + 1; // 1 = highest pitch = top row
       const paletteIdx = stringCount - backendString;
-
-      const row = document.createElement('div');
-      row.className = 'fret-row';
 
       for (let f = startFret; f <= endFret; f++) {
         const noteAtCell = noteMap.get(`${backendString}:${f}`);
@@ -150,20 +159,17 @@ export class FretBox {
           fill.style.opacity = '0.75';
           fill.style.filter = 'brightness(1.2)';
           cell.appendChild(fill);
-          row.appendChild(cell);
+          grid.appendChild(cell);
         } else {
           const cell = document.createElement('div');
           cell.className = 'fret-cell';
-          row.appendChild(cell);
+          grid.appendChild(cell);
         }
       }
-
-      grid.appendChild(row);
     }
 
     contentRow.appendChild(grid);
 
-    this._panel.appendChild(fretNumRow);
     this._panel.appendChild(contentRow);
 
     this._applyDetailClass();

@@ -77,59 +77,82 @@
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 1.2;
+  margin-bottom: 2px;
 }
 
-.subway-scaler .fret-numbers-row {
+/* Header aligns spacer + fret numbers over the content row below */
+.subway-scaler .fret-header {
   display: flex;
-  gap: 2px;
+  gap: 4px;
+  align-items: flex-end;
+}
+
+/* Spacer width = strip width, keeps numbers aligned when strip is hidden */
+.subway-scaler .fret-header-spacer {
+  width: 4px;
+  flex-shrink: 0;
+}
+
+/* Fret number grid — column template set inline to match main grid */
+.subway-scaler .fret-numbers-row {
+  display: grid;
+  column-gap: 3px;
+  flex: 1;
 }
 
 .subway-scaler .fret-number {
   font-family: 'Space Mono', monospace;
-  font-size: 0.55rem;
+  font-size: 0.5rem;
   color: var(--color-text-primary, #E8E8F0);
   text-align: center;
-  flex: 1;
   line-height: 1;
 }
 
+/* Content row: strip + grid */
 .subway-scaler .fret-content-row {
   display: flex;
   gap: 4px;
   align-items: stretch;
 }
 
-.subway-scaler .fret-grid {
+/* String colour strip — always in DOM so layout is stable.
+   Visibility controlled by opacity (not display) in Basic mode. */
+.subway-scaler .fret-string-strip {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  width: 4px;
+  flex-shrink: 0;
+  align-self: stretch;
+}
+
+.subway-scaler .fret-string-strip-row {
   flex: 1;
 }
 
-.subway-scaler .fret-row {
-  display: flex;
-  gap: 2px;
-  height: 14px;
+/* Fret grid — CSS grid guarantees every column is exactly the same width.
+   column-gap is the visual fret wire; row-gap separates string rows.
+   grid-auto-rows fixes cell height so note boxes are always landscape. */
+.subway-scaler .fret-grid {
+  display: grid;
+  /* grid-template-columns set inline: repeat(N, 1fr) */
+  grid-auto-rows: 11px;
+  column-gap: 3px;
+  row-gap: 3px;
+  flex: 1;
 }
 
-/* Empty cell: just a fret-bar separator line */
+/* Empty fret cell — grid track is occupied but nothing is drawn */
 .subway-scaler .fret-cell {
-  flex: 1;
-  position: relative;
-  border-right: 1px solid rgba(255, 255, 255, 0.12);
-  box-sizing: border-box;
+  /* intentionally empty */
 }
 
-.subway-scaler .fret-cell:last-child {
-  border-right: none;
-}
-
-/* Note-occupied cell */
+/* Note cell — margin shrinks it horizontally so it is visibly narrower than
+   the column (fret space wider than note indicator). box-sizing keeps the
+   border inside the margin box, not expanding beyond it. */
 .subway-scaler .fret-cell-note {
-  flex: 1;
+  margin: 0 2px;
   border: 2px solid;
   position: relative;
-  height: 100%;
   box-sizing: border-box;
   border-radius: 1px;
 }
@@ -139,12 +162,12 @@
   inset: 0;
 }
 
-/* Root note: accent dot centred via ::after */
+/* Root note accent dot */
 .subway-scaler .fret-cell-root::after {
   content: '';
   position: absolute;
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   background: #FFB800;
   border-radius: 50%;
   top: 50%;
@@ -161,19 +184,6 @@
   color: var(--color-text-disabled, #555570);
   text-align: center;
   padding: 4px 0;
-}
-
-/* String-colour strip along left edge (Full detail mode) */
-.subway-scaler .fret-string-strip {
-  display: flex;
-  flex-direction: column;
-  width: 4px;
-  align-self: stretch;
-  flex-shrink: 0;
-}
-
-.subway-scaler .fret-string-strip-row {
-  flex: 1;
 }
 
 /* ===== FRET BOX FADE ANIMATION (8-4) ===== */
@@ -206,11 +216,11 @@
 }
 
 .subway-scaler .hud-fret-box.fret-detail-full .fret-string-strip {
-  display: flex;
+  opacity: 1;
 }
 
 .subway-scaler .hud-fret-box.fret-detail-basic .fret-string-strip {
-  display: none;
+  opacity: 0; /* hidden but keeps layout so numbers stay aligned over columns */
 }
 
 /* ===== REDUCED MOTION (8-6) ===== */
