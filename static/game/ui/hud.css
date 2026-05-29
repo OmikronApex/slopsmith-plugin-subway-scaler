@@ -1,0 +1,227 @@
+/* ===== HUD SHELL (8-0) ===== */
+.subway-scaler .hud-shell {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 100;
+  background: none;
+}
+
+/* ===== SCORE DISPLAY (8-1) ===== */
+.subway-scaler .hud-score {
+  top: 1rem;
+  right: 1rem;
+  font-family: 'Space Mono', monospace;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--color-text-primary, #E8E8F0);
+  background: none;
+  user-select: none;
+  line-height: 1;
+  min-width: 1.5ch;
+  text-align: right;
+}
+
+.subway-scaler .hud-score.score-increment {
+  color: var(--color-accent, #FFB800);
+  transition: color 150ms ease-out;
+}
+
+/* ===== PAUSE BUTTON (8-2) ===== */
+.subway-scaler .hud-pause-btn {
+  bottom: 1rem;
+  right: 1rem;
+  width: 44px;
+  height: 44px;
+  border-radius: 4px;
+  background: var(--color-bg-stage, #1A1A2E);
+  border: 1px solid var(--color-edge, #08080F);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.subway-scaler .hud-pause-btn:hover {
+  opacity: 0.85;
+}
+
+.subway-scaler .hud-pause-btn:focus-visible {
+  outline: 2px solid var(--color-accent, #FFB800);
+  outline-offset: 2px;
+}
+
+/* ===== FRET BOX PANEL (8-3) ===== */
+.subway-scaler .hud-fret-box {
+  top: 1rem;
+  left: 1rem;
+  background: rgba(12, 12, 18, 0.85);
+  border: 2px solid #0a0a10;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  max-width: 168px;
+  padding: 6px 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  user-select: none;
+  box-sizing: border-box;
+}
+
+.subway-scaler .fret-scale-label {
+  font-family: 'Space Mono', monospace;
+  font-size: 0.6rem;
+  color: var(--color-text-primary, #E8E8F0);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+}
+
+.subway-scaler .fret-numbers-row {
+  display: flex;
+  gap: 2px;
+}
+
+.subway-scaler .fret-number {
+  font-family: 'Space Mono', monospace;
+  font-size: 0.55rem;
+  color: var(--color-text-primary, #E8E8F0);
+  text-align: center;
+  flex: 1;
+  line-height: 1;
+}
+
+.subway-scaler .fret-content-row {
+  display: flex;
+  gap: 4px;
+  align-items: stretch;
+}
+
+.subway-scaler .fret-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.subway-scaler .fret-row {
+  display: flex;
+  gap: 2px;
+  height: 14px;
+}
+
+/* Empty cell: just a fret-bar separator line */
+.subway-scaler .fret-cell {
+  flex: 1;
+  position: relative;
+  border-right: 1px solid rgba(255, 255, 255, 0.12);
+  box-sizing: border-box;
+}
+
+.subway-scaler .fret-cell:last-child {
+  border-right: none;
+}
+
+/* Note-occupied cell */
+.subway-scaler .fret-cell-note {
+  flex: 1;
+  border: 2px solid;
+  position: relative;
+  height: 100%;
+  box-sizing: border-box;
+  border-radius: 1px;
+}
+
+.subway-scaler .fret-cell-note-fill {
+  position: absolute;
+  inset: 0;
+}
+
+/* Root note: accent dot centred via ::after */
+.subway-scaler .fret-cell-root::after {
+  content: '';
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  background: #FFB800;
+  border-radius: 50%;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* Placeholder when no session data */
+.subway-scaler .fret-placeholder {
+  font-family: 'Space Mono', monospace;
+  font-size: 0.65rem;
+  color: var(--color-text-disabled, #555570);
+  text-align: center;
+  padding: 4px 0;
+}
+
+/* String-colour strip along left edge (Full detail mode) */
+.subway-scaler .fret-string-strip {
+  display: flex;
+  flex-direction: column;
+  width: 4px;
+  align-self: stretch;
+  flex-shrink: 0;
+}
+
+.subway-scaler .fret-string-strip-row {
+  flex: 1;
+}
+
+/* ===== FRET BOX FADE ANIMATION (8-4) ===== */
+.subway-scaler .fretbox-visible {
+  opacity: 1;
+  transition: opacity 200ms ease-in-out;
+}
+
+.subway-scaler .fretbox-hidden {
+  opacity: 0;
+  transition: opacity 200ms ease-in-out;
+  pointer-events: none;
+}
+
+/* ===== DETAIL MODE OVERRIDES (8-5) ===== */
+.subway-scaler .hud-fret-box.fret-detail-full .fret-scale-label {
+  display: block;
+}
+
+.subway-scaler .hud-fret-box.fret-detail-basic .fret-scale-label {
+  display: none;
+}
+
+.subway-scaler .hud-fret-box.fret-detail-full .fret-number {
+  color: var(--color-text-primary, #E8E8F0);
+}
+
+.subway-scaler .hud-fret-box.fret-detail-basic .fret-number {
+  color: var(--color-text-disabled, #555570);
+}
+
+.subway-scaler .hud-fret-box.fret-detail-full .fret-string-strip {
+  display: flex;
+}
+
+.subway-scaler .hud-fret-box.fret-detail-basic .fret-string-strip {
+  display: none;
+}
+
+/* ===== REDUCED MOTION (8-6) ===== */
+@media (prefers-reduced-motion: reduce) {
+  .subway-scaler .hud-score.score-increment {
+    color: var(--color-accent, #FFB800);
+    transition: none;
+  }
+
+  .subway-scaler .fretbox-visible,
+  .subway-scaler .fretbox-hidden {
+    transition: none;
+  }
+}

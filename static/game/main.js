@@ -3,7 +3,7 @@
 
 import { createScene } from './SceneManager.js';
 import { startAudio } from './AudioDetector.js';
-import { Run, difficultyToTimePerNoteMs } from './GameState.js';
+import { Run, difficultyToTimePerNoteMs, PHASES } from './GameState.js';
 import {
   setTransitionPhase,
   setTransitionPhaseListener,
@@ -37,6 +37,10 @@ import { injectTokens } from './ui/tokens.js';
 import { renderSetupScreen } from './ui/setup.js';
 import { OverlayManager } from './ui/overlay.js';
 import { WaveScheduler } from './WaveScheduler.js';
+import { HudShell } from './ui/HudShell.js';
+import { ScoreDisplay } from './ui/ScoreDisplay.js';
+import { PauseButton } from './ui/PauseButton.js';
+import { FretBox } from './ui/FretBox.js';
 
 const API = '/api/plugins/subway-scaler';
 const STATIC = '/plugins/subway-scaler/static/game';
@@ -159,6 +163,7 @@ export async function bootstrap(root) {
     if (audio) audio.pause();
     pauseBtn.textContent = 'Resume';
     if (window.__gameState) window.__gameState.session.phase = 'paused';
+    hudShell.onPhaseChange(PHASES.PAUSED);
     gameClient.pause().catch(() => {});
     overlayMgr.show({ type: 'pause', reason });
   }
@@ -183,6 +188,7 @@ export async function bootstrap(root) {
     if (audio) audio.resume();
     pauseBtn.textContent = 'Pause';
     if (window.__gameState) window.__gameState.session.phase = 'playing';
+    hudShell.onPhaseChange(PHASES.PLAYING);
     gameClient.resume().catch(() => {});
   }
 
@@ -283,6 +289,18 @@ export async function bootstrap(root) {
   const gameWrap = el('div', { class: 'game-wrap', style: 'display:none' }, canvas, overlay, hud);
   shell.appendChild(gameWrap);
   overlayMgr.mount(gameWrap);
+
+  // HUD layer (Epic 8) — sits between canvas and overlays (z-index: 100 vs 2000)
+  const hudShell = new HudShell(shell);
+  const scoreDisplay = new ScoreDisplay(hudShell);
+  const pauseButton = new PauseButton(hudShell, () => pauseGame());
+  const fretBox = new FretBox();
+  fretBox.register(hudShell);
+
+  // Wire HUD detail preference change from pause overlay
+  gameWrap.addEventListener('hud-detail-change', (e) => {
+    fretBox.setDetailMode(e.detail);
+  });
 
   const scene = createScene(canvas);
 
@@ -461,6 +479,7 @@ export async function bootstrap(root) {
       // Default accepted → riding: soft halt, then advance phase.
       setTransitionPhaseListener((next, prev, ctx) => {
         if (next !== 'accepted') return;
+        fretBox.fadeOut();
         waveScheduler.pauseQueueing();
         setTransitionPhase('riding', ctx);
       });
@@ -631,6 +650,7 @@ export async function bootstrap(root) {
         // Do NOT call safeZoneRenderer.reset() — it wipes the cached-X per-wave
         // mesh state we rely on so in-flight old-scale safe zones stay at their
         // original X. They despawn naturally as their wave passes.
+        if (resp.notes) fretBox.render(resp);
         setTransitionPhase('active', ctx);
       }
 
@@ -701,6 +721,7 @@ export async function bootstrap(root) {
           pushGameEvent('variant.promote', { base_fret: resp.base_fret, num_lanes: resp.num_lanes, note_index: startIdx });
           if (_debugLogger) _debugLogger.log('variant.promote', { base_fret: resp.base_fret, num_lanes: resp.num_lanes, note_index: startIdx, current_track: resp.current_track });
           safeZoneRenderer.reset();
+          if (resp.notes) fretBox.render(resp);
           setTransitionPhase('active', ctx);
         }).catch((err) => {
           console.error('[main] promote error', err);
@@ -709,7 +730,7 @@ export async function bootstrap(root) {
         });
       });
 
-      // Default active: reset variant tracking state.
+      // Default active: reset variant tracking state and fade in fret box with new data.
       setTransitionPhaseListener((next, prev, ctx) => {
         if (next !== 'active') return;
         shownVariantId = null;
@@ -718,6 +739,13 @@ export async function bootstrap(root) {
         variantPendingSpawn = null;
         variantSpawnedForWave = null;
         updateVariantHud();
+        fretBox.fadeIn();
+      });
+
+      // Idle transition recovery: fade in fret box if it was hidden (e.g. variant dismissed).
+      setTransitionPhaseListener((next, prev) => {
+        if (next !== 'idle') return;
+        fretBox.fadeIn();
       });
 
       function runAcceptTransition(resp) {
@@ -787,6 +815,7 @@ export async function bootstrap(root) {
             window.__gameState.gameOver.reason = 'collision';
             window.__gameState.gameOver.triggeredAt = Date.now();
           }
+          hudShell.onPhaseChange(PHASES.GAME_OVER);
           overlayMgr.show({ type: 'game-over', score: finalScore });
           cleanup();
           return;
@@ -915,6 +944,11 @@ export async function bootstrap(root) {
 
       overlay.classList.add('hidden');
       pauseBtn.classList.remove('hidden');
+
+      // HUD: show and render initial finger pattern
+      hudShell.onPhaseChange(PHASES.PLAYING);
+      scoreDisplay.update(0);
+      fretBox.render(notesResp);
 
       // Proximity dismiss: SceneManager fires this when safe zone passes player (AC-2, AC-3)
       scene.setOnVariantMissed(() => {
@@ -1083,6 +1117,7 @@ export async function bootstrap(root) {
         if (pollState.score !== undefined) {
           feedbackEl.textContent = `Score: ${pollState.score}`;
           if (window.__gameState) window.__gameState.score.current = pollState.score;
+          scoreDisplay.update(pollState.score);
         }
 
         if (pollState.status === 'failed') {
@@ -1147,6 +1182,8 @@ export async function bootstrap(root) {
     // Keep the mic stream alive for the next run; silence detection and error handlers.
     if (audio) { audio.onDetection(() => {}); audio.onError(() => {}); }
     pauseBtn.classList.add('hidden');
+    hudShell.onPhaseChange(PHASES.IDLE);
+    scoreDisplay.update(0);
     if (_debugLogger) { _debugLogger.destroy(); _debugLogger = null; }
     if (window.__gameState) {
       window.__gameState.session.phase = 'idle';
