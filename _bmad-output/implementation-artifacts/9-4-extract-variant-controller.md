@@ -150,6 +150,7 @@ deepseek/deepseek-v4-flash
 - Used `updateVariantHud` stub for backward compatibility
 - All tests pass (same 2 pre-existing failures only)
 - No new mocks needed — NFR-R02 satisfied
+- Bugfix: fixed `queueVariantSpawn` using `window.__ascendingNoteCount` (never set) instead of `this.ascendingNoteCount` — caused wrong target note index for RIGHT-side variant proposals
 
 ### File List
 

@@ -8,6 +8,7 @@ import {
   setTransitionPhaseListener,
   setTransitionPhase,
   currentTransitionPhase,
+  registerPhaseCleanup,
   resetTransitionPhase,
 } from './TransitionPhases.js';
 import { quantize, midiToName } from './notes.js';
@@ -19,7 +20,7 @@ import { NoteAcceptor } from './NoteAcceptor.js';
 import { GamePoller } from './GamePoller.js';
 import { laneX, SPAWN_Z } from './TrackSystem.js';
 
-// Cinematic refinement constants (Story 6.8) — mirror SceneManager values.
+// Cinematic refinement constants (Story 6.8) -- mirror SceneManager values.
 const MAX_BEND_YAW = Math.PI / 4;
 const DIAG_CROSS_MS = 1200;
 const FIRST_WAVE_ARRIVAL_DELAY_MS = 500;
@@ -29,7 +30,7 @@ const LANE_W = 1.4;
 
 // URL-driven test-mode keyboard shortcuts (Story 6.8 T12).
 // Setting window.__TEST_MODE here ensures the _test.playNote hook (gated on it later
-// in bootstrap) gets wired — without this, Q/W keydown finds no injection target.
+// in bootstrap) gets wired -- without this, Q/W keydown finds no injection target.
 const TEST_MODE = typeof window !== 'undefined'
   && new URLSearchParams(window.location.search).has('testMode');
 if (TEST_MODE && typeof window !== 'undefined') {
@@ -194,7 +195,7 @@ export async function bootstrap(root) {
     gameClient.resume().catch(() => {});
   }
 
-  // Overlay manager — wired before game starts so restart/quit work in any phase
+  // Overlay manager -- wired before game starts so restart/quit work in any phase
   const overlayMgr = new OverlayManager({
     onResume: resumeGame,
     onRestart: () => {
@@ -292,7 +293,7 @@ export async function bootstrap(root) {
   shell.appendChild(gameWrap);
   overlayMgr.mount(gameWrap);
 
-  // HUD layer (Epic 8) — sits between canvas and overlays (z-index: 100 vs 2000)
+  // HUD layer (Epic 8) -- sits between canvas and overlays (z-index: 100 vs 2000)
   const hudShell = new HudShell(shell);
   const scoreDisplay = new ScoreDisplay(hudShell);
   const pauseButton = new PauseButton(hudShell, () => pauseGame());
@@ -354,7 +355,7 @@ export async function bootstrap(root) {
   // Variant state managed by VariantController (Story 9-4).
   let variantController = null;
 
-  // Stub retained for backward compatibility — variant HUD retired.
+  // Stub retained for backward compatibility -- variant HUD retired.
   function updateVariantHud() {}
 
   function rangeWarning(notes) {
@@ -414,7 +415,7 @@ export async function bootstrap(root) {
       // Apply selected instrument before the run starts; reset resolver history.
       applyInstrument();
       // reset BEFORE setBaseFret so _worldOffsetX (cleared by reset) is 0 when
-      // setBaseFret rebuilds tracks — otherwise restart inherits the prior game's
+      // setBaseFret rebuilds tracks -- otherwise restart inherits the prior game's
       // variant offset and tracks spawn off-center.
       scene.reset();
       if (notesResp.base_fret !== undefined) {
@@ -452,7 +453,7 @@ export async function bootstrap(root) {
       debugLogger.log('game.start', { difficulty: state.difficulty, session_id: notesResp.session_id });
 
       // ascending_note_count: index where descending begins in the note sequence.
-      // Mutable — updated after each variant accept when the new scale may differ.
+      // Mutable -- updated after each variant accept when the new scale may differ.
       let ascendingNoteCount = notesResp.ascending_note_count;
 
       // Root and apex notes for variant safe zone positioning (same string, 2-fret shift).
@@ -460,13 +461,14 @@ export async function bootstrap(root) {
       let apexNote = (ascendingNoteCount > 0 && notesResp.notes)
         ? notesResp.notes[ascendingNoteCount - 1] : null;
 
-      // Transition phase machine (Story 6.1) — reset on each game start, then register
+      // Transition phase machine (Story 6.1) -- reset on each game start, then register
       // default listeners that drive the synchronous accept waterfall. Later stories
       // replace individual listeners with async, animation-driven variants.
       if (window.__gameState?.variant) {
         window.__gameState.variant.transitionPhase = 'idle';
       }
       variantController = new VariantController({ gameClient, scene, waveScheduler, run, pushGameEvent });
+      variantController.ascendingNoteCount = ascendingNoteCount;
       const noteAcceptor = new NoteAcceptor({
         safeZoneRenderer,
         gameClient,
@@ -497,7 +499,7 @@ export async function bootstrap(root) {
         if (next !== 'riding') return;
         const info = scene.getVariantInfo();
         scene.setCameraMode('riding');
-        // Disable miss callback only — keep mesh so it scrolls away naturally (AC-2).
+        // Disable miss callback only -- keep mesh so it scrolls away naturally (AC-2).
         scene.disableVariantMissCallback?.();
         if (!info) {
           // No variant geometry (test/edge path): straight to promoting.
@@ -516,15 +518,15 @@ export async function bootstrap(root) {
           const sign = side === 'RIGHT' ? 1 : -1;
           const landingX = variantX + sign * DIAG_LEN;
 
-          // Cinematic duration derived from actual wave-scroll speed so the
-          // character X lerp finishes exactly when the outgoing diagonal's back
-          // edge reaches the player (DIAG_LEN units of group-scroll). Static
-          // DIAG_CROSS_MS drifted relative to the geometry at non-default tempos.
-          const waveSpeed = scene.getLastWaveSpeed() || 0.05;
-          const dynamicDiagMs = DIAG_LEN / (waveSpeed * 0.5);
+          // Cinematic duration: character X lerp must match diagonal scroll speed.
+          // Use propose-piece speed (baked at spawn), not getLastWaveSpeed(), because
+          // promotePromise clears waves mid-cinematic and corrupts the live speed.
+          const vInfo = scene.getVariantInfo();
+          const diagSpeedPxMs = vInfo?.speedPxMs ?? scene.getLastWaveSpeed() ?? 0.05;
+          const dynamicDiagMs = DIAG_LEN / (diagSpeedPxMs * 0.5);
 
           // Character snap + camera target (AC-4). Camera 45° pivot uses the
-          // SceneManager default (250ms) — slow enough to read as a deliberate
+          // SceneManager default (250ms) -- slow enough to read as a deliberate
           // camera move, fast enough to land before the diagonal scrolls far.
           scene.snapCharacterYaw(sign * MAX_BEND_YAW);
           scene.setRidingCameraTarget(sign * MAX_BEND_YAW);
@@ -533,20 +535,20 @@ export async function bootstrap(root) {
           // newScaleCenterX: near edge of new scale at landingX (AC-5 formula).
           // Scene propagates this as _worldOffsetX so subsequent wave/collision/lane logic
           // operates in offset coords automatically.
-          const T_travel = Math.abs(SPAWN_Z) / (waveSpeed * 0.5);
+          const T_travel = Math.abs(SPAWN_Z) / (diagSpeedPxMs * 0.5);
           const spawnDelayMs = dynamicDiagMs - T_travel + FIRST_WAVE_ARRIVAL_DELAY_MS;
           const resp = ctx?.resp;
           const newBase = resp?.base_fret ?? notesResp.base_fret;
           const newLanes = resp?.num_lanes ?? notesResp.num_lanes;
           const newScaleCenterX = landingX + sign * (newLanes - 1) / 2 * LANE_W;
-          const doSpawn = () => scene.spawnVariantTracks(newBase, newLanes, waveSpeed, newScaleCenterX);
+          const doSpawn = () => scene.spawnVariantTracks(newBase, newLanes, diagSpeedPxMs, newScaleCenterX);
           if (spawnDelayMs <= 0) doSpawn();
           else setTimeout(doSpawn, spawnDelayMs);
 
           // Fire promote NOW (don't await) so the new-scale waves can be scheduled
           // during the cinematic rather than at landing. Pre-staging the scheduler
           // with gameNow=landingGameNow puts the first wave at the same spawn_time
-          // it would get at a landing-time resume — but the wave meshes start
+          // it would get at a landing-time resume -- but the wave meshes start
           // appearing at SPAWN_Z mid-cinematic and scroll smoothly into view.
           //
           // landingGameNow is then shifted EARLIER by 1.5 wave-gaps so the first
@@ -562,12 +564,16 @@ export async function bootstrap(root) {
           });
           promotePromise.then(resp => {
             if (!resp || !resp.success) return;
-            // Drop in-flight old-scale waves from the scheduler — their meshes
+            // Drop in-flight old-scale waves from the scheduler -- their meshes
             // keep scrolling (setWaves' "wave gone but still in front" path)
             // until they pass the player; finalizeVariantTransition at landing
             // hard-cleans whatever remains.
             waveScheduler.clearWavesForTesting();
             waveScheduler.resumeQueueing(resp.notes, resp.current_note_index ?? 0, resp.base_fret, resp.num_lanes, landingGameNow);
+            // Sync speed multiplier immediately -- backend resets to 1.0 on promote.
+            if (resp.speed_multiplier != null) {
+              poller._speedMultiplier = resp.speed_multiplier;
+            }
           });
 
           // X lerp (AC-4) + landing handler (AC-6/7/8). Duration matches the
@@ -618,12 +624,12 @@ export async function bootstrap(root) {
       function applyPromoteResponse(resp, ctx) {
         // Force-finalize the cinematic exit lerp BEFORE writing character.position.x,
         // otherwise the next render frame's clamped p=1 overwrites our moveToTrack
-        // value back to landingX (Story 6.8 bugfix — caused instant collision).
+        // value back to landingX (Story 6.8 bugfix -- caused instant collision).
         scene.clearCinematicExit?.();
         // Park the default-mode camera at the new world offset so it stays with the
         // offset tracks once cinematic exit hands control back (Story 6.8 AC-5).
         scene.setTargetCameraX?.(scene.getWorldOffsetX?.() ?? 0);
-        // Demote in-flight pre-variant waves to visual-only — they live in the old
+        // Demote in-flight pre-variant waves to visual-only -- they live in the old
         // world frame and would otherwise collide with the character who is now in
         // the new frame.
         scene.ghostExistingWaves?.();
@@ -640,6 +646,7 @@ export async function bootstrap(root) {
         }
         if (resp.ascending_note_count != null) {
           ascendingNoteCount = resp.ascending_note_count;
+          variantController.ascendingNoteCount = ascendingNoteCount;
         }
         if (resp.notes) {
           rootNote = resp.notes[0] ?? null;
@@ -653,7 +660,10 @@ export async function bootstrap(root) {
         }
         pushGameEvent('variant.promote', { base_fret: resp.base_fret, num_lanes: resp.num_lanes, note_index: startIdx });
         if (_debugLogger) _debugLogger.log('variant.promote', { base_fret: resp.base_fret, num_lanes: resp.num_lanes, note_index: startIdx, current_track: resp.current_track });
-        // Do NOT call safeZoneRenderer.reset() — it wipes the cached-X per-wave
+        // Sync speed multiplier after promote -- backend resets to 1.0, don't wait for next poll.
+        if (resp.speed_multiplier != null && poller) {
+          poller._speedMultiplier = resp.speed_multiplier;
+        } // it wipes the cached-X per-wave
         // mesh state we rely on so in-flight old-scale safe zones stay at their
         // original X. They despawn naturally as their wave passes.
         if (resp.notes) fretBox.render(resp);
@@ -709,6 +719,7 @@ export async function bootstrap(root) {
           }
           if (resp.ascending_note_count != null) {
             ascendingNoteCount = resp.ascending_note_count;
+          variantController.ascendingNoteCount = ascendingNoteCount;
           }
           if (resp.notes) {
             rootNote = resp.notes[0] ?? null;
@@ -728,6 +739,10 @@ export async function bootstrap(root) {
           if (_debugLogger) _debugLogger.log('variant.promote', { base_fret: resp.base_fret, num_lanes: resp.num_lanes, note_index: startIdx, current_track: resp.current_track });
           safeZoneRenderer.reset();
           if (resp.notes) fretBox.render(resp);
+          // Sync speed multiplier after promote (backend resets to 1.0).
+          if (resp.speed_multiplier != null && poller) {
+            poller._speedMultiplier = resp.speed_multiplier;
+          }
           setTransitionPhase('active', ctx);
         }).catch((err) => {
           console.error('[main] promote error', err);
@@ -876,7 +891,7 @@ export async function bootstrap(root) {
       // countdownStart must be captured AFTER audio setup so any async delay
       // doesn't skew gameStartTime and cause waves to appear early.
       const countdownStart = _now();
-      gameStartTime = countdownStart + 3500; // Do NOT overwrite after countdown — set once so
+      gameStartTime = countdownStart + 3500; // Do NOT overwrite after countdown -- set once so
       // wave scheduler ticks during countdown use a consistent clock (P1).
       scene.setGameStartTime(gameStartTime);
       if (_debugLogger) _debugLogger.setGameStartTime(gameStartTime);
@@ -889,6 +904,8 @@ export async function bootstrap(root) {
       poller.run = run;
       poller._nowFn = _now;
       poller.gameStartTime = gameStartTime;
+      // Wire speed multiplier from playNote response directly to poller (no poll wait).
+      noteAcceptor.onSpeedUpdate = (speed) => { poller._speedMultiplier = speed; };
 
       rafId = requestAnimationFrame(loop);
 
@@ -900,7 +917,7 @@ export async function bootstrap(root) {
       showOverlay('GO!', false);
       await new Promise(resolve => setTimeout(resolve, 500));
 
-      // Actually start the game — gameStartTime already set above; start the run clock.
+      // Actually start the game -- gameStartTime already set above; start the run clock.
       run.start(gameStartTime);
 
       overlay.classList.add('hidden');
@@ -921,7 +938,7 @@ export async function bootstrap(root) {
         _onDetection = detectionHandler;
         if (!det?.note || det.note.midi == null) return;
 
-        // Variant accept gate (stays in main.js — needs runAcceptTransition closure).
+        // Variant accept gate (stays in main.js -- needs runAcceptTransition closure).
         if (variantController.activeVariant && variantController.activeWindow && det.note.midi === variantController.activeWindow.trigger_midi
             && scene.isVariantSafeZoneAdjacent()) {
           const acceptResult = await variantController.handleAccept(det, _now, gameStartTime, run);
@@ -935,11 +952,11 @@ export async function bootstrap(root) {
             runAcceptTransition(acceptResult.resp);
             return;
           }
-          // Error / rejected / stale — handler already cleared state; consume the det.
+          // Error / rejected / stale -- handler already cleared state; consume the det.
           return;
         }
 
-        // Standard note detection — delegated to NoteAcceptor.
+        // Standard note detection -- delegated to NoteAcceptor.
         noteAcceptor.ascendingNoteCount = ascendingNoteCount;
         const noteResult = await noteAcceptor.handle(det, { run, nowFn: _now, gameStartTime });
         if (noteResult.accepted) {
@@ -967,7 +984,7 @@ export async function bootstrap(root) {
   }
 
   function cleanup() {
-    // Clear test-mode interval first (P4) — prevents orphaned interval writing to
+    // Clear test-mode interval first (P4) -- prevents orphaned interval writing to
     // stale __gameState.variant after cleanup has replaced the object.
     if (window.__TEST_MODE && typeof window.__variantTimer !== 'undefined') {
       clearInterval(window.__variantTimer);
@@ -990,7 +1007,7 @@ export async function bootstrap(root) {
       window.__gameState.gameOver.reason = null;
       window.__gameState.gameOver.triggeredAt = null;
     }
-    // Variant cleanup — delegate to controller.
+    // Variant cleanup -- delegate to controller.
     if (variantController) variantController.reset();
     if (scene.dismissVariantTracks) scene.dismissVariantTracks();
   }
@@ -1091,7 +1108,7 @@ export async function bootstrap(root) {
 
   // Test-mode keyboard injection (Story 6.8 T12).
   // Q = play the next required scale note. W = play the variant trigger note.
-  // Burst-injects for ~500ms to mimic continuous audio detection — single keypress
+  // Burst-injects for ~500ms to mimic continuous audio detection -- single keypress
   // would only get one frame's chance at the spatial-adjacency gate inside the
   // detection handler, which is what made the keys feel flaky (only fired at SZ
   // center). The detection handler's own spatial gates are the sole gating.
@@ -1138,7 +1155,7 @@ export async function bootstrap(root) {
       overlayMgr.hide();
     }
   });
-  // Pause on window blur (silent — no overlay, so E2E test hooks stay unblocked)
+  // Pause on window blur (silent -- no overlay, so E2E test hooks stay unblocked)
   window.addEventListener('blur', () => {
     if (!run || run.state !== 'running') return;
     run.pause(performance.now());
@@ -1146,7 +1163,7 @@ export async function bootstrap(root) {
     pauseBtn.textContent = 'Resume';
     if (window.__gameState) window.__gameState.session.phase = 'paused';
   });
-  // No auto-resume on focus — user must click Resume explicitly to avoid
+  // No auto-resume on focus -- user must click Resume explicitly to avoid
   // unintentionally resuming a manually-paused game after alt-tab.
 
 }

@@ -45,7 +45,7 @@ export class GamePoller {
         return; // Let the render loop handle game-over UI
       }
 
-      // Variant lifecycle — delegated to variantController
+      // Variant lifecycle -- delegated to variantController
       if (this.variantController) {
         const nowFn = this._nowFn || (() => performance.now());
         this.variantController.onPollUpdate(pollState, currentTransitionPhase(), nowFn, this.gameStartTime);

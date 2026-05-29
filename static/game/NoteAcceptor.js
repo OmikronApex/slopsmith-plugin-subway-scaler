@@ -13,6 +13,7 @@ export class NoteAcceptor {
     feedbackEl,
     pushGameEvent,
     debugLogger,
+    onSpeedUpdate,
   }) {
     this.safeZoneRenderer = safeZoneRenderer;
     this.gameClient = gameClient;
@@ -21,6 +22,7 @@ export class NoteAcceptor {
     this.feedbackEl = feedbackEl;
     this.pushGameEvent = pushGameEvent;
     this.debugLogger = debugLogger;
+    this.onSpeedUpdate = onSpeedUpdate; // called with (speedMultiplier) on each correct note
 
     // External refs set by main.js after construction:
     this.run = null;
@@ -29,7 +31,7 @@ export class NoteAcceptor {
   }
 
   /**
-   * Main detection handler — called by audio.onDetection().
+   * Main detection handler -- called by audio.onDetection().
    * Returns { accepted: boolean, result: string } for testability.
    */
   async handle(det, { run, nowFn, gameStartTime }) {
@@ -37,7 +39,7 @@ export class NoteAcceptor {
     if (!run || run.state !== 'running') return { accepted: false, result: 'not-running' };
     if (!det?.note || det.note.midi == null) return { accepted: false, result: 'no-note' };
 
-    // Variant accept gate — delegated to variantController.
+    // Variant accept gate -- delegated to variantController.
     // If accepted, the controller handles the full lifecycle; return early.
     const variantResult = await this.variantController.handleAccept(
       det, nowFn, gameStartTime, run
@@ -73,7 +75,12 @@ export class NoteAcceptor {
           this.scene.moveToTrack(playResult.game_state.current_track);
         }
 
-        // Note-triggered variant proposal: root → RIGHT, apex → LEFT.
+        // Sync speed multiplier from backend response immediately (not waiting for next poll).
+        if (playResult.speed_multiplier != null && this.onSpeedUpdate) {
+          this.onSpeedUpdate(playResult.speed_multiplier);
+        }
+
+        // Note-triggered variant proposal: root -> RIGHT, apex -> LEFT.
         // Delegates to variantController which checks guards internally.
         const passes = playResult.scale_passes_completed ?? 0;
         if (!this.variantController.activeVariant && !this.variantController.proposePending && passes >= 2) {

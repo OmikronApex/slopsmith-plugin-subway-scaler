@@ -161,11 +161,17 @@ deepseek/deepseek-v4-flash
 - `main.js:840`: replaced `const speedMultiplier = 1.0; // TODO` with `const speedMultiplier = poller.speedMultiplier;`
 - WaveScheduler.tick() now receives real backend-provided speed multiplier
 - Python engine + router imports verified clean
+- Speed increment reduced from 5% to 2% per correct note, cap at 1.5× (playtest tuning)
+- NoteAcceptor wired with `onSpeedUpdate` callback — syncs speed from play_note response immediately, not waiting for next 200ms poll (zero-frame latency on speed changes)
+- Sync poller._speedMultiplier on variant promote (both cinematic + direct paths) so speed resets to 1.0 instantly at promote time, not 200ms late
+- Diagonal traversal timing uses propose-piece baked speedPxMs via getVariantInfo(), not getLastWaveSpeed() which gets corrupted when promote clears waves mid-cinematic
 
 ### File List
 
-- `services/game_engine.py` (UPDATE — play_note success return dict)
+- `services/game_engine.py` (UPDATE — play_note success return dict, promote return dict, 2% increment, 1.5 cap)
 - `services/game_router.py` (UPDATE — poll response)
 - `static/game/GamePoller.js` (UPDATE — read speed_multiplier from poll state)
-- `static/game/main.js` (UPDATE — use poller.speedMultiplier instead of hardcoded 1.0)
+- `static/game/NoteAcceptor.js` (UPDATE — onSpeedUpdate callback for zero-latency speed sync)
+- `static/game/SceneManager.js` (UPDATE — getVariantInfo returns speedPxMs)
+- `static/game/main.js` (UPDATE — use poller.speedMultiplier, sync on promote, diagonal timing uses baked speed)
 - `_bmad-output/implementation-artifacts/sprint-status.yaml` (UPDATE)

@@ -1,5 +1,5 @@
 // Variant lifecycle controller (Story 9-4 extraction from main.js).
-// Owns variant state machine: propose → accept → ride → promote → dismiss.
+// Owns variant state machine: propose -> accept -> ride -> promote -> dismiss.
 // Also manages transition phase state via TransitionPhases module.
 
 import {
@@ -16,16 +16,19 @@ export class VariantController {
     this.run = run;
     this.pushGameEvent = pushGameEvent;
 
-    // Variant breather duration — module-level for test overrides
+    // Variant breather duration -- module-level for test overrides
     this._variantBreatherMs = 3000;
 
-    // Variant state (mirrors backend — feature 008-track-variants)
+    // Variant state (mirrors backend -- feature 008-track-variants)
     this.proposePending = false;
     this.shownVariantId = null;
     this.activeVariant = null;
     this.activeWindow = null;
     this.variantPendingSpawn = null;  // { variant, targetNoteIndex, queuedAtMs }
     this.variantSpawnedForWave = null; // wave_id of wave we spawned for
+
+    // Set externally by main.js from the start() closure.
+    this.ascendingNoteCount = 0;
   }
 
   /** Reset all variant state (game over / restart). */
@@ -81,7 +84,7 @@ export class VariantController {
     const seqLen = this.run?.sequence?.length ?? 0;
     let targetNoteIndex =
       variant.side === 'RIGHT'
-        ? (window.__ascendingNoteCount ?? this.run?.sequence?.length ?? 1)
+        ? (this.ascendingNoteCount ?? this.run?.sequence?.length ?? 1)
         : 1;
     // Clamp for degenerate sequences
     if (seqLen > 0 && (targetNoteIndex < 0 || targetNoteIndex >= seqLen)) {

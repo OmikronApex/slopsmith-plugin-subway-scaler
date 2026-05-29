@@ -1832,7 +1832,7 @@ export function createScene(canvas) {
   }
 
   function getVariantInfo() {
-    return variantInfo ? { variantX: variantInfo.variantX, side: variantInfo.side } : null;
+    return variantInfo ? { variantX: variantInfo.variantX, side: variantInfo.side, speedPxMs: variantInfo.speedPxMs } : null;
   }
 
   function setCameraMode(mode) {

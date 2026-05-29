@@ -216,7 +216,7 @@ class GameEngine:
                 session.last_pass_direction = "DOWN"
 
             # Difficulty scaling.
-            session.speed_multiplier *= 1.05  # 5% increase per correct note
+            session.speed_multiplier = min(session.speed_multiplier * 1.02, 1.5)  # 2% per correct note, cap at 1.5×
 
             # Move character to the lane matching the note just played.
             if expected_note.fret is not None:
@@ -567,6 +567,7 @@ class GameEngine:
             "notes": [n.model_dump() for n in session.notes],
             "ascending_note_count": session.ascending_note_count,
             "current_note_index": session.current_note_index,
+            "speed_multiplier": session.speed_multiplier,
         }
 
     def promote_variant(self, session_id: str) -> dict:
