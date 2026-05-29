@@ -1,6 +1,7 @@
 ---
 stepsCompleted: [1, 2, 3, 4]
 status: validated
+epic9Amendment: true
 partyModeRefinements:
   - Orientation locked: low E bottom row, high E top row
   - Solid dark backplate: background rgba(12, 12, 18, 0.85), PS1-era 2px border
@@ -589,4 +590,335 @@ As a **developer**, I want the HUD overlay audited for accessibility compliance 
 - Score `aria-live`: set on the score element in HTML markup, not injected by JS
 - Fret-box `role="img"` + `aria-label`: set in `FretBox.js` constructor/update
 - Reduced-motion override: single `@media` block in `hud.css` (same pattern as `overlays.css`)
+
+---
+
+## Epic 9 Amendment — Correctness Fixes & Architecture Refactor
+
+### Extracted Requirements
+
+#### Bug Functional Requirements
+
+**FR-B01:** Wide-span scale note sync — On scales whose notes span > 5 lanes (`num_lanes > 5`), the safe zone highlight for the next expected note appears on the wrong track at arrival time. Root area: `WaveScheduler._nextWaveNoteIndex` advances on every spawn tick independently of `Run.cursor`; with a longer ascending sequence (more lanes = more notes) the mismatch between pre-spawned waves and the backend/frontend current expected note becomes visible. Confirmed files: `static/game/WaveScheduler.js`, `static/game/GameState.js`, `static/game/main.js` detection handler.
+
+**FR-B02:** Difficulty escalation missing — `session.speed_multiplier *= 1.05` is computed correctly in `services/game_engine.py:219` on every correct note, but `speed_multiplier` is absent from all API responses (not in `play_note` return dict, not in poll state). Frontend hardcodes `const speedMultiplier = 1.0` with a `// TODO: wire run.speedMultiplier when available` comment at `static/game/main.js:837`. WaveScheduler always runs at base speed; difficulty never escalates during play.
+
+#### Refactoring Functional Requirements
+
+**FR-R01:** `main.js` decomposition — `main.js` is ~1 300 lines containing game-loop RAF, audio detection callback, variant state machine (propose → accept → ride → promote), poll handler, and session lifecycle. Decompose into one focused module per concern with clear ownership boundaries. One story per extracted module.
+
+**FR-R02:** `speed_multiplier` backend contract — Add `speed_multiplier` to the `play_note` response dict and to the poll-state response so the frontend can read the current multiplier after each correct note without a separate endpoint.
+
+**FR-R03:** String-palette index conversion duplication — `paletteIdx = stringCount - string` conversion exists independently in `SceneManager.js` (~line 388) and `SafeZoneRenderer.js` (~line 109). Extract to a shared utility function in `tokens.js` or a new `utils.js`.
+
+**FR-R04:** `CartSystem.js` carts alias latent bug — `const carts = gameState.scene.carts` is aliased before `.filter()` reassigns `gameState.scene.carts` to a new array. The alias then points to the stale pre-filter array, making any post-filter code using the alias operate on wrong data. Fix the reference split.
+
+**FR-R05:** Deferred work items resolution — Promote the highest-severity deferred items from `_bmad-output/implementation-artifacts/deferred-work.md` into a single story. Each promoted item must have concrete acceptance criteria; output is either fixed code or a named decision-log entry per item. Items that are cosmetic-only or purely theoretical are explicitly out of scope.
+
+#### Non-Functional Requirements
+
+**NFR-R01:** All bug fixes and refactoring changes must not regress any existing unit tests (`tests/unit/js/`) or E2E specs (`tests/e2e/specs/`).
+
+**NFR-R02:** Extracted modules must not require new mocks for behavior not already tested. Dependency injection that correctly isolates an extracted module is acceptable even if it changes call signatures; what is not acceptable is mocks that paper over real coupling.
+
+---
+
+### Epic 9 Approved Story List
+
+#### Epic 9: Gameplay Correctness & Code Health
+
+Players experience accurate note guidance and properly escalating difficulty; developers work with a focused, maintainable codebase.
+
+| Story | FR | Title | Notes |
+|---|---|---|---|
+| 9-1 | FR-B01 | Fix wide-span scale note sync | Mandatory ACs: parameterised Vitest tests at `num_lanes` 5, 6, 7, 8 |
+| 9-2 | FR-R04 | Fix `CartSystem.js` carts alias | Mandatory ACs: post-filter state assertion |
+| 9-3 | FR-R03 | Extract `stringToLaneIndex` shared utility | Mandatory ACs: direct unit tests on new utility |
+| 9-4 | FR-R01a | Extract `VariantController.js` | Mandatory ACs: `<script>`/import-map registration; VariantController before NoteAcceptor (NoteAcceptor depends on variant state) |
+| 9-5 | FR-R01b | Extract `NoteAcceptor.js` | Mandatory ACs: `<script>`/import-map registration |
+| 9-6 | FR-R01c | Extract `GamePoller.js` | Mandatory ACs: `<script>`/import-map registration; last extraction — integration boundary |
+| 9-7 | FR-B02 + FR-R02 | Wire `speed_multiplier` backend → `GamePoller` → `WaveScheduler` | Mandatory ACs: assert frontend consumes backend value not hardcoded 1.0; wired into clean GamePoller |
+| 9-8 | FR-R05 | Deferred work resolution | Each item: fixed code or named decision-log entry; no open-ended triage |
+
+#### FR Coverage Map
+
+| FR | Story | Coverage |
+|---|---|---|
+| FR-B01 | 9-1 | `WaveScheduler` / `Run.cursor` sync for `num_lanes > 5` |
+| FR-B02 | 9-7 | `speed_multiplier` wired from `play_note` + poll response → `WaveScheduler` |
+| FR-R01 | 9-4, 9-5, 9-6 | `main.js` decomposed into `VariantController`, `NoteAcceptor`, `GamePoller` |
+| FR-R02 | 9-7 | `speed_multiplier` added to backend responses |
+| FR-R03 | 9-3 | `stringToLaneIndex` extracted to shared utility |
+| FR-R04 | 9-2 | `CartSystem.js` carts alias fixed |
+| FR-R05 | 9-8 | Deferred work items resolved with concrete ACs |
+| NFR-R01 | All | No test regression on unit + E2E |
+| NFR-R02 | 9-4, 9-5, 9-6 | No new mocks for behavior not already tested |
 - Test: extend the tone test from Story 0-3 baseline to include HUD-specific ARIA and keyboard checks
+---
+
+## Epic 9: Gameplay Correctness & Code Health
+
+Players experience accurate note guidance and properly escalating difficulty; developers work with focused, maintainable modules.
+
+**Stories:**
+
+| Story | Title | Status | Depends on |
+|---|---|---|---|
+| 9-1 | Fix Wide-Span Scale Note Sync | todo | — |
+| 9-2 | Fix CartSystem.js Carts Alias | todo | — |
+| 9-3 | Extract `stringToLaneIndex` Shared Utility | todo | — |
+| 9-4 | Extract `VariantController.js` | todo | 9-3 |
+| 9-5 | Extract `NoteAcceptor.js` | todo | 9-4 |
+| 9-6 | Extract `GamePoller.js` | todo | 9-5 |
+| 9-7 | Wire `speed_multiplier` Backend to `GamePoller` to `WaveScheduler` | todo | 9-6 |
+| 9-8 | Deferred Work Resolution | todo | 9-7 |
+
+---
+
+### Story 9-1: Fix Wide-Span Scale Note Sync
+
+As a **player**, I want the correct note safe zone highlighted when my turn arrives, so that on scales spanning more than 5 lanes the game visual guidance matches what I am expected to play.
+
+**Acceptance Criteria:**
+
+**Given** a game session where `num_lanes > 5`
+**When** a safe zone wave arrives at the character position
+**Then** the primary safe zone is rendered on the track corresponding to `notes[Run.cursor]`
+**And** the `safe_midi` of the arriving primary wave matches `run.sequence[run.cursor].midi`
+
+**Given** the player correctly plays the expected note while its safe zone is in the arrival window
+**When** `Run.onDetection()` returns `accepted` and `run.cursor` advances
+**Then** the next primary safe zone corresponds to `run.sequence[run.cursor]` (the new cursor position)
+**And** no stale wave from a prior cursor position is treated as the current primary
+
+**Given** a scale session where `num_lanes <= 5`
+**When** notes are played in sequence
+**Then** behaviour is identical to pre-fix (no regression)
+
+**Given** the Vitest unit test suite for `WaveScheduler.js` and `GameState.js`
+**When** run after the fix
+**Then** parameterised tests covering `num_lanes` values of 5, 6, 7, and 8 all pass
+**And** each test asserts that after N correct-note acceptances, the primary wave's `note_index` equals `Run.cursor`
+
+**Implementation Notes:**
+- Root area: `static/game/WaveScheduler.js` (`_buildWave`, `tick`), `static/game/GameState.js` (`Run.onDetection`, `Run.cursor`), `static/game/ui/SafeZoneRenderer.js` (`isAnyPrimarySafeZoneAdjacent`)
+- The fix must decide: does `SafeZoneRenderer` determine primary by comparing wave `note_index` against `Run.cursor` at render time, or does `_buildWave` capture the cursor at spawn time? Document the chosen approach in a code comment.
+- Do not change the `WaveScheduler` pre-spawn lookahead logic — only the primary-wave selection criterion
+
+---
+
+### Story 9-2: Fix CartSystem.js Carts Alias
+
+As a **developer**, I want the CartSystem to always operate on the live cart array after filtering, so that stale references cannot cause incorrect collision detection or cart-count state.
+
+**Acceptance Criteria:**
+
+**Given** `CartSystem.js` update logic that filters `gameState.scene.carts`
+**When** the filter is applied
+**Then** all subsequent operations in the same call use the post-filter array, not the pre-filter reference
+**And** `gameState.scene.carts` and any local alias both refer to the same filtered array
+
+**Given** the Vitest unit tests for `CartSystem.js`
+**When** run after the fix
+**Then** all existing tests pass
+**And** a new test asserts that after a cart-removal filter, `gameState.scene.carts.length` equals the expected post-removal count
+
+**Implementation Notes:**
+- Location: `static/game/CartSystem.js`
+- The fix is a one-line reference correction: eliminate the alias or reassign it after the filter expression
+- New test: set up N carts, trigger removal of M, assert `gameState.scene.carts.length === N - M`
+
+---
+
+### Story 9-3: Extract `stringToLaneIndex` Shared Utility
+
+As a **developer**, I want the string-to-lane-index conversion in a single canonical place, so that any change to the string indexing convention requires exactly one edit.
+
+**Acceptance Criteria:**
+
+**Given** the duplicated `paletteIdx = stringCount - string` calculation in `SceneManager.js` and `SafeZoneRenderer.js`
+**When** the utility is extracted
+**Then** both files import and call the shared function instead of computing inline
+**And** no other call sites in the codebase perform the same calculation inline
+
+**Given** the new shared utility
+**When** unit tested directly
+**Then** `stringToLaneIndex(string, stringCount)` returns `stringCount - string` for valid inputs
+**And** edge cases are tested: `string = 0`, `string = stringCount - 1`, and `string = stringCount`
+
+**Given** all existing Vitest and Playwright tests
+**When** run after the extraction
+**Then** all pass without modification
+
+**Implementation Notes:**
+- Preferred location: append to `static/game/ui/tokens.js` as a named export (already imported everywhere)
+- If added to a new `utils.js`, it must be registered in the HTML module chain or import map
+- Function signature: `export function stringToLaneIndex(string, stringCount) { return stringCount - string; }`
+
+---
+
+### Story 9-4: Extract `VariantController.js`
+
+As a **developer**, I want the variant propose/accept/ride/promote state machine in its own module, so that `main.js` is smaller and variant logic can be read, tested, and modified without navigating 1300 lines.
+
+**Acceptance Criteria:**
+
+**Given** variant state logic currently embedded in `static/game/main.js`
+**When** `VariantController.js` is extracted
+**Then** `main.js` no longer contains inline variant proposal, acceptance, ride, promote, or dismiss logic
+**And** `main.js` delegates to `VariantController` via a clear public API
+**And** all variant-related state variables (`activeVariant`, `activeWindow`, `shownVariantId`, `variantPendingSpawn`, `variantSpawnedForWave`, `proposePending`) are owned by `VariantController`
+
+**Given** the new `static/game/VariantController.js` file
+**When** the game HTML is loaded
+**Then** the module is registered via `<script type="module">` or import map entry — no 404
+
+**Given** all existing Vitest unit tests and Playwright E2E specs including variant transition specs
+**When** run after the extraction
+**Then** all pass without modification and without new mocks for behavior not already tested
+
+**Given** `VariantController` uses string-to-lane conversion
+**When** variant track geometry is computed
+**Then** it imports `stringToLaneIndex` from Story 9-3 — no inline duplication
+
+**Implementation Notes:**
+- Depends on: Story 9-3
+- Constructor arguments: `gameClient`, `scene`, `waveScheduler`, `run`, `pushGameEvent` — no global reads inside the module
+- `setTransitionPhase`, `currentTransitionPhase`, and `_queueVariantSpawn` move entirely into `VariantController`
+
+---
+
+### Story 9-5: Extract `NoteAcceptor.js`
+
+As a **developer**, I want audio detection callback logic and note acceptance handling in their own module, so that the path from sound input to score update is readable and independently testable.
+
+**Acceptance Criteria:**
+
+**Given** the `detectionHandler` async function currently defined inside `startGame()` in `main.js`
+**When** `NoteAcceptor.js` is extracted
+**Then** `main.js` instantiates `NoteAcceptor` and wires `audio.onDetection(acceptor.handle)`
+**And** no inline detection callback remains in `main.js`
+**And** `NoteAcceptor` owns: safe-zone adjacency check, `run.onDetection()` call, `gameClient.playNote()` call, feedback element update, and delegation to `VariantController` for post-note variant proposal
+
+**Given** the new `static/game/NoteAcceptor.js` file
+**When** the game HTML is loaded
+**Then** the module is registered via `<script type="module">` or import map — no 404
+
+**Given** all existing Vitest unit tests and Playwright E2E specs
+**When** run after the extraction
+**Then** all pass without modification and without new mocks for behavior not already tested
+
+**Implementation Notes:**
+- Depends on: Story 9-4 (`VariantController` exists so `NoteAcceptor` delegates variant proposal)
+- Constructor arguments: `run`, `safeZoneRenderer`, `gameClient`, `scene`, `variantController`, `feedbackEl`, `pushGameEvent`
+- Public API: `acceptor.handle(det)` — same signature as the current `detectionHandler`
+- `setExpected()` helper: moves into `NoteAcceptor` or is passed as a callback; implementer must document the choice
+
+---
+
+### Story 9-6: Extract `GamePoller.js`
+
+As a **developer**, I want the backend poll handler in its own module, so that the integration boundary between backend state and frontend game state has a single, auditable home.
+
+**Acceptance Criteria:**
+
+**Given** the `gameClient.startPolling(callback)` callback currently defined inline in `main.js`
+**When** `GamePoller.js` is extracted
+**Then** `main.js` instantiates `GamePoller` and calls `poller.start()`
+**And** no inline poll callback remains in `main.js`
+**And** `GamePoller` owns: score update, `window.__gameState.score` sync, collision/game-over detection from poll, `activeVariant` sync, and `variantController.onPollUpdate()` delegation
+
+**Given** the new `static/game/GamePoller.js` file
+**When** the game HTML is loaded
+**Then** the module is registered via `<script type="module">` or import map — no 404
+
+**Given** `speed_multiplier` will arrive in poll responses (Story 9-7)
+**When** `GamePoller` is instantiated
+**Then** it exposes `poller.speedMultiplier` getter returning `1.0` until Story 9-7 wires the real value
+
+**Given** all existing Vitest unit tests and Playwright E2E specs
+**When** run after the extraction
+**Then** all pass without modification and without new mocks for behavior not already tested
+
+**Implementation Notes:**
+- Depends on: Story 9-5
+- Constructor arguments: `gameClient`, `scoreDisplay`, `variantController`, `scene`, `window.__gameState` ref, `onGameOver` callback
+- `poller.speedMultiplier` returning `1.0` is intentional stub — filled by Story 9-7
+
+---
+
+### Story 9-7: Wire `speed_multiplier` Backend to `GamePoller` to `WaveScheduler`
+
+As a **player**, I want the game to actually get faster as I play correctly, so that difficulty escalates and the learning curve stays engaging throughout a session.
+
+**Acceptance Criteria:**
+
+**Given** a game session where the player plays correct notes
+**When** `game_engine.py` computes `session.speed_multiplier *= 1.05` on each correct note
+**Then** the updated `speed_multiplier` is included in the `play_note` response dict as `"speed_multiplier": <float>`
+**And** the updated value is also included in the poll-state response
+
+**Given** the frontend receives a response containing `speed_multiplier`
+**When** `GamePoller` processes the response
+**Then** `poller.speedMultiplier` returns the backend-provided value
+**And** the render loop passes `poller.speedMultiplier` to `waveScheduler.tick(game_now, poller.speedMultiplier)`
+**And** the hardcoded `const speedMultiplier = 1.0` line is removed from `main.js:837`
+
+**Given** a session where the player has played 10 correct notes
+**When** `waveScheduler.tick()` is called
+**Then** `speedMultiplier` passed to it is approximately `1.05^10 ≈ 1.629` within float precision
+**And** wave `duration_ms` values decrease accordingly
+
+**Given** a session reset or game-over
+**When** a new session starts
+**Then** `speed_multiplier` resets to `1.0` in both backend and `GamePoller`
+
+**Given** all existing unit tests and E2E specs
+**When** run after the change
+**Then** all pass
+**And** at minimum one integration assertion verifies `waveScheduler.tick()` receives a value greater than `1.0` after correct notes are played
+
+**Implementation Notes:**
+- Depends on: Story 9-6 (`GamePoller` exists with `speedMultiplier` getter stub)
+- Backend: add `"speed_multiplier": session.speed_multiplier` to `play_note` return dict and poll-state dict in `services/game_engine.py`
+- Frontend: `GamePoller` reads `pollState.speed_multiplier` and exposes via getter
+- Render loop: replace `const speedMultiplier = 1.0` with `poller.speedMultiplier`
+- Do not change `WaveScheduler` internals — multiplier is consumed correctly once passed in
+
+---
+
+### Story 9-8: Deferred Work Resolution
+
+As a **developer**, I want the highest-severity latent items from `deferred-work.md` addressed with concrete outcomes, so that known correctness and stability risks do not accumulate into future bugs.
+
+**Acceptance Criteria:**
+
+**Given** the following promoted items from `_bmad-output/implementation-artifacts/deferred-work.md`:
+
+**Item D1: `window.__audioState` not reset on cleanup**
+**When** `audio.stop()` or `cleanup()` is called at session end or game-over
+**Then** `window.__audioState.micActive` is set to `false` and `window.__audioState.pipelineReady` is set to `false`
+**And** a Vitest or integration test asserts the fields are `false` after teardown
+
+**Item D2: Poll loop clobbers `__gameState.variant.id` set by `setVariant` test hook**
+**When** the backend poll fires within 200ms of `setVariant` being called in a Playwright test
+**Then** the `variant.id` value written by `setVariant` is not overwritten before `waitForFunction` resolves
+**And** acceptable resolution is either: (a) a guard in the poll callback that skips overwriting `variant.id` if `setVariant` wrote it within the current tick, OR (b) a decision-log entry in `deferred-work.md` explaining why the risk is bounded
+
+**Item D3: Timing constants duplicated between `CartSystem.js` and `DifficultyManager.js`**
+**When** the duplication is confirmed to still exist after Epic 9 extractions land
+**Then** constants are extracted to a shared location and both files import from it
+**And** if resolved already by the extractions, a decision-log note closes the item
+
+**Given** all remaining items in `deferred-work.md` not promoted above
+**When** this story closes
+**Then** each item has a one-line triage note added inline: `[PUNTED: Epic N — rationale]` or `[COSMETIC/THEORETICAL — no action]`
+
+**Given** all existing unit tests and E2E specs
+**When** run after changes
+**Then** all pass
+
+**Implementation Notes:**
+- Depends on: Story 9-7 (all extractions complete so D3 verification is accurate)
+- D2 is explicitly allowed to resolve as a decision-log entry if the race window is judged bounded
+- D3 requires verifying the post-extraction state before acting
