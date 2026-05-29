@@ -30,6 +30,12 @@ export default defineConfig({
             '--use-fake-device-for-media-stream',
             '--use-fake-ui-for-media-stream',
             '--autoplay-policy=no-user-gesture-required',
+            // Enable real GPU rendering instead of SwiftShader software WebGL.
+            // Without these, Three.js runs entirely on CPU and saturates it.
+            '--enable-gpu',
+            '--use-angle=d3d11',          // Windows: ANGLE over Direct3D 11
+            '--ignore-gpu-blocklist',
+            '--enable-gpu-rasterization',
           ],
         },
       },
