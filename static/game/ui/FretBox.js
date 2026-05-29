@@ -61,20 +61,11 @@ export class FretBox {
     const maxStringIdx = Math.max(...notes.map(n => n.string));
     const stringCount = maxStringIdx;
 
-    // Fret range calculation
+    // Fret range — show exactly the frets the notes occupy, no padding
     const frets = notes.map(n => n.fret);
-    const minFret = Math.max(1, Math.min(...frets));
-    const maxFret = Math.max(...frets);
-    let startFret = Math.max(1, minFret - 1);
-    let endFret = maxFret;
-    let numFrets = endFret - startFret + 1;
-
-    if (numFrets < 4) {
-      const centre = minFret === maxFret ? minFret : Math.floor((minFret + maxFret) / 2);
-      startFret = Math.max(1, centre - 2);
-      endFret = startFret + 3;
-      numFrets = 4;
-    }
+    const startFret = Math.min(...frets);
+    const endFret = Math.max(...frets);
+    const numFrets = endFret - startFret + 1;
 
     // ARIA label
     const scaleName = SCALE_NAMES[scale_id] || scale_id || 'Scale';
@@ -98,15 +89,8 @@ export class FretBox {
 
     const colTemplate = `repeat(${numFrets}, 1fr)`;
 
-    // Header row: spacer (matches strip width) + fret number grid
-    // The spacer keeps numbers aligned over the grid columns when strip is visible.
-    const header = document.createElement('div');
-    header.className = 'fret-header';
-
-    const spacer = document.createElement('div');
-    spacer.className = 'fret-header-spacer';
-    header.appendChild(spacer);
-
+    // Fret number row — same grid template as the main grid, so numbers sit
+    // directly above their columns.
     const fretNumRow = document.createElement('div');
     fretNumRow.className = 'fret-numbers-row';
     fretNumRow.style.gridTemplateColumns = colTemplate;
@@ -116,28 +100,10 @@ export class FretBox {
       fn.textContent = String(f);
       fretNumRow.appendChild(fn);
     }
-    header.appendChild(fretNumRow);
-    this._panel.appendChild(header);
+    this._panel.appendChild(fretNumRow);
 
-    // Content row: strip + flat CSS grid
-    const contentRow = document.createElement('div');
-    contentRow.className = 'fret-content-row';
-
-    // String colour strip — always in DOM so layout is stable in both detail modes.
-    // Opacity is toggled by CSS class instead of display:none.
-    const strip = document.createElement('div');
-    strip.className = 'fret-string-strip';
-    for (let r = 0; r < stringCount; r++) {
-      const stripRow = document.createElement('div');
-      stripRow.className = 'fret-string-strip-row';
-      stripRow.style.background = `var(--color-string-${r})`;
-      strip.appendChild(stripRow);
-    }
-    contentRow.appendChild(strip);
-
-    // Flat CSS grid — one cell per (string × fret) combination.
-    // Using CSS grid guarantees every column is exactly the same width regardless
-    // of whether a cell is empty or occupied by a note box.
+    // Flat CSS grid — one cell per (string × fret). CSS grid 1fr columns require
+    // the panel to have an explicit width (set in hud.css) to compute correctly.
     const grid = document.createElement('div');
     grid.className = 'fret-grid';
     grid.style.gridTemplateColumns = colTemplate;
@@ -168,9 +134,7 @@ export class FretBox {
       }
     }
 
-    contentRow.appendChild(grid);
-
-    this._panel.appendChild(contentRow);
+    this._panel.appendChild(grid);
 
     this._applyDetailClass();
     return this;

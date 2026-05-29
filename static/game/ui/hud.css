@@ -57,104 +57,71 @@
 .subway-scaler .hud-fret-box {
   top: 1rem;
   left: 1rem;
+  /* Explicit width is required so the inner CSS grid can resolve 1fr columns.
+     An absolutely-positioned element with no width shrinks to content, which
+     collapses 1fr to zero and makes all note cells vertical. */
+  width: 240px;
   background: rgba(12, 12, 18, 0.85);
   border: 2px solid #0a0a10;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
-  max-width: 168px;
-  padding: 6px 8px 8px;
+  padding: 8px 10px 10px;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
   user-select: none;
   box-sizing: border-box;
 }
 
 .subway-scaler .fret-scale-label {
   font-family: 'Space Mono', monospace;
-  font-size: 0.6rem;
+  font-size: 0.75rem;
   color: var(--color-text-primary, #E8E8F0);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 1.2;
-  margin-bottom: 2px;
 }
 
-/* Header aligns spacer + fret numbers over the content row below */
-.subway-scaler .fret-header {
-  display: flex;
-  gap: 4px;
-  align-items: flex-end;
-}
-
-/* Spacer width = strip width, keeps numbers aligned when strip is hidden */
-.subway-scaler .fret-header-spacer {
-  width: 4px;
-  flex-shrink: 0;
-}
-
-/* Fret number grid — column template set inline to match main grid */
+/* Fret number row — CSS grid, column template set inline to match main grid */
 .subway-scaler .fret-numbers-row {
   display: grid;
-  column-gap: 3px;
-  flex: 1;
+  column-gap: 4px;
 }
 
 .subway-scaler .fret-number {
   font-family: 'Space Mono', monospace;
-  font-size: 0.5rem;
+  font-size: 0.65rem;
   color: var(--color-text-primary, #E8E8F0);
   text-align: center;
   line-height: 1;
 }
 
-/* Content row: strip + grid */
-.subway-scaler .fret-content-row {
-  display: flex;
-  gap: 4px;
-  align-items: stretch;
-}
-
-/* String colour strip — always in DOM so layout is stable.
-   Visibility controlled by opacity (not display) in Basic mode. */
-.subway-scaler .fret-string-strip {
-  display: flex;
-  flex-direction: column;
-  width: 4px;
-  flex-shrink: 0;
-  align-self: stretch;
-}
-
-.subway-scaler .fret-string-strip-row {
-  flex: 1;
-}
-
-/* Fret grid — CSS grid guarantees every column is exactly the same width.
-   column-gap is the visual fret wire; row-gap separates string rows.
-   grid-auto-rows fixes cell height so note boxes are always landscape. */
+/* Fret grid — CSS grid with explicit column template (set inline) and fixed row
+   height. column-gap is the visual fret wire; row-gap separates strings.
+   grid-auto-rows must be set here so every row is the same height and note
+   boxes are always landscape (wider than tall). */
 .subway-scaler .fret-grid {
   display: grid;
   /* grid-template-columns set inline: repeat(N, 1fr) */
-  grid-auto-rows: 11px;
-  column-gap: 3px;
-  row-gap: 3px;
-  flex: 1;
+  grid-auto-rows: 16px;
+  column-gap: 4px;
+  row-gap: 4px;
 }
 
-/* Empty fret cell — grid track is occupied but nothing is drawn */
+/* Empty fret cell — occupies the grid track, nothing drawn */
 .subway-scaler .fret-cell {
   /* intentionally empty */
 }
 
-/* Note cell — margin shrinks it horizontally so it is visibly narrower than
-   the column (fret space wider than note indicator). box-sizing keeps the
-   border inside the margin box, not expanding beyond it. */
+/* Note cell — horizontal margin creates visible space between the note box and
+   the fret-wire gaps on each side (fret column wider than note indicator).
+   box-sizing keeps the border inside, not expanding the cell beyond its track. */
 .subway-scaler .fret-cell-note {
-  margin: 0 2px;
+  margin: 0 3px;
   border: 2px solid;
   position: relative;
   box-sizing: border-box;
-  border-radius: 1px;
+  border-radius: 2px;
 }
 
 .subway-scaler .fret-cell-note-fill {
@@ -166,8 +133,8 @@
 .subway-scaler .fret-cell-root::after {
   content: '';
   position: absolute;
-  width: 5px;
-  height: 5px;
+  width: 7px;
+  height: 7px;
   background: #FFB800;
   border-radius: 50%;
   top: 50%;
@@ -180,10 +147,10 @@
 /* Placeholder when no session data */
 .subway-scaler .fret-placeholder {
   font-family: 'Space Mono', monospace;
-  font-size: 0.65rem;
+  font-size: 0.8rem;
   color: var(--color-text-disabled, #555570);
   text-align: center;
-  padding: 4px 0;
+  padding: 6px 0;
 }
 
 /* ===== FRET BOX FADE ANIMATION (8-4) ===== */
@@ -215,13 +182,6 @@
   color: var(--color-text-disabled, #555570);
 }
 
-.subway-scaler .hud-fret-box.fret-detail-full .fret-string-strip {
-  opacity: 1;
-}
-
-.subway-scaler .hud-fret-box.fret-detail-basic .fret-string-strip {
-  opacity: 0; /* hidden but keeps layout so numbers stay aligned over columns */
-}
 
 /* ===== REDUCED MOTION (8-6) ===== */
 @media (prefers-reduced-motion: reduce) {
