@@ -1,545 +1,592 @@
 ---
 stepsCompleted: [1, 2, 3, 4]
+status: validated
+partyModeRefinements:
+  - Orientation locked: low E bottom row, high E top row
+  - Solid dark backplate: background rgba(12, 12, 18, 0.85), PS1-era 2px border
+  - Data contract: fretBox.render({notes, scale_id, root_midi, instrument_id}) — same shape as /game/session-config response
+  - Snap rebuild on transition: DOM wipe + rebuild, no morph
+  - Variant HUD transition: fade-out 200ms on accept, hidden during breather/promote, rebuild while hidden, fade-in 200ms on active
+  - Basic/Full detail toggle in pause menu with telemetry
+  - Root note: bright fill + accent yellow center dot, not double-border ring
+  - Note boxes: 2-3px border at full string colour, fill at 70-80% opacity with brightness boost
+  - Fret range: sliding window 4-5 frets anchored to root, Math.max(0, minFret - 1) padding, empty-notes guard
+  - String-row inversion: row = stringCount - 1 - note.string
 inputDocuments:
   - prds/prd-subway-scaler.md
   - architecture.md
   - ux-design-specification.md
-  - https://github.com/byrongamatos/slopsmith (official setup documentation)
 ---
 
-# Subway Scaler - Epic Breakdown (with E2E Testing Infrastructure)
+# slopsmith-plugin-subway-scaler - Epic Breakdown
 
 ## Overview
 
-This document provides the epic and story breakdown for slopsmith-plugin-subway-scaler, including the new Epic 0 for E2E Testing Infrastructure to support test-driven development across all epics.
+This document provides the complete epic and story breakdown for slopsmith-plugin-subway-scaler, decomposing the requirements from the PRD, UX Design, and Architecture requirements into implementable stories. This is an **amendment** to the existing epics.md — the previously existing Epic 0–7 structure is preserved; this document adds **Epic 8** (in-game HUD overlay).
 
----
+## Requirements Inventory
 
-## Extracted Requirements
+### Functional Requirements
 
-### Functional Requirements (E2E Testing Focus)
+**FR-001:** Session Start — Player selects scale, root note, difficulty.
+**FR-002:** Note Visualization — Frets appear as colored safe zones on tracks.
+**FR-003:** Correct Note Detection — Audio input triggers character movement.
+**FR-004:** Score Calculation — Points based on difficulty + timing. Base: 100 × difficulty multiplier. Early/late hits: no penalty.
+**FR-005:** Difficulty Scaling — Speed and cart frequency increases with score.
+**FR-006:** Collision Detection — Cart collision ends session with game over. Final score displayed.
+**FR-007:** Visual Feedback — Sparkle/glow effects on correct notes.
+**FR-008:** Variant Switching — Switch root note mid-session.
 
-**FR-E2E-001:** E2E tests must validate that the plugin loads successfully at localhost:8000 in the Slopsmith Docker container
+### Non-Functional Requirements
 
-**FR-E2E-002:** E2E tests must verify DOM renders without errors and all required HTML elements are present
+**NFR-011:** 60 FPS target — render loop at 60fps minimum.
+**NFR-012:** Memory usage below 500MB.
+**NFR-013:** Error recovery — invalid note: log and ignore; audio disconnect: reconnect or show error.
+**NFR-014:** Session state — save to local storage.
+**NFR-015:** Audio input options — professional interfaces, USB-MIDI, Slopsmith centralized detection.
+**NFR-016:** Settings persistence — save last scale, root note, difficulty, audio device.
 
-**FR-E2E-003:** E2E tests must verify no console errors or warnings during plugin operation
+### Additional Requirements (Architecture)
 
-**FR-E2E-004:** E2E tests must validate ARIA attributes are present and correct on all interactive elements
+- Score display is an HTML overlay positioned above Three.js canvas (top-right corner per UX spec)
+- GameLoop.js owns `runtime.phase` management and character position
+- CartSystem.js writes `runtime.score` in GameState
+- Score increment is frame-synchronised with detection events
+- HUD elements (score, pause button) must not intercept mouse/touch events directed at the canvas
+- Overlay motion grammar: RGB-shift glitch entry/exit for pause and game-over overlays
+- No bundler in stack — plain HTML+CSS+JS, tokens.js as single source of truth for colours
 
-**FR-E2E-005:** E2E tests must validate keyboard navigation (Tab, Enter, Escape) works across all HTML surfaces
+### UX Design Requirements
 
-**FR-E2E-006:** E2E tests must validate focus management (focus trap, focus restoration) on overlays and forms
+**UX-DR1:** Score Display — Top-right corner, always visible during gameplay. Peripheral-readability, `color-text-primary`, monospace bold, no background (canvas visible behind). Increment flash (~150ms `color-accent` pulse) on score change. `aria-live="polite"` for screen readers.
 
-**FR-E2E-007:** E2E tests must validate game loop execution, character movement, and score increment
+**UX-DR2:** Pause Button — Located bottom-right of game shell, persistent during gameplay. Single-action RESUME button is the primary affordance on the pause overlay itself (Epic 4-2). The trigger button to *enter* pause is a separate icon in bottom-right HUD position, but the UX spec does not define a dedicated persistent pause-button icon — this epic defines it.
 
-**FR-E2E-008:** E2E tests must validate collision detection triggers game-over overlay with correct final score
+**UX-DR3:** Fret Box / Finger Pattern — Top-left corner, visual diagram showing strings (horizontal lines or circles) and fret numbers for the current scale position. Must map to the active track's root fret and string layout. Not yet defined in any existing UX or architecture document — this epic originates this requirement.
 
-**FR-E2E-009:** E2E tests must validate pause/resume overlay functionality and keyboard shortcuts
+**UX-DR4:** Overlay Container — Shared wrapper for Pause, Game Over, Audio Disconnect overlays. Full-viewport, `color-bg-void` backdrop (~85% opacity), centered content column. RGB-shift glitch entry (~200ms) and exit (~100ms). Focus trapped when open.
 
-**FR-E2E-010:** E2E tests must validate variant track rendering and decision window timer behavior
+**UX-DR5:** String Color System — Rocksmith convention: Red (lowest) → Yellow → Blue → Orange → Green → Purple → Pink. Defined in `tokens.js` as `STRING_COLORS` hex constants.
 
-### Non-Functional Requirements (E2E Testing)
+**UX-DR6:** Button Hierarchy — Three levels: Primary (solid accent fill), Secondary (outline accent), Tertiary (text-only disabled colour). One primary per screen. Minimum 44px height, focusable, keyboard-reachable.
 
-**NFR-E2E-001:** Docker development setup must mount local repository at `/app/plugins/subway-scaler` with hot-reloading
+**UX-DR7:** Responsive Shell — Fixed 16:9 aspect ratio `game-shell`, height-driven, centered horizontally. Overlays anchored to shell (`position: absolute; inset: 0`). Horizontal dead space filled with `color-bg-void`.
 
-**NFR-E2E-002:** E2E test harness must be Playwright-based with configurable browser targets (Chrome, Firefox, Safari, Edge)
+**UX-DR8:** Accessibility — WCAG 2.1 AA for HTML surfaces. Focus trapped on overlays. Escape on Pause → RESUME. `role="dialog"`, `aria-modal="true"`. `@media (prefers-reduced-motion: reduce)` replaces glitch with opacity fade.
 
-**NFR-E2E-003:** Tests must execute within Slopsmith Docker container environment at localhost:8000
+### FR Coverage Map
 
-**NFR-E2E-004:** Test suite must complete in under 5 minutes for standard baseline tests
-
-**NFR-E2E-005:** Test framework must provide helper utilities for common plugin interactions (setup form, game start, pause, etc.)
-
-**NFR-E2E-006:** Test results must be machine-readable (JSON) for CI/CD integration
-
-**NFR-E2E-007:** Tests must capture screenshots/videos on failure for debugging
-
-### Additional Requirements (Architecture & Docker Integration)
-
-- Docker development environment must support volume mounting from local repository
-- Plugin must auto-reload when local files change
-- Test harness must be able to interact with Slopsmith UI at localhost:8000
-- Tests must validate plugin.json manifest, API routes, and UI rendering
-- Tests must support both headless and headed browser execution for debugging
-- Test infrastructure must be reusable across all Epics 1-5
-
-### E2E Testing Requirements by Epic
-
-**Standard E2E Test Suite** (applies to every Epic):
-- Plugin loads at localhost:8000
-- DOM renders without errors
-- No console errors or warnings
-- ARIA attributes present and correct (accessibility baseline)
-- Keyboard navigation functional (Tab, Enter, Escape)
-- Focus management working (focus trap, restoration)
-
-**Epic 0 (This Epic):** E2E Testing Infrastructure
-- Docker dev setup with local volume mount at `/app/plugins/subway-scaler`
-- Playwright test harness and helper library
-- Standard baseline test suite
-- Test integration into npm scripts and CI/CD
-
-**Epic 1:** Setup form, localStorage persistence, error handling on fetch failure
-
-**Epic 3:** Game loop runs, character moves, score increments, collision triggers game-over
-
-**Epic 4:** Pause overlay appears/disappears, game-over overlay shows correct score/context, keyboard/focus work
-
-**Epic 5:** Variant track renders, decision window timer counts down, variant acceptance transitions smoothly
-
----
-
-## Docker Development Setup Specification
-
-**Environment:** Slopsmith Docker container with plugin mounted locally
-
-**Volume Mount:**
-```
-Local Repository Path: {project-root}/
-Container Plugin Path: /app/plugins/subway-scaler
-```
-
-**Access Point:** http://localhost:8000
-
-**Development Features Required:**
-- Hot-reload on file change
-- Console error/warning visibility in browser DevTools
-- ARIA attribute inspection via DevTools
-- Keyboard event inspection and focus tracking
-
----
-
-## Playwright Test Framework Specification
-
-**Test Runner:** Playwright (supports Chrome, Firefox, Safari, Edge)
-
-**Test Location:** `tests/e2e/` directory with structure:
-- `tests/e2e/fixtures/` — Page objects and fixtures
-- `tests/e2e/helpers/` — Plugin interaction utilities
-- `tests/e2e/specs/` — Individual test files
-- `tests/e2e/screenshots/` — Failure artifacts
-
-**Helper Library Functions:**
-- `startGame(config)` — Navigate setup, select settings, START
-- `pauseGame()` — Trigger pause, verify overlay
-- `queryElement(selector)` — Get element + ARIA attributes
-- `assertAria(selector, expected)` — Verify ARIA attributes
-- `assertDomPresent(selector, attributes)` — Verify DOM structure
-- `screenshot(name)` — Capture for debugging
-
-**Test Output:** JSON report for CI/CD integration
-
----
-
----
+| Requirement | Epic | Coverage |
+|---|---|---|
+| FR-004 (Score Calculation) | Epic 8 | HUD score display reads `runtime.score`, renders in top-right corner |
+| FR-006 (Game Over — score display) | Epic 8 | Score display remains visible through pause/game-over states |
+| FR-007 (Visual Feedback) | Epic 3, Epic 8 | Sparkle/glow on correct note (E3); score flash on increment (E8) |
+| NFR-011 (60 FPS) | Epic 8 | HUD overlay must not impact render loop (non-blocking HTML layer) |
+| UX-DR1 (Score Display) | Epic 8 | Top-right score overlay |
+| UX-DR2 (Pause Button) | Epic 8 | Bottom-right persistent pause button |
+| UX-DR3 (Fret Box) | Epic 8 | Top-left finger-pattern visual diagram |
+| UX-DR4 (Overlay Container) | Epic 4 | Pause/game-over overlay shared wrapper |
+| UX-DR5 (String Colors) | Epic 7, Epic 8 | Fret box uses STRING_COLORS |
+| UX-DR6 (Button Hierarchy) | Epic 4, Epic 8 | Pause button = primary style |
+| UX-DR7 (Responsive Shell) | Epic 4, Epic 8 | HUD anchored to game-shell |
+| UX-DR8 (Accessibility) | Epic 4, Epic 8 | Focus, keyboard, reduced-motion |
 
 ## Epic List
 
 ### Epic 0: E2E Testing Infrastructure
-
-Developers can validate the entire plugin user journey (setup → play → pause → variant → game-over) using automated E2E tests within Slopsmith Docker environment.
-
-**User Outcomes:**
-- Developers run comprehensive E2E tests locally before committing
-- CI/CD validates plugin behavior against Slopsmith UI
-- All future epics (1-5) have passing E2E tests as acceptance criteria
-- Docker development environment with hot-reload enables rapid iteration
-
-**Stories:**
-- 0-1: Docker Development Setup
-- 0-2: Playwright Test Harness
-- 0-2a: Mocked Audio Input Device
-- 0-3: Standard Baseline Test Suite
-- 0-4: Test Integration & Templates
-
-**FRs Covered:** FR-E2E-001, FR-E2E-002, FR-E2E-003, FR-E2E-004, FR-E2E-005, FR-E2E-006, FR-E2E-007, FR-E2E-008, FR-E2E-009, FR-E2E-010
-
-**NFRs Covered:** NFR-E2E-001, NFR-E2E-002, NFR-E2E-003, NFR-E2E-004, NFR-E2E-005, NFR-E2E-006, NFR-E2E-007
-
----
-
-## Requirements Coverage Map
-
-### E2E Testing Requirements → Epic 0
-
-| Requirement | Story | Coverage |
-|---|---|---|
-| FR-E2E-001 | 0-2, 0-3 | Plugin loads at localhost:8000 |
-| FR-E2E-002 | 0-3 | DOM renders without errors |
-| FR-E2E-003 | 0-3 | No console errors/warnings |
-| FR-E2E-004 | 0-3 | ARIA attributes present and correct |
-| FR-E2E-005 | 0-3 | Keyboard navigation functional |
-| FR-E2E-006 | 0-3 | Focus management working |
-| FR-E2E-007 | 0-2a, 0-3, 0-4 | Game loop runs, character moves, score increments |
-| FR-E2E-008 | 0-2a, 0-3, 0-4 | Collision triggers game-over overlay |
-| FR-E2E-009 | 0-3, 0-4 | Pause/resume overlay functionality |
-| FR-E2E-010 | 0-4 | Variant track and timer testing |
-| NFR-E2E-001 | 0-1 | Docker dev setup with `/app/plugins/subway-scaler` mount |
-| NFR-E2E-002 | 0-2 | Playwright-based test framework |
-| NFR-E2E-003 | 0-1, 0-2 | Tests run in Slopsmith Docker at localhost:8000 |
-| NFR-E2E-004 | 0-4 | Tests complete in < 5 minutes |
-| NFR-E2E-005 | 0-2 | Helper utilities for plugin interactions |
-| NFR-E2E-006 | 0-4 | Machine-readable JSON test results |
-| NFR-E2E-007 | 0-2, 0-3, 0-4 | Screenshot/video capture on failure |
-
----
-
----
+*(existing — unchanged)*
 
 ### Epic 0.5: E2E Coverage Review
+*(existing — unchanged)*
 
-Developers have comprehensive E2E test coverage for all implemented epics and executable ATDD acceptance tests written in advance for open epics, ensuring regressions are caught automatically and new epics ship with a green test baseline from day one.
+### Epic 1: Session Setup & Core Services
+*(existing — unchanged)*
+
+### Epic 2: Game Engine Modules — CartSystem, DifficultyManager, WaveScheduler
+*(existing — unchanged)*
+
+### Epic 3: 3D Scene & Core Game Loop
+*(existing — unchanged)*
+
+### Epic 4: Session UX & Accessibility
+*(existing — unchanged)*
+
+### Epic 5: Variant Track System
+*(existing — unchanged)*
+
+### Epic 6: Variant Transition Cinematic & Handoff
+*(existing — unchanged)*
+
+### Epic 7: Visual Polish — World Environment & Procedural Scenery
+*(existing — unchanged)*
+
+---
+
+## Epic 8: In-Game HUD Overlay — Score, Pause Button & Fret Box
+
+Players see a polished in-game overlay during gameplay with three persistent elements: current score in the top-right corner, a pause button in the bottom-right corner, and a fret-box finger-pattern diagram in the top-left corner — all fitting the Night City PS1 demake aesthetic.
 
 **User Outcomes:**
-- Regressions in CartSystem, DifficultyManager, overlays, and accessibility are caught by CI before merge
-- Epic 5 implementer has executable acceptance tests to work against (ATDD)
-- Test gaps from Epics 2 and 4 are filled without duplicating existing Epic 3 coverage
+- Score is always visible at a peripheral glance during gameplay — top-right corner, monospace bold, with a brief accent-colour flash on each increment
+- Pause is always one tap/click away — bottom-right corner button triggers the pause overlay (Epic 4-2), never interferes with canvas interaction
+- Fret-box diagram in the top-left shows the active scale's finger pattern: strings as horizontal lines, fret number labels, and dot indicators marking which frets to play — updated when the scale/root changes (including variant transitions)
+- All three HUD elements are HTML overlays anchored to the 16:9 game shell — crisp at any resolution, no Three.js texture overhead for dynamic text
+- HUD uses Night City palette tokens from `tokens.js` and the vendored monospace font
+- HUD elements do not intercept mouse/touch events intended for the Three.js canvas below (`pointer-events: none` on the HUD container, explicit `pointer-events: auto` on the pause button)
+- On `prefers-reduced-motion`, the score increment flash transitions to a simpler approach than animation to respect the user's preferences.
 
-**Stories:**
-- 0.5a: E2E Coverage — Epic 2 (CartSystem & DifficultyManager observable behavior)
-- 0.5b: E2E Coverage — Epic 4 (Overlays, keyboard shortcuts, ARIA accessibility)
-- 0.5c: ATDD Scaffold — Epic 5 (Variant track & decision window — written to fail until Epic 5 ships)
-
-**Coverage rationale:**
-- Epic 1: ✅ Already covered by `epic1-setup.spec.ts` and `ux-design-audit.spec.ts`
-- Epic 2: ❌ No dedicated spec — CartSystem and DifficultyManager have no E2E tests → Story 0.5a
-- Epic 3: ✅ Well covered by `epic3-game.spec.ts`, `epic3-score.spec.ts`, `audio-injection.spec.ts`, `mic-access.spec.ts`, `canvas-overlay-alignment.spec.ts`
-- Epic 4: ❌ No dedicated spec — Overlays, keyboard shortcuts, and ARIA untested → Story 0.5b
-- Epic 5: ⏳ Not yet implemented → ATDD scaffold → Story 0.5c
-
----
-
-## Requirements Coverage Map
-
-### E2E Testing Requirements → Epic 0
-
-| Requirement | Story | Coverage |
-|---|---|---|
-| FR-E2E-001 | 0-2, 0-3 | Plugin loads at localhost:8000 |
-| FR-E2E-002 | 0-3 | DOM renders without errors |
-| FR-E2E-003 | 0-3 | No console errors/warnings |
-| FR-E2E-004 | 0-3 | ARIA attributes present and correct |
-| FR-E2E-005 | 0-3, 0.5b | Keyboard navigation functional |
-| FR-E2E-006 | 0-3, 0.5b | Focus management working |
-| FR-E2E-007 | 0-2a, 0-3, 0-4, 0.5a | Game loop runs, character moves, score increments |
-| FR-E2E-008 | 0-2a, 0-3, 0-4, 0.5a | Collision triggers game-over overlay |
-| FR-E2E-009 | 0-3, 0-4, 0.5b | Pause/resume overlay functionality |
-| FR-E2E-010 | 0-4, 0.5c | Variant track and timer testing |
-| NFR-E2E-001 | 0-1 | Docker dev setup with `/app/plugins/subway-scaler` mount |
-| NFR-E2E-002 | 0-2 | Playwright-based test framework |
-| NFR-E2E-003 | 0-1, 0-2 | Tests run in Slopsmith Docker at localhost:8000 |
-| NFR-E2E-004 | 0-4 | Tests complete in < 5 minutes |
-| NFR-E2E-005 | 0-2 | Helper utilities for plugin interactions |
-| NFR-E2E-006 | 0-4 | Machine-readable JSON test results |
-| NFR-E2E-007 | 0-2, 0-3, 0-4 | Screenshot/video capture on failure |
-
----
-
-## Epic 4: Session UX & Accessibility
-
-### Story Sequence (with prerequisites)
-
-**Timing Refactor Stories (MUST complete before 4-2):**
-
-| Story | Title | Status | Depends on |
-|---|---|---|---|
-| 4-1 | Implement Overlay Container with RGB-Shift Glitch Animation | done | — |
-| 4-T1 | Strip Python Wave Queue and Expose timing_params | todo | — |
-| 4-T2 | Implement WaveScheduler.js | todo | 4-T1 |
-| 4-T3 | Rework CartSystem.js and SafeZoneRenderer.js to Consume WaveScheduler | todo | 4-T2 |
-| 4-T4 | Wire WaveScheduler into GameLoop and Simplify main.js | todo | 4-T3 |
-
-**Remaining Epic 4 Stories (require 4-T1 through 4-T4):**
-
-| Story | Title | Status | Depends on |
-|---|---|---|---|
-| 4-2 | Implement Pause Overlay | review | 4-T4 |
-| 4-3 | Implement Game Over Overlay | todo | 4-T4 |
-| 4-4 | Implement ARIA Roles and Keyboard Navigation | todo | 4-T4 |
-| 4-5 | Implement Touch Targets and Final Accessibility Audit | todo | 4-4 |
-
-**Rationale for 4-T prerequisite block:**
-Stories 4-T1 through 4-T4 eliminate the dual-clock instability between Python's `time.time()` and
-JS's `performance.now()`. Pause/resume timing, wave delivery lag, and cart pop-in are all symptoms
-of this split. Story 4-2 (pause overlay) depends on reliable pause/resume; without the timing
-refactor it would ship on top of a broken foundation. See `architecture.md` amendment (2026-05-22).
-
----
-
-## Epic 5: Variant Track System
-
-Players can experience mid-session scale changes (variants) that feel like a real railway
-switch: visually distinct, correctly timed, and seamlessly animated.
-
-**User Outcomes:**
-- Variant proposals appear at the right moment in the wave sequence (transition note timing)
-- Full-fretboard traversal replaces the narrow octave-band visual — waves sweep from the
-  lowest string to the highest string and back
-- Track lanes are color-coded by string so the player can orient spatially without reading labels
-- Accepting a variant produces a smooth continuous animation: character follows the bend,
-  old tracks scroll away, new scale arrives from the horizon
+**Depends on:** Epic 4 (pause overlay exists and is functional), Epic 7 (tokens.js has the full Night City palette), the game shell and overlay container pattern established in EPIC 4.
 
 **Stories:**
 
 | Story | Title | Status | Depends on |
 |---|---|---|---|
-| 5-1 | Wire Variant Observable State and Test Hook | done | — |
-| 5-2 | Remove ATDD Scaffolding and Validate E2E | done | 5-1 |
-| 5-3 | Polling Integration Coverage — Variant Lifecycle | done | 5-1 |
-| 5-4 | Backend Variant Direction Logic | done | 5-3 |
-| 5-5 | SceneManager Visual Refactor — Single-Lane Peel Transition | done | 5-4 |
-| 5-6 | Full String Range — Wave Spawning Across All Strings | todo | 5-5 |
-| 5-7 | Variant Visual Spec — Track Coloring, Spawn Timing, Transition Animation | todo | 5-6 |
+| 8-0 | HUD Shell — Overlay Container & Positioning Foundation | todo | Epic 4, Epic 7 |
+| 8-1 | Score Display — Top-Right Corner Overlay | todo | 8-0 |
+| 8-2 | Pause Button — Bottom-Right Persistent Trigger | todo | 8-0, Epic 4-2 |
+| 8-3 | Fret Box — Top-Left Finger Pattern Diagram | todo | 8-0 |
+| 8-4 | HUD Update on Variant Transition | todo | 8-3, Epic 6 |
+| 8-5 | HUD Detail Toggle — Basic / Full Mode | todo | 8-3, Epic 4-2 |
+| 8-6 | Accessibility Audit — HUD Focus, ARIA & Reduced Motion | todo | 8-1, 8-2, 8-3, 8-5 |
 
 ---
 
-## Epic 6: Variant Transition Cinematic & Handoff
+### Story 8-0: HUD Shell — Overlay Container & Positioning Foundation
 
-Accepting a variant feels like a real railway switch: the character physically rides the bend,
-the camera follows with cinematic ease, in-flight waves from the old scale clear naturally,
-the new scale arrives from the horizon, and gameplay resumes seamlessly on the new lane after
-a short breather that gives the player time to reposition fingers on the fretboard.
+As a **developer**, I want a shared HUD shell positioned over the Three.js canvas and anchored to the 16:9 game shell, so that all HUD elements (score, pause button, fret box) are consistently positioned, do not block canvas interaction, and respond to container resize.
 
-**User Outcomes:**
-- Accepting a variant (playing the transition note) triggers a continuous, polished animation
-  rather than an instant scale swap
-- The character moves onto the variant track and rides the 45° bend with the camera following
-- Outgoing-scale waves already in flight continue travelling until they exit the frame —
-  no abrupt freeze, no pop-out
-- A short "breather" on the straight variant section lets the player reposition before
-  new waves arrive
-- Remaining tracks of the new scale arrive from the horizon and slot into position before
-  wave spawning resumes
-- Backend scale state is promoted only after the new tracks are in position, so waves never
-  spawn into empty or transitioning track geometry
+**Acceptance Criteria:**
 
-**Depends on:** Epic 5 (5-6, 5-7) — variant proposal and visual baseline must be in place.
+**Given** the game scene loads and gameplay is active
+**When** the HUD container is rendered
+**Then** the HUD container is positioned at `position: absolute; inset: 0` inside `.game-shell`
+**And** the HUD container has `pointer-events: none` so all canvas interactions pass through
+**And** individual interactive HUD children (pause button) set `pointer-events: auto`
+**And** the HUD container has CSS `z-index` configured to render above the Three.js canvas but below overlay full-screen containers (pause/game-over)
+**And** the HUD container does not have a background or backdrop — the canvas remains fully visible behind all HUD elements
+**And** HUD child element positions are defined using per-element absolute positioning within the HUD shell:
+  - score: `top: 1rem; right: 1rem`
+  - pause button: `bottom: 1rem; right: 1rem`
+  - fret box: `top: 1rem; left: 1rem`
+**And** during a container `ResizeObserver` callback, HUD element positions adjust proportionally to shell dimensions
+**And** the HUD container is visible during `PHASES.PLAYING` and `PHASES.PAUSED` phase states
+**And** the HUD container is hidden during `PHASES.IDLE` (setup screen) and `PHASES.GAME_OVER` states (overlay covers it)
+**And** the `tests/unit/js/HudShell.test.js` is created with the provided test file
+**And** an E2E spec `tests/e2e/specs/epic8-hud.spec.ts` is created with the provided test file
+**And** all tests pass
 
-**Architectural decisions:**
-- **Two-phase backend protocol:** Variant acceptance (note hit) and scale promotion (tracks
-  landed) are separate events. New `POST /variant/promote` endpoint commits the scale swap;
-  until promoted, backend continues to serve the outgoing scale. This decouples the cinematic
-  timeline from backend state and prevents premature wave spawning on the new scale.
-- **Soft halt:** `WaveScheduler` stops *queuing* new outgoing-scale waves at accept time, but
-  in-flight waves continue rendering and travelling until off-frame. No hard freeze.
-- **Breather duration:** Default ~3s on the straight section, tunable via `timing_params`
-  (consistent with 4-T timing refactor). Floor gated on "all outgoing waves have cleared the
-  frame" so the breather never starts while old-scale waves are still visible.
-- **Camera:** Eased lerp with look-ahead through the bend, restoring to forward-facing once
-  on the straight variant section.
+**Implementation Notes:**
+- New file: `static/game/ui/HudShell.js` — class managing visibility, phase listening, resize
+- Styles in `static/game/ui/overlays.css` or new `static/game/ui/hud.css`
+- Phase visibility: subscribe to `GameState.runtime.phase` changes (via polling or event dispatch in GameLoop)
+- The existing `OverlayContainer` from Epic 4 manages the full-screen overlays; HudShell is a separate lighter container that lives behind overlays
 
-**Stories:**
-
-| Story | Title | Status | Depends on |
-|---|---|---|---|
-| 6-1 | Accept-Gate State Machine & Soft Halt of Outgoing Scale | todo | 5-7 |
-| 6-2 | Character Lateral Traversal Onto Variant Track | todo | 6-1 |
-| 6-3 | 45° Bend Camera Follow (Eased Lerp + Look-Ahead) | todo | 6-2 |
-| 6-4 | Post-Bend Breather + New Scale Track Approach | todo | 6-3 |
-| 6-5 | Backend `POST /variant/promote` Endpoint & Scale Swap | todo | 6-4 |
-| 6-6 | Variant Scale Wave Spawn Activation | todo | 6-5 |
-| 6-7 | E2E Transition Sequence Coverage | todo | 6-6 |
-
-**Story summaries:**
-
-- **6-1** — Introduce transition state machine (`idle | proposed | accepted | riding | breather | promoting | active`). On transition-note hit: set `accepted`, instruct `WaveScheduler` to stop queuing new outgoing-scale waves. In-flight waves keep rendering until off-frame.
-- **6-2** — Animate character X from main lane onto variant lane bound to bend-segment Z-progress (not wall-clock). Hand-off triggers on entering the incoming diagonal.
-- **6-3** — Camera follows character through the 45° turn using eased lerp with a look-ahead offset along the track tangent. Restores to forward-facing once character is on the straight section.
-- **6-4** — Once on straight section AND all outgoing waves have cleared frame: start breather timer (default ~3s, `timing_params.variantBreatherMs`). At breather end: spawn the remaining variant-scale tracks at the horizon and scroll them toward the play anchor.
-- **6-5** — New `POST /variant/promote` route. Request schema includes variant id; response confirms new primary scale. Backend rejects promote if variant not in `accepted` state. Existing acceptance call no longer mutates primary scale.
-- **6-6** — Client calls `/variant/promote` once new tracks reach play anchor. On success, `WaveScheduler` begins queuing waves for the new scale. State transitions `promoting → active`.
-- **6-7** — Playwright spec: inject audio for transition note → assert state-machine phase progression, camera transform per phase, in-flight outgoing waves not frozen, no new outgoing-scale waves queued post-accept, `/variant/promote` fired only after tracks landed, new-scale waves only after promote success, no console errors.
-
-**Open questions deferred to story creation:**
-- Exact easing curve and look-ahead distance for 6-3 (tune in-engine)
-- Whether breather should be skippable by player input (default: no)
-- Whether `/variant/promote` should also return updated `timing_params` snapshot
-
----
-
-## Epic 7: Visual Polish — World Environment & Procedural Scenery
-
-The game world transitions from a bare track-in-void to a lived-in night city environment with a ground plane, procedural building skyline, lamppost lighting, and a vertex-shader curved-world effect that reinforces the PS1 demake aesthetic and sells the illusion of Z-movement during gameplay.
-
-**User Outcomes:**
-- The track runs through a recognizable 3D space with a floor plane, flanking buildings, and street lighting — no longer floating in void
-- Procedurally generated buildings of varied heights create a convincing skyline on both sides of the tracks, selling forward-motion at speed
-- Buildings leave a deliberate gap where variant geometry peels off, so the side-street metaphor reads spatially
-- Lampposts in front of buildings cast warm `color-accent` light, grounding the Night City palette in the 3D scene
-- Variant track geometry also has flanking buildings — both sides of the diagonals and the outside of the straight section — maintaining environmental consistency through transitions
-- A vertex shader bends the world surface beneath the character, simulating a curved planet-like ground and adding retro-PS1 aesthetic authenticity
-
-**Depends on:** Epic 6 — variant geometry (diagonals, straight sections) must exist before buildings can be placed alongside them.
-
-**Stories:**
-
-| Story | Title | Status | Depends on |
-|---|---|---|---|
-| 7-0 | Visual Conformance — Tracks, Carts & Safe Zones | todo | — |
-| 7-1 | Floor Plane — Ground Surface Beneath Tracks | todo | 7-0 |
-| 7-2 | Procedural Building Generation — Main Track Skyline | todo | 7-1 |
-| 7-3 | Lamppost Geometry & Point Lighting | todo | 7-2 |
-| 7-4 | Procedural Buildings — Variant Geometry | todo | 7-2, Epic 6 |
-| 7-5 | Vertex Shader — Curved World Surface | todo | 7-1 |
-
-### Story 7-0: Visual Conformance — Tracks, Carts & Safe Zones
-
-As a **player**, I want the track geometry, carts, and safe-zone indicators to use the correct Night City palette colours and a polished neon-border safe-zone treatment, so the game world reads consistently before new environment elements are added.
-
-**Background:**
-
-The existing geometry (track lanes, cart meshes, safe-zone planes) was built for logic correctness. Before the world-environment stories layer on top, all existing elements must match the `tokens.js` Night City palette and the agreed UX safe-zone specification: a translucent plane with an opaque, slightly emissive neon border that matches the lane's string colour.
-
-**Token additions required in `tokens.js` before implementation:**
+**Test File — `tests/unit/js/HudShell.test.js`:**
 
 ```js
-// Add to COLORS object:
-DANGER: 0xFF2233,  // NPC cart threat colour — reserved solely for hazard state signals
+import { HudShell } from '../../../static/game/ui/HudShell.js';
+import { PHASES } from '../../../static/game/GameState.js';
 
-// Add as new top-level export (parallel to STRING_COLORS):
-export const STRING_SAFE_ZONE_FILLS = [
-  0x330000, // 0 — Red    (darkened)
-  0x332A00, // 1 — Yellow (darkened)
-  0x001A33, // 2 — Blue   (darkened)
-  0x331900, // 3 — Orange (darkened)
-  0x003319, // 4 — Green  (darkened)
-  0x260033, // 5 — Purple (darkened)
-  0x330029, // 6 — Magenta(darkened)
-  0x003333, // 7 — Teal   (darkened)
-];
-// Same index as STRING_COLORS (0 = lowest pitch string).
-// Each fill is a darkened variant of the string colour for use as
-// translucent safe-zone plane material. Border uses STRING_COLORS[i] at full value.
+describe('HudShell', () => {
+  let shell;
+  let container;
 
-export const EMISSIVE_SAFE_ZONE_BORDER = 0.7;
-// Provisional — retune after lighting stories (7-3) land.
-// Designed for ACESFilmicToneMapping; do not raise above 0.8 before testing tone mapping.
+  beforeEach(() => {
+    document.body.innerHTML = `<div class="game-shell" style="width: 800px; height: 450px; position: relative;"></div>`;
+    container = document.querySelector('.game-shell');
+    shell = new HudShell(container);
+  });
+
+  afterEach(() => {
+    shell.destroy();
+  });
+
+  test('creates a HUD container element inside game-shell', () => {
+    const hud = container.querySelector('.hud-shell');
+    expect(hud).not.toBeNull();
+  });
+
+  test('HUD container has pointer-events: none', () => {
+    const hud = container.querySelector('.hud-shell');
+    expect(getComputedStyle(hud).pointerEvents).toBe('none');
+  });
+
+  test('registerChild adds element and sets pointer-events: auto', () => {
+    const el = document.createElement('button');
+    shell.registerChild('pause', el);
+    const hud = container.querySelector('.hud-shell');
+    expect(hud.contains(el)).toBe(true);
+    expect(getComputedStyle(el).pointerEvents).toBe('auto');
+  });
+
+  test('show and hide toggle visibility', () => {
+    shell.hide();
+    const hud = container.querySelector('.hud-shell');
+    expect(getComputedStyle(hud).display).toBe('none');
+    shell.show();
+    expect(getComputedStyle(hud).display).not.toBe('none');
+  });
+
+  test.each([
+    PHASES.IDLE, PHASES.GAME_OVER
+  ])('is hidden during %s phase', (phase) => {
+    shell.onPhaseChange(phase);
+    const hud = container.querySelector('.hud-shell');
+    expect(getComputedStyle(hud).display).toBe('none');
+  });
+
+  test.each([
+    PHASES.PLAYING, PHASES.PAUSED
+  ])('is visible during %s phase', (phase) => {
+    shell.onPhaseChange(phase);
+    const hud = container.querySelector('.hud-shell');
+    expect(getComputedStyle(hud).display).not.toBe('none');
+  });
+
+  test('destroy removes container element', () => {
+    shell.destroy();
+    expect(container.querySelector('.hud-shell')).toBeNull();
+  });
+});
 ```
 
-**Acceptance Criteria:**
+**Test File — `tests/e2e/specs/epic8-hud.spec.ts`:**
 
-**Given** the game scene loads
-**When** track lane geometry is rendered
-**Then** each track lane surface uses `COLORS.BG_STAGE` (`0x1A1A2E`) as its base material colour
-**And** no track geometry uses raw hex colour literals — all colours referenced from `tokens.js` exports
+```ts
+import { test, expect } from '@playwright/test';
 
-**Given** the game scene loads
-**When** cart meshes are rendered
-**Then** all NPC / obstacle carts use `COLORS.DANGER`
-**And** no cart material references colour values outside `tokens.js` exports
-**And** `COLORS.ACCENT` (`0xFFB800`) is not used on any cart — it is reserved for world lighting (lampposts)
+test.describe('Epic 8 — HUD Overlay', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/plugins/subway-scaler');
+    // Set up and start a game session
+    await page.click('button:has-text("START")');
+    // Wait for game loop to begin
+    await page.waitForSelector('.hud-shell', { state: 'visible', timeout: 5000 });
+  });
 
-**Given** a safe zone is active on track lane at string index `i`
-**When** the safe-zone indicator is rendered
-**Then** a translucent plane fills the safe-zone bounds with material colour `STRING_SAFE_ZONE_FILLS[i]`, `opacity: 0.15`, `transparent: true`, `depthWrite: false`, `polygonOffset: true`, `polygonOffsetFactor: 1`, `polygonOffsetUnits: 1`
-**And** a border mesh (`EdgesGeometry` on a `PlaneGeometry` matching the fill plane) surrounds the perimeter with colour `STRING_COLORS[i]`, `emissive: STRING_COLORS[i]`, `emissiveIntensity: EMISSIVE_SAFE_ZONE_BORDER`
-**And** the border mesh has `renderOrder` set 1 higher than the fill plane, guaranteeing it draws on top
-**And** the safe-zone plane and border are children of the track lane group (not scene root), so they scroll with the track without manual Z translation
-**And** no safe-zone geometry is visible outside the lane bounds at any camera angle
+  test('HUD shell container is present and visible during gameplay', async ({ page }) => {
+    const hud = page.locator('.hud-shell');
+    await expect(hud).toBeVisible();
+    await expect(hud).toHaveCSS('pointer-events', 'none');
+  });
 
-**Given** all three element types (tracks, carts, safe zones) are visible simultaneously
-**When** the scene is inspected at runtime
-**Then** no `MeshBasicMaterial` or `MeshStandardMaterial` constructor call contains a colour literal — all colours sourced from `tokens.js`
-**And** the browser console shows zero Three.js warnings attributable to these elements
+  test('score element is positioned in top-right corner', async ({ page }) => {
+    const score = page.locator('.hud-score');
+    await expect(score).toBeVisible();
+    const box = await score.boundingBox();
+    const shellBox = await page.locator('.game-shell').boundingBox();
+    expect(box.x + box.width).toBeCloseTo(shellBox.x + shellBox.width, -1);
+    expect(box.y).toBeCloseTo(shellBox.y, -1);
+  });
 
-**Out of scope for this story:** floor plane, buildings, lampposts, vertex shader (covered in 7-1 through 7-5). Safe-zone pulse animation (emissive oscillation) noted as backlog item for post-7-1.
+  test('pause button is positioned in bottom-right corner', async ({ page }) => {
+    const pauseBtn = page.locator('.hud-pause-btn');
+    await expect(pauseBtn).toBeVisible();
+    const box = await pauseBtn.boundingBox();
+    const shellBox = await page.locator('.game-shell').boundingBox();
+    expect(box.x + box.width).toBeCloseTo(shellBox.x + shellBox.width, -1);
+    expect(box.y + box.height).toBeCloseTo(shellBox.y + shellBox.height, -1);
+  });
 
-**Implementation notes:**
-- `EdgesGeometry` must wrap a `PlaneGeometry` (not `BoxGeometry`) to produce only the 4 perimeter edges — no internal diagonals
-- `EMISSIVE_SAFE_ZONE_BORDER = 0.7` is provisional; add an inline comment noting tone-mapping dependency so future devs do not raise it blindly
-- `COLORS.DANGER` is reserved for transient hazard signals only — do not reuse for UI warnings or low-health indicators
+  test('pause button triggers pause overlay', async ({ page }) => {
+    const pauseBtn = page.locator('.hud-pause-btn');
+    await pauseBtn.click();
+    await expect(page.locator('[role="dialog"]')).toBeVisible();
+  });
 
-### Story 7-1: Floor Plane — Ground Surface Beneath Tracks
+  test('fret box is positioned in top-left corner', async ({ page }) => {
+    const fretBox = page.locator('.hud-fret-box');
+    await expect(fretBox).toBeVisible();
+    const box = await fretBox.boundingBox();
+    const shellBox = await page.locator('.game-shell').boundingBox();
+    expect(box.x).toBeCloseTo(shellBox.x, -1);
+    expect(box.y).toBeCloseTo(shellBox.y, -1);
+  });
 
-As a **player**, I want a ground plane visible beneath the track geometry, so the world feels grounded rather than floating in void.
-
-**Acceptance Criteria:**
-
-**Given** the game scene loads
-**When** the initial track geometry is rendered
-**Then** a flat shaded ground plane is visible beneath all track lanes
-**And** the floor extends outward to at least 3× the track span width on each side
-**And** the floor material uses `color-bg-stage` from the Night City palette
-**And** the floor scrolls with the track (Z-texture animation consistent with cart speed)
-**And** the floor plane renders at a Z position below the lowest track surface
-**And** no floor geometry protrudes above the track surface at any camera angle
-
-### Story 7-2: Procedural Building Generation — Main Track Skyline
-
-As a **player**, I want procedurally generated buildings of varied heights flanking both sides of the main track, so the environment feels like a city and Z-movement reads convincingly.
-
-**Acceptance Criteria:**
-
-**Given** the game scene loads
-**When** the main track geometry is rendered
-**Then** procedurally generated box buildings appear on both sides of the track
-**And** buildings are positioned at least 3 track-widths from the outermost track lane
-**And** buildings vary in height (randomized within configurable min/max range)
-**And** buildings use flat-shaded low-poly materials in the Night City palette (dark silhouettes with occasional lit-window accent)
-**And** there is a clear gap in the building row where variant track geometry peels off (side-street gap)
-**And** buildings scroll in Z with the world (they are part of the moving environment)
-**And** buildings are generated in a pool and recycled (popped behind camera, re-randomized at horizon) to avoid unbounded memory growth
-**And** the building density does not impact 60fps rendering (batch geometry or instancing where beneficial)
-
-### Story 7-3: Lamppost Geometry & Point Lighting
-
-As a **player**, I want lampposts in front of the buildings emitting warm `color-accent` light, so the Night City atmosphere is reinforced and the scene has a grounded lighting source.
-
-**Acceptance Criteria:**
-
-**Given** the game scene loads
-**When** buildings are rendered on both sides of the track
-**Then** lamppost geometry is placed along the street edge (between track edge and building line)
-**And** each lamppost emits a warm `#FFB800` (`color-accent`) point or spot light
-**And** lampposts are spaced at regular intervals matching building density
-**And** lamppost light reaches the track surface (visible glow or illumination on ground plane)
-**And** lampposts scroll with the building environment (part of the same pool/recycle loop)
-**And** the light count is limited or baked (point lights per lamppost would exceed typical WebGL budgets — use spot lights with distance cutoff, or emissive geometry with a glow quad)
-
-### Story 7-4: Procedural Buildings — Variant Geometry
-
-As a **player**, I want buildings alongside the variant track sections (both sides of diagonals and the outside of straight sections), so the environment remains consistent during variant transitions.
-
-**Acceptance Criteria:**
-
-**Given** a variant is proposed
-**When** the variant track geometry appears (diagonals + variant straight section)
-**Then** procedural buildings flank both sides of the diagonal track sections
-**And** buildings flank the outside edge of the variant straight section
-**And** building density and height variance match the main track aesthetic
-**And** variant-section buildings scroll in Z with same speed as the variant track
-**And** buildings recycle into the pool when they pass behind the camera
-**And** no building geometry intersects with cart collision zones or track safe zones
-
-### Story 7-5: Vertex Shader — Curved World Surface
-
-As a **player**, I want the world surface (floor + track area) to appear slightly curved, like running on a cylindrical planet surface, adding PS1-era visual authenticity.
-
-**Acceptance Criteria:**
-
-**Given** the game scene renders
-**When** the ground plane and track geometry are drawn
-**Then** a custom vertex shader applies a cylindrical bend to the world geometry (floor, track surface, building bases)
-**And** the bend is subtle — curvature radius configurable, default such that the horizon appears ~5-10° below a flat plane within visible draw distance
-**And** building geometry above ground level remains upright (only base positions follow the curve; vertical extrusion stays perpendicular to the curve tangent)
-**And** horizon fog or background ring geometry is rendered at the lowered horizon line produced by the curve
-**And** horizon fog uses `color-bg-void` (#0D0D1A) fading to transparent toward the camera — within Night City palette, no external color
-**And** the shader does not reduce frame rate below 60fps (benchmarked with 200+ building instances)
-**And** the shader gracefully handles the scrolling/recycling of geometry (vertex positions update correctly as objects move in Z)
-**And** the curved world effect is toggleable via a constant in `tokens.js` (for debugging/comparison)
+  test('HUD is hidden during game-over overlay', async ({ page }) => {
+    // Trigger game over by colliding (via test hook or timeout)
+    // This is a structural assertion — actual collision trigger varies
+    await page.waitForSelector('[role="dialog"]', { timeout: 60000 });
+    const hud = page.locator('.hud-shell');
+    await expect(hud).not.toBeVisible();
+  });
+});
+```
 
 ---
 
-## Epic 7 Requirements Coverage Map
+### Story 8-1: Score Display — Top-Right Corner Overlay
 
-| Requirement | Story | Coverage |
-|---|---|---|
-| FR-VP-000: Existing geometry (tracks, carts, safe zones) uses Night City palette tokens | 7-0 | Token conformance, neon border safe zones |
-| FR-VP-001: Floor plane rendered beneath tracks | 7-1 | Ground surface with scrolling texture |
-| FR-VP-002: Procedural buildings flanking main tracks at 3-track distance | 7-2 | Skyline generation, pool recycling, variant gap |
-| FR-VP-003: Lampposts with `color-accent` lighting | 7-3 | Point/spot lights, pool recycling, light budget |
-| FR-VP-004: Buildings on variant geometry (diagonals + straight) | 7-4 | Variant building placement, density match |
-| FR-VP-005: Vertex shader curved world surface | 7-5 | Cylindrical bend, performance benchmark, toggle |
-| NFR-001 (60 FPS) | 7-2, 7-3, 7-4, 7-5 | Instancing, light budget, shader benchmark |
-| NFR-002 (Memory < 500MB) | 7-2, 7-3, 7-4 | Pool recycling, no unbounded growth |
+As a **player**, I want my current score visible in the top-right corner during gameplay, so I can track my progress at a peripheral glance without taking my hands off the instrument.
+
+**Acceptance Criteria:**
+
+**Given** the game scene is loaded and the HUD container exists
+**When** a game session starts and `runtime.score > 0`
+**Then** the score display renders in the top-right corner of `.game-shell` (positioned by `HudShell` at `top: 1rem; right: 1rem`)
+**And** the score text uses the vendored monospace font at a size readable at peripheral glance (min 1.2rem)
+**And** the score text colour is `var(--color-text-primary)`
+**And** the score element has no background — canvas visible behind it
+**And** the score element has `aria-live="polite"` for screen reader announcements
+
+**Given** `runtime.score` increments during gameplay
+**When** the score value changes
+**Then** the displayed number updates immediately (same frame as score write)
+**And** a brief `color-accent` (#FFB800) text colour pulse occurs for ~150ms
+**And** for `prefers-reduced-motion: reduce`, the pulse is replaced by a static colour change to `color-accent` with no animation duration
+
+**Given** a game-over or pause state
+**When** the HUD becomes hidden (per HudShell phase management)
+**Then** the score display is hidden
+
+**Given** a session restart (same settings)
+**When** the score resets to 0
+**Then** the score display immediately shows 0
+
+**Implementation Notes:**
+- New file: `static/game/ui/ScoreDisplay.js` — class wrapping a `<span>` or `<div>`, subscribes to score changes
+- Score value read from `GameState.runtime.score` — updated by CartSystem (per ownership table)
+- Increment flash: a CSS class `.score-increment` toggled on for 150ms then removed; `@media (prefers-reduced-motion: reduce)` block overrides with a non-animated style
+- The display integer's content is set via `textContent` (no string concatenation per frame)
+- The score display can be extended to show more digits as score increases; this story only requires that it displays the current score accurately.
+
+**Out of scope:** Score context line (personal best / delta — Epic 4-3 game-over overlay).
+
+---
+
+### Story 8-2: Pause Button — Bottom-Right Persistent Trigger
+
+As a **player**, I want a pause button always visible in the bottom-right corner during gameplay, so I can pause the game with one click without searching for a keyboard shortcut.
+
+**Acceptance Criteria:**
+
+**Given** the game scene is loaded and the HUD container exists
+**When** gameplay is active (`GameState.runtime.phase === PHASES.PLAYING`)
+**Then** a pause button is rendered in the bottom-right corner of `.game-shell` (positioned by `HudShell` at `bottom: 1rem; right: 1rem`)
+**And** the button is a native `<button>` element with `aria-label="Pause game"`
+**And** the button has `pointer-events: auto` (overriding the HUD container's `pointer-events: none`)
+**And** the button meets minimum 44×44px touch target size
+**And** the button uses the `color-accent` icon (pause symbol: two vertical bars) on a `color-bg-stage` background, with `color-edge` border — consistent with Night City palette
+**And** the pause icon is rendered as a pure CSS element or inline SVG (no image file dependency)
+
+**Given** the player clicks the pause button
+**When** the click event fires
+**Then** `GameState.runtime.phase` transitions to `PHASES.PAUSED` (via GameLoop's established pause mechanism)
+**And** the pause overlay (Epic 4-2) appears
+**And** the pause button remains visible behind the overlay (HudShell is visible during PAUSED per 8-0)
+
+**Given** the player resumes from the pause overlay
+**When** `GameState.runtime.phase` transitions to `PHASES.PLAYING`
+**Then** the pause button is again interactive and visible in the HUD
+
+**Given** the game is in `PHASES.GAME_OVER`
+**When** the HUD is hidden
+**Then** the pause button is hidden
+
+**Given** the session is in `PHASES.IDLE`
+**When** no game session is active
+**Then** the pause button is not rendered or is hidden
+
+**Implementation Notes:**
+- New file: `static/game/ui/PauseButton.js` — class wrapping a `<button>`, registers click handler that calls `GameLoop.pause()`
+- Pause icon: CSS-only using `::before` / `::after` pseudo-elements rendering two vertical bars, or a minimal inline SVG (~24×24 viewBox)
+- `registerChild('pause', button)` called on the HudShell instance
+- The pause function called on click is the same as the established keyboard Escape handler from Epic 4-4 (no separate pause logic)
+
+---
+
+### Story 8-3: Fret Box — Top-Left Finger Pattern Diagram
+
+As a **player**, I want a visual fret-box diagram in the top-left corner showing the current scale's string/fret pattern, so I can see where my fingers should be on the neck without looking away from the game.
+
+**Acceptance Criteria:**
+
+**Given** the game scene is loaded and the HUD container exists
+**When** a game session starts with a valid scale, root, and instrument
+**Then** a fret-box diagram is rendered in the top-left corner of `.game-shell` (positioned by `HudShell` at `top: 1rem; left: 1rem`)
+**And** the diagram sits on a **solid dark panel** with background `rgba(12, 12, 18, 0.85)` and a PS1-era restrained border (2px dark stroke + inner lighter highlight line, like a memory card screen border)
+**And** the diagram shows:
+  - **Strings run horizontally** (rows). **Bottom row = lowest-pitch string** (Red, `color-string-1`). **Top row = highest-pitch string**. This orientation is locked — not configurable.
+  - **Row index formula:** `row = stringCount - 1 - note.string` — string 0 (lowest pitch) maps to the bottom row
+  - **Frets run vertically** (columns), divided by vertical fret-bar lines
+  - **Fret number labels** at the top of each fret column in `color-text-primary`
+  - **Note boxes:** For each note, a coloured rectangular box fills the cell at its string×fret intersection:
+    - Box border: 2-3px at full string colour, full opacity
+    - Box fill: string colour at 70-80% opacity with a brightness boost (CSS `filter: brightness(1.2)`)
+    - The border carries colour identity; the fill carries occupancy
+  - **Root note emphasis:** Brighter fill (opacity 0.85, `filter: brightness(1.3)`) with a small accent-yellow dot (#FFB800, ~6px) centred inside the cell — not a double-border ring
+  - **Empty cells:** Transparent — no border, no fill. Grid lines visible as separators
+**And** the diagram is sized as a 6-string × 4-fret grid at ~168×144px maximum, using `grid-template-columns: repeat(N_frets, 1fr)` and `grid-template-rows: repeat(N_strings, 1fr)`
+
+**Given** the session's fret span is determined
+**When** the fret-box is initialised
+**Then** it displays only the frets within the active fret span (min fret to max fret across all notes)
+**And** the fret range starts from `Math.max(0, minFret - 1)` to provide at least one column of positional context
+**And** if all notes share a single fret, a minimum of 4 columns is displayed centred on that fret
+**And** fret 0 (open strings) is never shown — only fretted positions
+**And** if the notes array is empty, a placeholder is rendered ("no session" text or empty grid) with no errors
+
+**Given** the fetch of `/game/session-config` fails
+**When** no notes data is available
+**Then** the fret-box shows a placeholder state (empty grid or "no data" text) without crashing
+
+**Given** a variant transition occurs (Epic 6)
+**When** the scale root changes after a variant accept
+**Then** the fret-box diagram updates to show the new finger pattern for the new root note within the new fret span (handled by Story 8-4)
+
+**Given** the HUD is hidden during game-over or idle
+**When** HUD visibility changes
+**Then** the fret-box follows HudShell visibility
+
+**Implementation Notes:**
+- New file: `static/game/ui/FretBox.js` — class that renders the diagram as an HTML CSS Grid
+- **Public API:** `fretBox.render({notes, scale_id, root_midi, instrument_id})` — single method taking the full session-config response shape. Constructor takes only the mount container element.
+- **Data contract:** The payload is identical to the `/game/session-config` response and the `/variant/promote` response. Fret box is a pure renderer — no separate model.
+- Grid layout: rows = `instrument.stringCount`, columns = fret span width. Use `grid-template-columns: repeat(N, 1fr)` and `grid-template-rows: repeat(N, 1fr)`
+- Row inversion: `row = stringCount - 1 - note.string` (index 0 = lowest pitch = bottom row)
+- String colours: `var(--color-string-N)` where N = string index + 1. Slice STRING_COLORS to instrument stringCount.
+- Cell for a note: wrapper approach — outer div with `border: 2px solid var(--color-string-N)`, inner div with `background: var(--color-string-N); opacity: 0.75; filter: brightness(1.2)` so border stays full opacity
+- Root note cell: additional CSS class `.fret-cell-root` with opacity 0.85, brightness 1.3, and a `::after` pseudo-element rendering a ~6px `color-accent` dot (border-radius: 50%) centred in the cell
+- Empty cells: no border, no background
+- Fret numbers: `<span>` elements above the grid, one per column, centred, in `color-text-primary`
+- Fret range: `Math.max(0, Math.min(...notes.map(n => n.fret)) - 1)` to `Math.max(...notes.map(n => n.fret))`. Minimum 4 columns. Guard: early return on `notes.length === 0`
+- Panel background: `background: rgba(12, 12, 18, 0.85); border: 2px solid #0a0a10; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08)` for the PS1-era panel look
+- **Scale name label:** The container also shows the scale name and root note (e.g., "A Minor Pentatonic") as a `<span>` above or beside the grid in `color-text-primary` — only if the detail toggle (Story 8-5) is set to "Full"
+- **Unit test coverage:**
+  - Empty notes → placeholder, no errors
+  - Single note → 1 cell filled, correct position
+  - Root note → `.fret-cell-root` class present, yellow dot rendered
+  - String inversion → low E at bottom row, high E at top row (4 and 6 string variants)
+  - Fret range → columns match min-max with padding
+  - `render()` → DOM rebuild, no stale nodes
+  - Panel background → computed style matches `rgba(12, 12, 18, 0.85)`
+  - Empty notes session → errors handled gracefully, no crash
+
+---
+
+### Story 8-4: HUD Update on Variant Transition
+
+As a **player**, I want the fret-box diagram (and score display) to update correctly when a variant transition completes, so the HUD reflects the new scale root without manual intervention or visual glitch.
+
+**Acceptance Criteria:**
+
+**Given** a variant transition is in progress (Epic 6 state machine: `accepted → riding → breather → promoting → active`)
+**When** the variant accept-gate fires (Epic 6-1, `accepted` state entered)
+**Then** the fret-box container begins a CSS opacity fade-out (200ms, `transition: opacity 200ms ease-in-out`)
+**And** once opacity reaches 0, the fret box remains hidden during the `riding`, `breather`, and `promoting` states
+
+**Given** the variant is accepted and the breather phase is active
+**When** the `/variant/promote` response arrives with the new session data
+**Then** `fretBox.render()` is called with the payload `{notes, scale_id, root_midi, instrument_id}` from the promote response
+**And** the DOM is rebuilt with the new finger pattern while the fret box is still hidden (opacity 0)
+**And** no visual flicker or partial render occurs during the rebuild
+
+**Given** the promote is confirmed and `PHASES.ACTIVE` is entered (Epic 6 state machine)
+**When** new-scale waves begin spawning
+**Then** the fret-box container begins a CSS opacity fade-in (200ms, `transition: opacity 200ms ease-in-out`) to full opacity
+**And** the total visual transition from accept to arrival is ~400ms (200ms fade-out + 200ms fade-in), with a clean hidden-window for rebuild
+
+**Given** a variant is proposed but ignored
+**When** the variant window expires and the variant track peels away
+**Then** the fret-box diagram remains unchanged (still showing the original scale pattern)
+**And** the score display is unaffected
+**And** no fade-out/in animation plays
+
+**Given** a variant is accepted
+**When** the score data is unaffected by the transition
+**Then** the score display continues to show the accumulated score (score is not reset on variant accept)
+**And** the score display does not participate in the fret-box fade-out/in animation
+
+**Implementation Notes:**
+- `fretBox.render(payload)` called from `main.js` with the same data shape as `/game/session-config` and `/variant/promote` responses: `{notes, scale_id, root_midi, instrument_id}`
+- The promote response carries the new session data inline — no re-fetch of `/game/session-config` needed
+- Fade animation: CSS `transition: opacity 200ms ease-in-out` on the fret-box container element. Triggered by adding/removing a `.fretbox-hidden` class that sets `opacity: 0`
+- Rebuild window: between promote response received and `PHASES.ACTIVE` entered. The breather phase provides ~3s of safe rebuild time — DOM rebuild of ~24 cells is sub-millisecond
+- `ScoreDisplay` is unaffected — reads `GameState.runtime.score` continuously and does not reset on variant
+- This story depends on Epic 6 being complete (variant transition state machine and promote endpoint)
+- Extends `FretBox.js` — no new files
+
+---
+
+### Story 8-6: HUD Detail Toggle — Basic / Full Mode
+
+As a **player**, I want to choose between a basic and full HUD detail level, so learners get note names and scale labels while skilled players see a clean minimal pattern reference.
+
+**Acceptance Criteria:**
+
+**Given** the game is paused (pause overlay visible, Epic 4-2)
+**When** the pause overlay is rendered
+**Then** a "HUD Detail" toggle control is present on the pause overlay with two options: "Basic" and "Full"
+**And** the toggle is rendered as a toggle group (consistent with the Setup screen's toggle group pattern — `role="radiogroup"`, arrow-key navigable)
+**And** the current selection reflects the stored preference
+
+**Given** the HUD detail is set to "Full"
+**When** a game session is active
+**Then** the fret-box panel displays the scale name and root note label (e.g., "A Minor Pentatonic — Root A") above the grid in `color-text-primary`
+**And** the fret-box fret numbers are at full contrast (`color-text-primary`)
+**And** a thin string-colour strip is visible along the left edge of the fret box, one per row, mapping string colour ↔ row
+
+**Given** the HUD detail is set to "Basic"
+**When** a game session is active
+**Then** the scale name and root note label are hidden (only the grid and fret numbers visible)
+**And** fret numbers are rendered at reduced contrast (`color-text-disabled`)
+**And** the thin string-colour strip along the left edge is hidden
+**And** the fret-box remains at the same size and position — only content density changes
+
+**Given** the HUD detail preference is changed
+**When** the player toggles between Basic and Full in the pause menu
+**Then** the preference is persisted to `localStorage` under key `subway-scaler-hud-detail`
+**And** on the next session start, the persisted preference is applied
+
+**Given** no preference has been stored
+**When** a new session starts
+**Then** the HUD detail defaults to "Full" (learner-friendly default)
+
+**Implementation Notes:**
+- Persistence key: `subway-scaler-hud-detail` — separate from session settings to allow independent toggling
+- Default: `"full"` — learners benefit from labels, skilled players can opt down
+- The toggle is rendered inside the pause overlay HTML (modify Epic 4-2's overlay component)
+- FretBox.js reads the preference via `localStorage.getItem('subway-scaler-hud-detail')` on `render()` calls
+- CSS class toggle on the fret-box container: `.hud-detail-basic` / `.hud-detail-full` — styles controlled via CSS
+- Telemetry (future): log each toggle event + session count in each mode to validate John's "70% retention" test
+
+---
+
+### Story 8-6: Accessibility Audit — HUD Focus, ARIA & Reduced Motion
+
+As a **developer**, I want the HUD overlay audited for accessibility compliance (WCAG 2.1 AA), so the pause button is keyboard-reachable, screen readers can announce score changes, and motion-sensitive users see safe alternatives.
+
+**Acceptance Criteria:**
+
+**Given** the HUD is visible during gameplay
+**When** a keyboard user presses Tab repeatedly
+**Then** the pause button receives keyboard focus after the expected number of Tab presses (Tab order: setup screen → canvas (no focus) → pause button → browser chrome)
+**And** the pause button has visible focus ring in `color-accent` on `:focus-visible`
+**And** pressing Enter or Space on the focused pause button triggers pause
+
+**Given** the score display is present
+**When** the score value changes
+**Then** `aria-live="polite"` region announces the new score value
+
+**Given** the fret box is rendered
+**When** inspected by an accessibility tool
+**Then** the fret-box container has `role="img"` with `aria-label` describing the scale and root (e.g., "Finger pattern for C Major, root fret 5")
+
+**Given** the system has `prefers-reduced-motion: reduce` set
+**When** the score increments
+**Then** the increment flash is a static colour change (no animation duration), implemented as a `@media (prefers-reduced-motion: reduce)` override in CSS
+
+**Given** the pause button is the only interactive HUD element
+**When** a keyboard-only user navigates the plugin
+**Then** no other HUD element (score, fret box) is reachable by Tab — only the pause button
+
+**Given** axe DevTools or Lighthouse accessibility audit
+**When** run on the HUD elements during gameplay
+**Then** no critical or serious violations are reported for `.hud-shell`, `.hud-score`, `.hud-pause-btn`, or `.hud-fret-box`
+
+**Implementation Notes:**
+- Focus management: `tabindex` management in HudShell — only pause button gets `tabindex="0"`, other children get `tabindex="-1"`
+- Score `aria-live`: set on the score element in HTML markup, not injected by JS
+- Fret-box `role="img"` + `aria-label`: set in `FretBox.js` constructor/update
+- Reduced-motion override: single `@media` block in `hud.css` (same pattern as `overlays.css`)
+- Test: extend the tone test from Story 0-3 baseline to include HUD-specific ARIA and keyboard checks

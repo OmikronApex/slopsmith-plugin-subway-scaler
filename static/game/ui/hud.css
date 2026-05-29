@@ -1,0 +1,223 @@
+/* ===== HUD SHELL (8-0) ===== */
+.subway-scaler .hud-shell {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 100;
+  background: none;
+}
+
+/* ===== SCORE DISPLAY (8-1) ===== */
+.subway-scaler .hud-score {
+  top: 1rem;
+  right: 1rem;
+  font-family: 'Space Mono', monospace;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--color-text-primary, #E8E8F0);
+  background: none;
+  user-select: none;
+  line-height: 1;
+  min-width: 1.5ch;
+  text-align: right;
+}
+
+.subway-scaler .hud-score.score-increment {
+  color: var(--color-accent, #FFB800);
+  transition: color 150ms ease-out;
+}
+
+/* ===== PAUSE BUTTON (8-2) ===== */
+.subway-scaler .hud-pause-btn {
+  bottom: 1rem;
+  right: 1rem;
+  width: 44px;
+  height: 44px;
+  border-radius: 4px;
+  background: var(--color-bg-stage, #1A1A2E);
+  border: 1px solid var(--color-edge, #08080F);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.subway-scaler .hud-pause-btn:hover {
+  opacity: 0.85;
+}
+
+.subway-scaler .hud-pause-btn:focus-visible {
+  outline: 2px solid var(--color-accent, #FFB800);
+  outline-offset: 2px;
+}
+
+/* ===== FRET BOX PANEL (8-3) ===== */
+.subway-scaler .hud-fret-box {
+  top: 1rem;
+  left: 1rem;
+  /* Explicit width is required so the inner CSS grid can resolve 1fr columns.
+     An absolutely-positioned element with no width shrinks to content, which
+     collapses 1fr to zero and makes all note cells vertical. */
+  width: 240px;
+  background: rgba(12, 12, 18, 0.85);
+  border: 2px solid #0a0a10;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  padding: 8px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  user-select: none;
+  box-sizing: border-box;
+}
+
+.subway-scaler .fret-scale-label {
+  font-family: 'Space Mono', monospace;
+  font-size: 0.75rem;
+  color: var(--color-text-primary, #E8E8F0);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+}
+
+/* Fret number row — CSS grid, column template set inline to match main grid */
+.subway-scaler .fret-numbers-row {
+  display: grid;
+  column-gap: 4px;
+}
+
+.subway-scaler .fret-number {
+  font-family: 'Space Mono', monospace;
+  font-size: 0.65rem;
+  color: var(--color-text-primary, #E8E8F0);
+  text-align: center;
+  line-height: 1;
+}
+
+/* Wrapper that stacks strings layer behind the note grid */
+.subway-scaler .fret-diagram {
+  position: relative;
+}
+
+/* String lines — absolutely positioned behind the grid, one row per string.
+   grid-auto-rows and row-gap set inline to match .fret-grid geometry exactly.
+   Transparent grid cells let the lines show through; note fills cover them. */
+.subway-scaler .fret-strings-layer {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  /* grid-auto-rows: 16px set inline to match fret-grid */
+  row-gap: 4px;
+  pointer-events: none;
+  z-index: 0;
+  align-items: center;
+}
+
+/* Each string is a 1.5 px horizontal bar centred in its row */
+.subway-scaler .fret-string-line {
+  height: 1.5px;
+  opacity: 0.3;
+}
+
+/* Fret wires overlay — positioned above the grid so wires appear at every
+   column gap regardless of cell contents. Left positions are set inline by JS. */
+.subway-scaler .fret-wires-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.subway-scaler .fret-wire {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1.5px;
+  margin-left: -0.75px;
+  background: rgba(85, 85, 112, 0.85);
+}
+
+/* Fret grid sits above the strings layer */
+.subway-scaler .fret-grid {
+  display: grid;
+  /* grid-template-columns set inline: repeat(N, 1fr) */
+  grid-auto-rows: 16px;
+  column-gap: 4px;
+  row-gap: 4px;
+  position: relative;
+  z-index: 1;
+}
+
+/* Empty fret cell — transparent so string layer shows through */
+.subway-scaler .fret-cell {
+  /* no background: strings visible behind */
+}
+
+/* Note cell — wider margin so the box is clearly narrower than the fret column.
+   box-sizing keeps the border inside, not expanding the cell beyond its track. */
+.subway-scaler .fret-cell-note {
+  margin: 0 5px;
+  border: 2px solid;
+  position: relative;
+  box-sizing: border-box;
+  border-radius: 2px;
+}
+
+.subway-scaler .fret-cell-note-fill {
+  position: absolute;
+  inset: 0;
+}
+
+/* Placeholder when no session data */
+.subway-scaler .fret-placeholder {
+  font-family: 'Space Mono', monospace;
+  font-size: 0.8rem;
+  color: var(--color-text-disabled, #555570);
+  text-align: center;
+  padding: 6px 0;
+}
+
+/* ===== FRET BOX FADE ANIMATION (8-4) ===== */
+.subway-scaler .fretbox-visible {
+  opacity: 1;
+  transition: opacity 200ms ease-in-out;
+}
+
+.subway-scaler .fretbox-hidden {
+  opacity: 0;
+  transition: opacity 200ms ease-in-out;
+  pointer-events: none;
+}
+
+/* ===== DETAIL MODE OVERRIDES (8-5) ===== */
+.subway-scaler .hud-fret-box.fret-detail-full .fret-scale-label {
+  display: block;
+}
+
+.subway-scaler .hud-fret-box.fret-detail-basic .fret-scale-label {
+  display: none;
+}
+
+.subway-scaler .hud-fret-box.fret-detail-full .fret-number {
+  color: var(--color-text-primary, #E8E8F0);
+}
+
+.subway-scaler .hud-fret-box.fret-detail-basic .fret-number {
+  color: var(--color-text-disabled, #555570);
+}
+
+
+/* ===== REDUCED MOTION (8-6) ===== */
+@media (prefers-reduced-motion: reduce) {
+  .subway-scaler .hud-score.score-increment {
+    color: var(--color-accent, #FFB800);
+    transition: none;
+  }
+
+  .subway-scaler .fretbox-visible,
+  .subway-scaler .fretbox-hidden {
+    transition: none;
+  }
+}

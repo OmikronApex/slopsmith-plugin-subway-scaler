@@ -11,24 +11,14 @@
       "intervals": [0, 2, 3, 5, 7, 8, 10, 12]
     },
     {
-      "id": "ionian",
-      "name": "Ionian",
-      "intervals": [0, 2, 4, 5, 7, 9, 11, 12]
-    },
-    {
-      "id": "aeolian",
-      "name": "Aeolian",
-      "intervals": [0, 2, 3, 5, 7, 8, 10, 12]
+      "id": "major-pentatonic",
+      "name": "Major Pentatonic",
+      "intervals": [0, 2, 4, 7, 9, 12]
     },
     {
       "id": "minor-pentatonic",
       "name": "Minor Pentatonic",
       "intervals": [0, 3, 5, 7, 10, 12]
-    },
-    {
-      "id": "major-pentatonic",
-      "name": "Major Pentatonic",
-      "intervals": [0, 2, 4, 7, 9, 12]
     },
     {
       "id": "blues",
@@ -71,14 +61,9 @@
       "intervals": [0, 2, 3, 5, 7, 9, 11, 12]
     },
     {
-      "id": "chromatic",
-      "name": "Chromatic",
-      "intervals": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
-    },
-    {
-      "id": "whole-tone",
-      "name": "Whole Tone",
-      "intervals": [0, 2, 4, 6, 8, 10, 12]
+      "id": "hirajoshi",
+      "name": "Hirajoshi",
+      "intervals": [0, 2, 3, 7, 8, 12]
     }
   ]
 }

@@ -709,7 +709,7 @@ export function createScene(canvas) {
   // there's no screen-aligned X parallax at lane edges. Manually billboarded in
   // render() to always face the camera.
   const characterGeometry = new THREE.PlaneGeometry(1, 1);
-  // Shift geometry origin to bottom edge so position.y = 0 places feet on track surface.
+  // Shift geometry origin to bottom edge so that position.y drives foot height.
   characterGeometry.translate(0, 0.5, 0);
   const character = new THREE.Mesh(characterGeometry, new THREE.MeshBasicMaterial({
     map: null,
@@ -721,9 +721,12 @@ export function createScene(canvas) {
   character.renderOrder = 999; // draw after all safe-zone planes (default renderOrder=0)
   // 4× larger than original capsule proxy (0.7 → 2.8) for readable pixel art at gameplay scale.
   character.scale.set(2.8, 2.8, 1);
-  // Position so feet (bottom of plane) rest at y=0 on the track surface.
-  // Plane is 2.8 tall → half-height 1.4, shifted up 0.5 → origin at bottom.
-  character.position.set(0, 0, FRONT_Z + 0.1);
+  // The sprite sheet (Character_running_north.gif, 124×124) has 31 px of transparent
+  // padding below the feet. At scale 2.8, those pixels occupy 31/124 × 2.8 ≈ 0.70
+  // world units. Without correction the character floats 0.70 units above the track.
+  // Offsetting position.y by -0.70 brings the visual feet to y = 0 (track surface).
+  const CHAR_FOOT_Y = -0.70;
+  character.position.set(0, CHAR_FOOT_Y, FRONT_Z + 0.1);
   scene.add(character);
 
   let _charLastFrameIdx = -1;
@@ -894,7 +897,7 @@ export function createScene(canvas) {
     // Dispose character sprite texture to prevent GPU memory accumulation on replay (story 7-6).
     if (character.material.map) { character.material.map.dispose(); character.material.map = null; }
     _charLastFrameIdx = -1;
-    character.position.set(laneX(0, numLanes), 0, FRONT_Z + 0.1);
+    character.position.set(laneX(0, numLanes), CHAR_FOOT_Y, FRONT_Z + 0.1);
     character.rotation.set(0, 0, 0);
     targetCameraX = 0;
     currentCameraX = 0;
