@@ -49,8 +49,7 @@ test('score increments when A4 WAV is injected and game starts with A major', as
     // Navigate via hub
     await page.goto('http://localhost:8000');
     await page.waitForLoadState('networkidle');
-    await page.getByRole('button', { name: 'Plugins' }).click();
-    await page.getByText('Minigames', { exact: true }).first().click();
+    await page.getByRole('link', { name: 'Minigames' }).click();
     await page.locator('[aria-label="Subway Scaler"]').waitFor({ timeout: 10000 });
     await page.locator('[aria-label="Subway Scaler"]').click();
     await page.locator('#mg-picker-start').waitFor({ timeout: 5000 });

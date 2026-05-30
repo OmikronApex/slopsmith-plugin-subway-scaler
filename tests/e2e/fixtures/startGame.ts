@@ -7,8 +7,7 @@ import { type Page } from '@playwright/test';
 export async function navigateToHub(page: Page): Promise<void> {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
-  await page.getByRole('button', { name: 'Plugins' }).click();
-  await page.getByText('Minigames', { exact: true }).first().click();
+  await page.getByRole('link', { name: 'Minigames' }).click();
   // Wait for the hub tile grid to populate
   await page.locator('[aria-label="Subway Scaler"]').waitFor({ timeout: 10000 });
 }

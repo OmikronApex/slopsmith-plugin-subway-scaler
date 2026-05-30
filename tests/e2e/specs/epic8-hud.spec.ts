@@ -9,7 +9,7 @@
 import { test, expect } from '../fixtures/gameFixture';
 import { startGame } from '../fixtures/startGame';
 
-const ROOT = '#subway-scaler-root';
+const ROOT = '#mg-stage-body';
 
 test.skip(({ browserName }) => browserName !== 'chromium',
   'mic mock requires Chromium fake device flag');
@@ -186,8 +186,8 @@ test.describe('Epic 8-6: HUD accessibility', () => {
   test('only pause button is keyboard-focusable in HUD (Tab order)', async ({ gamePage }) => {
     await startGame(gamePage);
 
-    // score and fret box should have tabindex="-1"
-    const scoreTabindex = await gamePage.locator(`${ROOT} .hud-score`).getAttribute('tabindex');
+    // score wrapper and fret box should have tabindex="-1" (HudShell sets it on the registered element)
+    const scoreTabindex = await gamePage.locator(`${ROOT} .hud-score-wrapper`).getAttribute('tabindex');
     const fretboxTabindex = await gamePage.locator(`${ROOT} .hud-fret-box`).getAttribute('tabindex');
     expect(scoreTabindex).toBe('-1');
     expect(fretboxTabindex).toBe('-1');

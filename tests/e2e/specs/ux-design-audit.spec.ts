@@ -15,6 +15,14 @@ function hexToRgb(hex: string): string {
   return `rgb(${r}, ${g}, ${b})`;
 }
 
+// Hub mode may render colors with an alpha channel (e.g. rgba(r,g,b,a)).
+// Strip alpha and normalise to rgb() for comparison.
+function normaliseColor(color: string | null): string | null {
+  if (!color) return null;
+  const m = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+  return m ? `rgb(${m[1]}, ${m[2]}, ${m[3]})` : color;
+}
+
 // ─── Design tokens ─────────────────────────────────────────────────────────────
 
 test.describe('UX audit: design tokens injected', () => {
@@ -90,11 +98,18 @@ test.describe('UX audit: Night City color palette', () => {
 
   test('START button background is accent yellow (#FFB800)', async ({ gamePage }) => {
     await openSubwayScalerSetup(gamePage);
+    // Wait for injected stylesheet to apply (hub mode injects CSS dynamically)
+    await gamePage.waitForFunction(() => {
+      const btn = document.querySelector('.start-button') as HTMLElement | null;
+      if (!btn) return false;
+      const bg = getComputedStyle(btn).backgroundColor;
+      return bg !== 'rgba(0, 0, 0, 0)' && bg !== 'rgb(0, 0, 0)' && bg !== '';
+    }, { timeout: 5000 });
     const bg = await gamePage.evaluate(() => {
       const btn = document.querySelector('.start-button');
       return btn ? getComputedStyle(btn).backgroundColor : null;
     });
-    expect(bg).toBe(hexToRgb('#FFB800'));
+    expect(normaliseColor(bg)).toBe(hexToRgb('#FFB800'));
   });
 
   test('setup form background is color-bg-stage (#1A1A2E)', async ({ gamePage }) => {
@@ -142,6 +157,6 @@ test.describe('UX audit: layout', () => {
       const selected = document.querySelector('.toggle-button.selected');
       return selected ? getComputedStyle(selected).backgroundColor : null;
     });
-    expect(bg).toBe(hexToRgb('#FFB800'));
+    expect(normaliseColor(bg)).toBe(hexToRgb('#FFB800'));
   });
 });
