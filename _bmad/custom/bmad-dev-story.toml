@@ -1,0 +1,14 @@
+# Team overrides for bmad-dev-story workflow.
+# Committed to the repo — applies to every developer on the project.
+
+[workflow]
+
+# After discovering the story key in Step 1, and before marking it in-progress (Step 4),
+# create and switch to a dedicated git branch for the EPIC (not the story).
+# All stories belonging to the same epic commit to the same branch.
+activation_steps_append = [
+  "When you reach Step 4 (mark story in-progress), BEFORE updating sprint-status, create and link a git branch for this story's epic: (1) Extract the epic number from {story_key} (the first number before the first dash). (2) Find the GitHub epic issue number by running: `gh issue list --label epic --search \"Epic {epic_num}:\" --json number --jq \".[0].number\"`. Store this as epic_issue_number. (3) If the branch epic/{epic_num} does not exist yet, create it linked to the GitHub issue: `gh issue develop {epic_issue_number} --name epic/{epic_num} --checkout`. If the branch already exists, simply switch to it: `git checkout epic/{epic_num}`. (4) Confirm the branch is active before proceeding with implementation.",
+]
+
+# After marking the story 'review', commit all changes and open a PR (if not already on the epic branch).
+on_complete = "After the story status is set to 'review', do the following in order: (1) Extract epic number from {story_key} (first number before dash). (2) Verify you are on branch epic/{epic_num} (`git branch` to check). If not, switch to it: `git checkout epic/{epic_num}`. (3) Stage all changed files with `git add` (list specific files from the File List section — do not use git add -A). (4) Commit with message 'Story {story_key}: {story_title}\\n\\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>'. (5) Push to epic branch: `git push -u origin epic/{epic_num}`. (6) If this is the first story on this epic branch, create a pull request: `gh pr create --base main --head epic/{epic_num} --title 'Epic {epic_num}: [Epic Name]' --body 'Implements epic {epic_num} stories.\\n\\nStories: {story_key}\\n\\nSee implementation artifacts for full details.'`. If the PR already exists (multiple stories on same epic), just mention this story in the existing PR description. (7) Report the PR URL to the user."

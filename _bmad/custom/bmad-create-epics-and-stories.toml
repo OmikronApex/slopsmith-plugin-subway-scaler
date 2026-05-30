@@ -1,0 +1,25 @@
+# Team overrides for bmad-create-epics-and-stories workflow.
+# Committed to the repo — applies to every developer on the project.
+
+[workflow]
+
+# After the workflow completes and epics.md is saved, create GitHub issues for any
+# new epics added during this session, with the "epic" label.
+on_complete = """
+After the workflow completes and epics.md has been saved, do the following:
+
+(1) Run `git diff HEAD -- _bmad-output/planning-artifacts/epics.md` to identify new content added in this session.
+
+(2) Scan the diff for new epic section headers — lines starting with `+### Epic N:` or `+## Epic N:` where N is a number. These represent newly created epics.
+
+(3) For each new epic found:
+    a. Extract the epic number N and full title from the section header.
+    b. Extract the epic's one-sentence goal statement (the first non-blank line after the header).
+    c. Create a GitHub issue:
+       `gh issue create --title "Epic N: [Epic Title]" --label "epic" --body "[Epic goal statement]"`
+    d. Report the created issue URL to the user.
+
+(4) If no new epics were added (e.g., only stories or amendments were written), skip issue creation and tell the user no new epic issues were needed.
+
+Do not create duplicate issues — if an issue with that epic title already exists, skip it.
+"""

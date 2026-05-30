@@ -107,6 +107,18 @@ scales.json        Scale definitions (intervals)
 routes.py          Slopsmith plugin entry point
 ```
 
+## Changelog
+
+### v1.0.1
+
+- **Fix:** Pitch detector now correctly detects notes down to B0 (30.87 Hz) — previously the YIN window size was too small to detect any note below ~43 Hz, silently missing the lowest strings on 5-string bass, 7-string and 8-string guitar
+- **Perf:** YIN difference function replaced with FFT-based O(n log n) implementation (hand-rolled Cooley-Tukey); pitch detection stays within the real-time AudioWorklet budget at the larger window size
+- **Fix:** Safe zone neon border reverted to correct geometry; border is now rendered as a scaled outline rather than a separate wider plane
+
+### v1.0.0
+
+Initial release.
+
 ## Known Limitations (v1.0)
 
 - No sound effects

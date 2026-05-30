@@ -1,0 +1,24 @@
+# Team overrides for bmad-code-review workflow.
+# Committed to the repo — applies to every developer on the project.
+
+[workflow]
+
+# After code review completes, if a story is marked 'done' in sprint-status.yaml,
+# close the corresponding GitHub sub-issue.
+on_complete = """
+After the code review workflow completes, do the following:
+
+(1) Check the sprint-status.yaml file for any story entries that were just set to 'done'
+    during this review session. The story key follows the pattern: `{epic_num}-{story_num}-{slug}`.
+
+(2) For each story now marked 'done':
+    a. Extract the story number prefix: e.g., from "12-1-fix-window-size-enable-b0-detection" → "12-1".
+    b. Find the GitHub issue: `gh issue list --label story --search "Story {story_num_prefix}:" --state open --json number,title --jq ".[0].number // empty"`
+    c. If an open issue is found, close it with a completion comment:
+       `gh issue close {issue_number} --comment "Story {story_key} implemented and reviewed. Status: done."`
+    d. Report the closed issue URL to the user.
+
+(3) If no stories were marked 'done' during this session (e.g., story was set to 'review' not 'done'), skip GitHub updates and inform the user.
+
+Note: Only close issues for stories explicitly marked 'done' — not 'review'.
+"""

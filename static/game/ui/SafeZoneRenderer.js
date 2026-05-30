@@ -82,17 +82,17 @@ export class SafeZoneRenderer {
     fill.renderOrder = 0;
     fill.rotation.x = -Math.PI / 2;
 
-    // EdgesGeometry on a slightly wider plane so the neon border overhangs the fill
-    // on both sides, making it visually distinct as a glowing outline.
-    const borderGeo = new THREE.EdgesGeometry(
-      new THREE.PlaneGeometry(1.5, SAFE_ZONE_DEPTH)
-    );
+    // EdgesGeometry on PlaneGeometry = exactly 4 perimeter edges, no internal diagonals.
+    // Scale the border mesh slightly larger than the fill so the neon outline overhangs
+    // visibly on all sides. linewidth > 1 is not supported in WebGL; scale is the
+    // standard Three.js approach for a thicker outline effect.
     const border = new THREE.LineSegments(
-      borderGeo,
+      new THREE.EdgesGeometry(this.geometry),
       applyWorldCurve(new THREE.LineBasicMaterial({ color: borderColor }))
     );
     border.renderOrder = 1;
     border.rotation.x = -Math.PI / 2;
+    border.scale.set(1.18, 1, 1.06);
 
     return { fill, border };
   }

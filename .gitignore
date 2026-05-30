@@ -16,12 +16,16 @@ dist/
 build/
 temp/
 /specs/
-/_bmad/
 /.rtk/
 /node_modules/
 /temp/
-/.claude/
 /.junie/
+# _bmad team infrastructure is committed; exclude personal/runtime files only
+/_bmad/config.user.toml
+/_bmad/tmp_*.json
+# .claude/skills is committed for team workflows; exclude personal/runtime files
+/.claude/settings.local.json
+/.claude/worktrees/
 /.venv/
 tests/e2e/screenshots/
 tests/e2e/results/
