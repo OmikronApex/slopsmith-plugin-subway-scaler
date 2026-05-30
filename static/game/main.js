@@ -133,6 +133,15 @@ export async function bootstrap(root) {
   root.innerHTML = '';
   root.className = 'subway-scaler';
 
+  // Inject plugin stylesheet when running inside SDK hub (screen.html is not loaded there)
+  const STYLES_URL = '/plugins/subway-scaler/static/styles.css';
+  if (!document.querySelector(`link[href="${STYLES_URL}"]`)) {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = STYLES_URL;
+    document.head.appendChild(link);
+  }
+
   // Ensure SdkBridge bridge object exists so onGameOver can be wired late
   window.__slopsmithSdkBridge = window.__slopsmithSdkBridge || {};
 
