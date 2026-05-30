@@ -376,7 +376,6 @@ const scene = createScene(canvas);
 
   async function start() {
     if (run && run.state === 'running') return;
-    feedbackEl.textContent = '';
     // Reset phase machine early so a failure before register/listener setup
     // doesn't leave stale listeners from the previous game (P7).
     resetTransitionPhase();
@@ -1107,6 +1106,8 @@ const scene = createScene(canvas);
   const _BURST_MS = 500;
   const _BURST_INTERVAL_MS = 30;
   if (TEST_MODE) {
+    // capture: true — fires before hub keydown handlers, so stopPropagation in hub UI
+    // cannot prevent Q/W from reaching the game when running inside the minigame hub.
     window.addEventListener('keydown', (ev) => {
       if (ev.repeat) return; // browser auto-repeat triggers the burst already; ignore
       const k = ev.key?.toLowerCase();
@@ -1119,7 +1120,7 @@ const scene = createScene(canvas);
       }
       if (midi == null) return;
       _burstInjectNote(midi);
-    });
+    }, { capture: true });
   }
   function _injectTestNote(midi) {
     const fn = window.__gameState?._test?.playNote;

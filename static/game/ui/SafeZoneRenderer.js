@@ -82,9 +82,13 @@ export class SafeZoneRenderer {
     fill.renderOrder = 0;
     fill.rotation.x = -Math.PI / 2;
 
-    // EdgesGeometry on PlaneGeometry = exactly 4 perimeter edges, no internal diagonals.
+    // EdgesGeometry on a slightly wider plane so the neon border overhangs the fill
+    // on both sides, making it visually distinct as a glowing outline.
+    const borderGeo = new THREE.EdgesGeometry(
+      new THREE.PlaneGeometry(1.5, SAFE_ZONE_DEPTH)
+    );
     const border = new THREE.LineSegments(
-      new THREE.EdgesGeometry(this.geometry),
+      borderGeo,
       applyWorldCurve(new THREE.LineBasicMaterial({ color: borderColor }))
     );
     border.renderOrder = 1;

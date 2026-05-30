@@ -7,43 +7,28 @@ Play correct scale notes to keep your character running and avoid the carts — 
 
 Subway Scaler displays a scrolling 3D track whose lanes map directly to the strings of your instrument. Safe zones appear in sequence, colour-coded by string. Play the matching note in time and your character moves onto that lane; miss and you collide with a cart and the session ends. Speed increases with every correct note.
 
-## Prerequisites
+## Requirements
 
-- Python 3.12+
-- Node.js 18+ (for JS tests and dev tooling)
-- [Docker Desktop](https://docs.docker.com/get-docker/) (for running inside Slopsmith)
+- [Slopsmith](https://github.com/byrongamatos/slopsmith)
+- [Slopsmith Minigames SDK](https://github.com/slopsmith/slopsmith-plugin-minigames) — Subway Scaler is launched from the Minigames Hub and will not run without this plugin installed alongside it
 
 ## Installation
 
-```bash
-pip install -r requirements-dev.txt
-npm install
-```
+### For players
 
-## Running
-
-### With Slopsmith (recommended)
-
-The plugin runs as part of a live Slopsmith container with hot-reload.
-
-> **Note:** Slopsmith does not yet publish a Docker Hub image. The command below builds it from source (~5 minutes, one-time). Pin to a specific commit SHA for stability — replace `main` with `477d22068cbc81fa5bf7485b04e24d60bdb5d735` (latest verified) or any later SHA from the [slopsmith repo](https://github.com/byrongamatos/slopsmith).
+Place both plugins in your Slopsmith plugins folder — either by unpacking release archives or by cloning the repositories directly:
 
 ```bash
-# 1. Build the Slopsmith image (one-time, ~5 minutes)
-docker buildx build https://github.com/byrongamatos/slopsmith.git#477d22068cbc81fa5bf7485b04e24d60bdb5d735 -t slopsmith-dev
+# Option A — release archives
+# Download the latest releases of both plugins and unpack them into your Slopsmith plugins folder.
 
-# 2. Start the container
-npm run dev
-
-# 3. Open http://localhost:8000 and navigate to Subway Scaler
-
-# 4. Stop the container
-npm run dev:down
+# Option B — git clone
+cd /path/to/slopsmith/plugins
+git clone https://github.com/slopsmith/slopsmith-plugin-minigames minigames
+git clone https://github.com/OmikronApex/slopsmith-plugin-subway-scaler subway-scaler
 ```
 
-**Hot-reload behaviour:**
-- Static files (`static/`, `screen.html`, `screen.js`) — volume-mounted; browser refresh is sufficient.
-- Python files (`routes.py`, `services/`) — reload depends on Slopsmith's FastAPI `--reload` flag; restart the container if changes don't apply.
+Slopsmith picks up both plugins automatically on next start. No further setup required.
 
 ## How to Play
 
@@ -84,23 +69,27 @@ Track lanes are colour-coded from lowest to highest pitch, matching Rocksmith's 
 | 7th | Magenta |
 | 8th | Teal |
 
-## Testing
+## Tests
+
+The test suite has three layers:
+
+- **Contract & unit tests (Python)** — fast, no server required. Cover the backend API contracts, scale/instrument data, and game engine logic.
+- **Unit tests (JavaScript)** — fast, no server required. Cover frontend modules (wave scheduler, cart system, note acceptance, etc.).
+- **End-to-end tests (Playwright)** — require a clean Slopsmith instance running on `http://localhost:8000` with both the **minigames** plugin and **subway-scaler** installed. These test full user flows through the browser.
 
 ```bash
-# Python unit and contract tests
+# Python contract + unit tests
 python -m pytest
 
 # JavaScript unit tests
 npm test
 
-# E2E tests (requires Slopsmith container running)
+# E2E tests
 npm run test:e2e
 
 # E2E with visible browser
 npm run test:e2e:headed
 ```
-
-Playwright E2E tests live in `tests/e2e/specs/`. Use the `gamePage` fixture from `tests/e2e/fixtures/gameFixture.ts` when you need `window.__gameState`. Use `injectAudioFile` from `tests/e2e/helpers/audioHelper.ts` for WAV-based pitch detection tests (Chromium-only).
 
 **CI:** GitHub Actions (`.github/workflows/e2e.yml`) runs on every push/PR to `main`.
 
@@ -118,6 +107,5 @@ routes.py          Slopsmith plugin entry point
 ## Known Limitations (v1.0)
 
 - No sound effects
-- Screen reader support for gameplay canvas is not available — the game is inherently audio-driven
 - Mobile / phone-width viewports are not supported (desktop and tablet only)
 - No in-game tutorial screen — the first detected note teaches the loop

@@ -8,7 +8,6 @@ export class NoteAcceptor {
     gameClient,
     scene,
     variantController,
-    feedbackEl,
     pushGameEvent,
     debugLogger,
     onSpeedUpdate,
@@ -17,7 +16,6 @@ export class NoteAcceptor {
     this.gameClient = gameClient;
     this.scene = scene;
     this.variantController = variantController;
-    this.feedbackEl = feedbackEl;
     this.pushGameEvent = pushGameEvent;
     this.debugLogger = debugLogger;
     this.onSpeedUpdate = onSpeedUpdate; // called with (speedMultiplier) on each correct note
@@ -91,13 +89,11 @@ export class NoteAcceptor {
         }
       }
 
-      if (this.feedbackEl) this.feedbackEl.textContent = '✓';
       if (this.setExpectedFn) this.setExpectedFn();
       return { accepted: true, result: 'accepted' };
     }
 
     if (result === 'rejected') {
-      if (this.feedbackEl) this.feedbackEl.textContent = '·';
       return { accepted: false, result: 'rejected' };
     }
 

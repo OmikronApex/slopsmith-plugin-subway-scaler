@@ -62,6 +62,9 @@ const _INSTRUMENT_ID_MAP = {
 const _STRING_COUNT_OPTIONS = { guitar: [6, 7, 8], bass: [4, 5] };
 const _DEFAULT_STRING_COUNT  = { guitar: 6, bass: 4 };
 
+const _NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+function midiToNoteName(midi) { return _NOTE_NAMES[midi % 12]; }
+
 function resolveInstrumentId(kind, stringCount) {
   return (_INSTRUMENT_ID_MAP[kind] ?? {})[stringCount] ?? 'guitar-standard';
 }
@@ -209,6 +212,40 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
   const instGroup = el('div', { class: 'form-group' });
   const instLabel = el('label', { id: 'label-instrument' }, 'Instrument');
   instGroup.appendChild(instLabel);
+  // String count slider — lives inside instGroup, below the kind toggle buttons
+  const stringSlider = el('input', {
+    type: 'range',
+    id: 'string-count-slider',
+    class: 'string-count-slider',
+    min: String(_STRING_COUNT_OPTIONS[currentKind][0]),
+    max: String(_STRING_COUNT_OPTIONS[currentKind][_STRING_COUNT_OPTIONS[currentKind].length - 1]),
+    value: String(currentStringCount),
+    step: '1',
+    'aria-label': 'Number of strings',
+    'aria-valuemin': String(_STRING_COUNT_OPTIONS[currentKind][0]),
+    'aria-valuemax': String(_STRING_COUNT_OPTIONS[currentKind][_STRING_COUNT_OPTIONS[currentKind].length - 1]),
+    'aria-valuenow': String(currentStringCount),
+  });
+  const stringSliderValue = el('span', { class: 'string-count-value' }, String(currentStringCount));
+
+  stringSlider.addEventListener('input', () => {
+    currentStringCount = Number(stringSlider.value);
+    currentInstrumentId = resolveInstrumentId(currentKind, currentStringCount);
+    stringSliderValue.textContent = String(currentStringCount);
+    stringSlider.setAttribute('aria-valuenow', String(currentStringCount));
+  });
+
+  function updateStringSlider(kind) {
+    const opts = _STRING_COUNT_OPTIONS[kind];
+    stringSlider.min = String(opts[0]);
+    stringSlider.max = String(opts[opts.length - 1]);
+    stringSlider.value = String(_DEFAULT_STRING_COUNT[kind]);
+    stringSlider.setAttribute('aria-valuemin', String(opts[0]));
+    stringSlider.setAttribute('aria-valuemax', String(opts[opts.length - 1]));
+    stringSlider.setAttribute('aria-valuenow', String(_DEFAULT_STRING_COUNT[kind]));
+    stringSliderValue.textContent = String(_DEFAULT_STRING_COUNT[kind]);
+  }
+
   const instToggle = createToggleGroup(
     'Instrument',
     [{ id: 'guitar', name: 'Guitar' }, { id: 'bass', name: 'Bass' }],
@@ -217,40 +254,38 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
       currentKind = val;
       currentStringCount = _DEFAULT_STRING_COUNT[val];
       currentInstrumentId = resolveInstrumentId(val, currentStringCount);
-      // Rebuild string count control for the new kind, then re-wire tab order
-      const old = stringCountGroup.querySelector('.toggle-group');
-      if (old) old.remove();
-      stringCountGroup.appendChild(buildStringCountToggle(currentKind, currentStringCount));
-      if (typeof wireStringCountTabOrder === 'function') {
-        lastStrBtn = wireStringCountTabOrder();
-      }
+      updateStringSlider(val);
+      updateTuningLabel(currentInstrumentId);
     }
   );
   instToggle.setAttribute('aria-labelledby', 'label-instrument');
   instGroup.appendChild(instToggle);
-  form.appendChild(instGroup);
 
-  // Number of Strings toggle
-  function buildStringCountToggle(kind, selected) {
-    return createToggleGroup(
-      'Number of Strings',
-      _STRING_COUNT_OPTIONS[kind].map(n => ({ id: String(n), name: String(n) })),
-      String(selected),
-      (val) => {
-        currentStringCount = Number(val);
-        currentInstrumentId = resolveInstrumentId(currentKind, currentStringCount);
-      }
-    );
+  // Tuning display — note names for the selected instrument, low → high
+  const tuningLabel = el('div', { class: 'tuning-display', 'aria-label': 'Tuning' });
+
+  function updateTuningLabel(instrumentId) {
+    const inst = instruments.find(i => i.id === instrumentId);
+    tuningLabel.textContent = inst
+      ? inst.tuning.map(midiToNoteName).join('  ')
+      : '';
   }
-  const stringCountGroup = el('div', { class: 'form-group' });
-  stringCountGroup.appendChild(el('label', { id: 'label-strings' }, 'Number of Strings'));
-  stringCountGroup.appendChild(buildStringCountToggle(currentKind, currentStringCount));
-  form.appendChild(stringCountGroup);
+  updateTuningLabel(currentInstrumentId);
 
-  // Root label
-  const rootLabel = el('div', { class: 'form-group' });
-  rootLabel.appendChild(el('label', {}, 'Root: 5th fret of lowest string'));
-  form.appendChild(rootLabel);
+  // Wire tuning update into slider and kind toggle callbacks
+  const _origSliderInput = stringSlider.oninput;
+  stringSlider.addEventListener('input', () => {
+    updateTuningLabel(currentInstrumentId);
+  });
+
+  const stringCountRow = el('div', { class: 'string-count-row' },
+    el('label', { class: 'string-count-label', 'for': 'string-count-slider' }, 'Strings'),
+    stringSlider,
+    stringSliderValue,
+  );
+  instGroup.appendChild(stringCountRow);
+  instGroup.appendChild(tuningLabel);
+  form.appendChild(instGroup);
 
   // Debug logging checkbox
   const storedDebug = stored.debug_logging === true;
@@ -391,7 +426,7 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
     });
   });
 
-  // Instrument kind buttons tab wiring: last → first string-count button
+  // Tab order: Instrument kind buttons → slider → START
   const instBtns = Array.from(instToggle.querySelectorAll('.toggle-button'));
   const lastInstBtn = instBtns[instBtns.length - 1];
 
@@ -399,8 +434,7 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
     btn.addEventListener('keydown', (e) => {
       if (e.key === 'Tab' && !e.shiftKey && idx === instBtns.length - 1) {
         e.preventDefault();
-        const firstStrBtn = stringCountGroup.querySelector('.toggle-button');
-        if (firstStrBtn) firstStrBtn.focus();
+        stringSlider.focus();
       } else if (e.key === 'Tab' && e.shiftKey && idx === 0) {
         e.preventDefault();
         const focusBtn = lastDiffBtn || firstDiffBtn;
@@ -409,31 +443,20 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
     });
   });
 
-  // String count buttons tab wiring: last → START, first → last kind button
-  function wireStringCountTabOrder() {
-    const strBtns = Array.from(stringCountGroup.querySelectorAll('.toggle-button'));
-    const lastStrBtn = strBtns[strBtns.length - 1];
-    strBtns.forEach((btn, idx) => {
-      btn.addEventListener('keydown', (e) => {
-        if (e.key === 'Tab' && !e.shiftKey && idx === strBtns.length - 1) {
-          e.preventDefault();
-          startBtn.focus();
-        } else if (e.key === 'Tab' && e.shiftKey && idx === 0) {
-          e.preventDefault();
-          if (lastInstBtn) lastInstBtn.focus();
-        }
-      });
-    });
-    return lastStrBtn;
-  }
-  let lastStrBtn = wireStringCountTabOrder();
+  stringSlider.addEventListener('keydown', (e) => {
+    if (e.key === 'Tab' && !e.shiftKey) {
+      e.preventDefault();
+      startBtn.focus();
+    } else if (e.key === 'Tab' && e.shiftKey) {
+      e.preventDefault();
+      if (lastInstBtn) lastInstBtn.focus();
+    }
+  });
 
   startBtn.addEventListener('keydown', (e) => {
     if (e.key === 'Tab' && e.shiftKey) {
       e.preventDefault();
-      const strBtns = stringCountGroup.querySelectorAll('.toggle-button');
-      const last = strBtns[strBtns.length - 1];
-      if (last) last.focus();
+      stringSlider.focus();
     }
   });
 

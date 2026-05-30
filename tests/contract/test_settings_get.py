@@ -48,11 +48,10 @@ def test_get_returns_stored_after_put(client):
     assert r2.json() == new
 
 
-def test_get_overwrites_corrupt_file(client, tmp_settings_path):
+def test_get_returns_defaults_for_corrupt_file(client, tmp_settings_path):
     tmp_settings_path.parent.mkdir(parents=True, exist_ok=True)
     tmp_settings_path.write_text("not json {")
     r = client.get("/api/plugins/subway-scaler/settings")
     assert r.status_code == 200
-    # File should now be valid JSON with defaults
-    import json
-    assert json.loads(tmp_settings_path.read_text())["lastScaleId"] == "major"
+    # Corrupt file is not repaired on read; defaults are returned in the response body
+    assert r.json()["lastScaleId"] == "major"

@@ -1340,9 +1340,9 @@ export function createScene(canvas) {
     variantSafeZoneMesh = szMesh;
 
     // Safe zone border — EdgesGeometry neon outline (story 7-0).
-    // EdgesGeometry on PlaneGeometry = 4 perimeter edges, no internal diagonals.
+    // Wider source geometry so the border overhangs the fill, matching SafeZoneRenderer.
     const szBorderMesh = new THREE.LineSegments(
-      new THREE.EdgesGeometry(szGeo),
+      new THREE.EdgesGeometry(new THREE.PlaneGeometry(1.5, VARIANT_SZ_DEPTH)),
       applyWorldCurve(new THREE.LineBasicMaterial({ color: borderColor }))
     );
     szBorderMesh.renderOrder = 1;
