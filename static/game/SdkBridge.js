@@ -152,6 +152,10 @@ export const SdkBridge = {
     _notesPlayed = 0;
     _sessionStartTime = performance.now();
 
+    // Wire onGameOver so main.js can update bestScore via window.__slopsmithSdkBridge
+    window.__slopsmithSdkBridge = window.__slopsmithSdkBridge || {};
+    window.__slopsmithSdkBridge.onGameOver = (score) => SdkBridge.onGameOver(score);
+
     // Dynamically import bootstrap to avoid circular deps at registration time
     const { bootstrap } = await import('./main.js');
     await bootstrap(container);
@@ -178,6 +182,10 @@ export const SdkBridge = {
     SdkBridge._ended = true;
 
     if (window.slopsmithMinigames?.end) {
+      // Capture live score in case player quits mid-run without hitting game-over first
+      const liveScore = window.__gameState?.score?.current || 0;
+      _bestScore = Math.max(_bestScore, liveScore);
+
       const durationMs = Math.round(performance.now() - _sessionStartTime);
       const difficulty = _modifiers?.difficulty || 'easy';
       const totalNotes = window.__gameState?.scene?.waveCount ?? 0;

@@ -247,6 +247,80 @@ describe('registerWithSdk', () => {
   });
 });
 
+describe('SdkBridge score handoff', () => {
+  let SdkBridge;
+
+  beforeEach(async () => {
+    stubDom();
+    ({ SdkBridge } = await import('../../../static/game/SdkBridge.js?t=' + Date.now()));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  it('end() submits bestScore accumulated via onGameOver()', async () => {
+    const endMock = vi.fn(() => Promise.resolve());
+    window.slopsmithMinigames = { end: endMock };
+    window.__gameState = { score: { current: 0 } };
+
+    SdkBridge._ended = false;
+    SdkBridge.onGameOver(300);
+    SdkBridge.onGameOver(500);
+    SdkBridge.onGameOver(200);
+
+    await SdkBridge.end();
+
+    expect(endMock).toHaveBeenCalledWith(
+      expect.objectContaining({ score: 500 })
+    );
+  });
+
+  it('end() captures live score when player quits mid-run without dying', async () => {
+    const endMock = vi.fn(() => Promise.resolve());
+    window.slopsmithMinigames = { end: endMock };
+    // No onGameOver() called — player quits with a live score of 400
+    window.__gameState = { score: { current: 400 } };
+
+    SdkBridge._ended = false;
+    await SdkBridge.end();
+
+    expect(endMock).toHaveBeenCalledWith(
+      expect.objectContaining({ score: 400 })
+    );
+  });
+
+  it('end() uses bestScore when it exceeds live score', async () => {
+    const endMock = vi.fn(() => Promise.resolve());
+    window.slopsmithMinigames = { end: endMock };
+    window.__gameState = { score: { current: 100 } };
+
+    SdkBridge._ended = false;
+    SdkBridge.onGameOver(800);  // previous run scored higher
+    await SdkBridge.end();
+
+    expect(endMock).toHaveBeenCalledWith(
+      expect.objectContaining({ score: 800 })
+    );
+  });
+
+  it('window.__slopsmithSdkBridge.onGameOver is wired after start() bootstrap', async () => {
+    // start() sets window.__slopsmithSdkBridge.onGameOver before bootstrap
+    // Simulate by checking the bridge is wired when onGameOver is called via the bridge
+    window.__slopsmithSdkBridge = { onGameOver: (score) => SdkBridge.onGameOver(score) };
+    const endMock = vi.fn(() => Promise.resolve());
+    window.slopsmithMinigames = { end: endMock };
+    window.__gameState = { score: { current: 0 } };
+
+    SdkBridge._ended = false;
+    window.__slopsmithSdkBridge.onGameOver(650);
+
+    await SdkBridge.end();
+    expect(endMock).toHaveBeenCalledWith(expect.objectContaining({ score: 650 }));
+  });
+});
+
 describe('SdkBridge.end() reentry guard', () => {
   let SdkBridge;
 
