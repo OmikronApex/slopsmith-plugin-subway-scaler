@@ -145,7 +145,7 @@ export async function startAudio({ deviceId = null } = {}) {
   const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   await audioCtx.audioWorklet.addModule(WORKLET_URL);
   const node = new AudioWorkletNode(audioCtx, 'yin-processor', {
-    processorOptions: { windowSize: 2048, hopSize: 1024, threshold: 0.1 },
+    processorOptions: { windowSize: 4096, hopSize: 1024, threshold: 0.1 },
   });
 
   let { stream, source } = await buildSource(audioCtx, deviceId);

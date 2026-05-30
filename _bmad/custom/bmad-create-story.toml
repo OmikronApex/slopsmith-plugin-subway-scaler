@@ -1,0 +1,34 @@
+# Team overrides for bmad-create-story workflow.
+# Committed to the repo — applies to every developer on the project.
+
+[workflow]
+
+# After each story file is saved to implementation-artifacts/, create a GitHub sub-issue
+# with the "story" label and set the parent to the corresponding epic issue.
+on_complete = """
+After the story file has been saved, do the following for each story file created this session:
+
+(1) Read the story file. Extract:
+    - Story title from the `# Story X.Y: [Title]` header line.
+    - Epic number: the first number before the dot in X.Y (e.g., Story 12.1 → epic 12).
+    - Story key: e.g., "12-1" (formatted as "X-Y").
+
+(2) Find the parent epic GitHub issue number:
+    Run: `gh issue list --label epic --search "Epic {epic_num}:" --json number,title --jq ".[0].number"`
+    Store this as the parent issue number.
+
+(3) Check whether a story issue already exists to avoid duplicates:
+    Run: `gh issue list --label story --search "Story {story_key}:" --json number --jq ".[0].number // empty"`
+    If an issue already exists, skip creation for that story.
+
+(4) Create the story sub-issue:
+    `gh issue create --title "Story {story_key}: {story_title}" --label "story" --body "Part of #{parent_issue_number}\n\n## Story\n[As a/I want/So that from the story file]\n\n## Story File\n_bmad-output/implementation-artifacts/{story_filename}"`
+
+(5) Set the GitHub parent relationship using the GraphQL addSubIssue mutation:
+    a. Get node IDs: `gh api graphql -f query='query { repository(owner: "OmikronApex", name: "slopsmith-plugin-subway-scaler") { epic: issue(number: {parent_issue_number}) { id } story: issue(number: {new_story_issue_number}) { id } } }'`
+    b. Set parent: `gh api graphql -f query='mutation { addSubIssue(input: {issueId: "{epic_node_id}", subIssueId: "{story_node_id}"}) { issue { number } subIssue { number } } }'`
+
+(6) Report the created issue URL and confirm the parent relationship was set.
+
+If multiple story files were created this session, repeat steps 1–6 for each one.
+"""

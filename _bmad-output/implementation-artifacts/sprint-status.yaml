@@ -1,5 +1,5 @@
 generated: "2026-05-21"
-last_updated: "2026-05-30"  # Epic 11 added: multi-string support & v1.0 release prep
+last_updated: "2026-05-30"  # Epic 12 reviewed and closed
 project: "slopsmith-plugin-subway-scaler"
 project_key: "SS"
 tracking_system: "local"
@@ -135,3 +135,9 @@ development_status:
   11-3-fix-character-animation-from-start: review
   11-4-remove-legacy-hud: review
   11-5-readme-update: review
+
+  # Epic 12 — YIN Pitch Detector Correctness & Performance
+  epic-12: done
+  12-1-fix-window-size-enable-b0-detection: done
+  12-2-bounded-tau-search-fmin-fmax-config: done
+  12-3-fft-based-difference-function: done
