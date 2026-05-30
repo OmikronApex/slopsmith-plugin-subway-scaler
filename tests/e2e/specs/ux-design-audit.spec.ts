@@ -3,19 +3,9 @@
  *
  * Verifies that the implemented setup screen matches the Night City design
  * specification from ux-design-specification.md.
- *
- * Palette: color-bg-void=#0D0D1A, color-bg-stage=#1A1A2E, color-accent=#FFB800,
- *          color-text-primary=#E8E8F0, color-edge=#08080F
- * Font: Space Mono (vendored), bold weight for title/buttons
- * Layout: 2-column grid (Difficulty + Instrument), Scale full-width
- * Buttons: START = solid accent (#FFB800) bg, dark text
- *          Difficulty/Instrument = toggle buttons (not <select>)
- * Title: "SUBWAY SCALER" with RGB-shift text-shadow glitch
- * CSS tokens: --color-accent, --color-bg-void etc. must be injected
  */
 import { test, expect, type Page } from '../fixtures/gameFixture';
-
-const ROOT = '#subway-scaler-root';
+import { openSubwayScalerSetup } from '../fixtures/startGame';
 
 function hexToRgb(hex: string): string {
   const h = hex.replace('#', '');
@@ -25,19 +15,19 @@ function hexToRgb(hex: string): string {
   return `rgb(${r}, ${g}, ${b})`;
 }
 
-async function navigateToPlugin(page: Page) {
-  await page.goto('/');
-  await page.waitForLoadState('networkidle');
-  await page.getByRole('button', { name: 'Plugins' }).click();
-  await page.getByText('Subway Scaler', { exact: true }).first().click();
-  await page.getByRole('button', { name: 'START' }).waitFor({ timeout: 10000 });
+// Hub mode may render colors with an alpha channel (e.g. rgba(r,g,b,a)).
+// Strip alpha and normalise to rgb() for comparison.
+function normaliseColor(color: string | null): string | null {
+  if (!color) return null;
+  const m = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+  return m ? `rgb(${m[1]}, ${m[2]}, ${m[3]})` : color;
 }
 
 // ─── Design tokens ─────────────────────────────────────────────────────────────
 
 test.describe('UX audit: design tokens injected', () => {
   test('--color-accent CSS custom property is #FFB800', async ({ gamePage }) => {
-    await navigateToPlugin(gamePage);
+    await openSubwayScalerSetup(gamePage);
     const value = await gamePage.evaluate(() =>
       getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim()
     );
@@ -45,7 +35,7 @@ test.describe('UX audit: design tokens injected', () => {
   });
 
   test('--color-bg-void CSS custom property is #0D0D1A', async ({ gamePage }) => {
-    await navigateToPlugin(gamePage);
+    await openSubwayScalerSetup(gamePage);
     const value = await gamePage.evaluate(() =>
       getComputedStyle(document.documentElement).getPropertyValue('--color-bg-void').trim()
     );
@@ -53,7 +43,7 @@ test.describe('UX audit: design tokens injected', () => {
   });
 
   test('--color-bg-stage CSS custom property is #1A1A2E', async ({ gamePage }) => {
-    await navigateToPlugin(gamePage);
+    await openSubwayScalerSetup(gamePage);
     const value = await gamePage.evaluate(() =>
       getComputedStyle(document.documentElement).getPropertyValue('--color-bg-stage').trim()
     );
@@ -65,8 +55,7 @@ test.describe('UX audit: design tokens injected', () => {
 
 test.describe('UX audit: typography', () => {
   test('game title uses Space Mono font', async ({ gamePage }) => {
-    await navigateToPlugin(gamePage);
-    // Wait for web fonts to finish loading before checking computed style
+    await openSubwayScalerSetup(gamePage);
     await gamePage.evaluate(() => document.fonts.ready);
     const fontFamily = await gamePage.evaluate(() => {
       const el = document.querySelector('.game-title');
@@ -76,20 +65,19 @@ test.describe('UX audit: typography', () => {
   });
 
   test('game title has RGB-shift text-shadow', async ({ gamePage }) => {
-    await navigateToPlugin(gamePage);
+    await openSubwayScalerSetup(gamePage);
     const shadow = await gamePage.evaluate(() => {
       const el = document.querySelector('.game-title');
       return el ? getComputedStyle(el).textShadow : null;
     });
-    // Spec: 3px 0 0 rgba(255,50,50,.45), -3px 0 0 rgba(50,100,255,.45)
     expect(shadow).not.toBe('none');
     expect(shadow).not.toBeNull();
   });
 
   test('START button uses Space Mono font', async ({ gamePage }) => {
-    await navigateToPlugin(gamePage);
+    await openSubwayScalerSetup(gamePage);
     const fontFamily = await gamePage.evaluate(() => {
-      const btn = document.querySelector('#subway-scaler-root .start-button');
+      const btn = document.querySelector('.start-button');
       return btn ? getComputedStyle(btn).fontFamily : null;
     });
     expect(fontFamily?.toLowerCase()).toContain('space mono');
@@ -100,7 +88,7 @@ test.describe('UX audit: typography', () => {
 
 test.describe('UX audit: Night City color palette', () => {
   test('setup container background is color-bg-void (#0D0D1A)', async ({ gamePage }) => {
-    await navigateToPlugin(gamePage);
+    await openSubwayScalerSetup(gamePage);
     const bg = await gamePage.evaluate(() => {
       const el = document.querySelector('.setup-container');
       return el ? getComputedStyle(el).backgroundColor : null;
@@ -109,16 +97,23 @@ test.describe('UX audit: Night City color palette', () => {
   });
 
   test('START button background is accent yellow (#FFB800)', async ({ gamePage }) => {
-    await navigateToPlugin(gamePage);
+    await openSubwayScalerSetup(gamePage);
+    // Wait for injected stylesheet to apply (hub mode injects CSS dynamically)
+    await gamePage.waitForFunction(() => {
+      const btn = document.querySelector('.start-button') as HTMLElement | null;
+      if (!btn) return false;
+      const bg = getComputedStyle(btn).backgroundColor;
+      return bg !== 'rgba(0, 0, 0, 0)' && bg !== 'rgb(0, 0, 0)' && bg !== '';
+    }, { timeout: 5000 });
     const bg = await gamePage.evaluate(() => {
-      const btn = document.querySelector('#subway-scaler-root .start-button');
+      const btn = document.querySelector('.start-button');
       return btn ? getComputedStyle(btn).backgroundColor : null;
     });
-    expect(bg).toBe(hexToRgb('#FFB800'));
+    expect(normaliseColor(bg)).toBe(hexToRgb('#FFB800'));
   });
 
   test('setup form background is color-bg-stage (#1A1A2E)', async ({ gamePage }) => {
-    await navigateToPlugin(gamePage);
+    await openSubwayScalerSetup(gamePage);
     const bg = await gamePage.evaluate(() => {
       const el = document.querySelector('.setup-form');
       return el ? getComputedStyle(el).backgroundColor : null;
@@ -127,7 +122,7 @@ test.describe('UX audit: Night City color palette', () => {
   });
 
   test('game title color is accent yellow (#FFB800)', async ({ gamePage }) => {
-    await navigateToPlugin(gamePage);
+    await openSubwayScalerSetup(gamePage);
     const color = await gamePage.evaluate(() => {
       const el = document.querySelector('.game-title');
       return el ? getComputedStyle(el).color : null;
@@ -140,7 +135,7 @@ test.describe('UX audit: Night City color palette', () => {
 
 test.describe('UX audit: layout', () => {
   test('setup form uses CSS grid (not flex column)', async ({ gamePage }) => {
-    await navigateToPlugin(gamePage);
+    await openSubwayScalerSetup(gamePage);
     const display = await gamePage.evaluate(() => {
       const el = document.querySelector('.setup-form');
       return el ? getComputedStyle(el).display : null;
@@ -149,20 +144,19 @@ test.describe('UX audit: layout', () => {
   });
 
   test('difficulty uses toggle buttons, not a <select>', async ({ gamePage }) => {
-    await navigateToPlugin(gamePage);
+    await openSubwayScalerSetup(gamePage);
     const toggleCount = await gamePage.evaluate(() =>
-      document.querySelectorAll('#subway-scaler-root .toggle-button').length
+      document.querySelectorAll('.toggle-button').length
     );
-    // At least 3 difficulty + 2 instrument toggle buttons
     expect(toggleCount).toBeGreaterThanOrEqual(5);
   });
 
   test('selected toggle button has accent background (#FFB800)', async ({ gamePage }) => {
-    await navigateToPlugin(gamePage);
+    await openSubwayScalerSetup(gamePage);
     const bg = await gamePage.evaluate(() => {
-      const selected = document.querySelector('#subway-scaler-root .toggle-button.selected');
+      const selected = document.querySelector('.toggle-button.selected');
       return selected ? getComputedStyle(selected).backgroundColor : null;
     });
-    expect(bg).toBe(hexToRgb('#FFB800'));
+    expect(normaliseColor(bg)).toBe(hexToRgb('#FFB800'));
   });
 });

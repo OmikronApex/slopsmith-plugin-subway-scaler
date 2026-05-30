@@ -3,29 +3,12 @@
  *
  * The UX design spec requires HTML overlays to cover the Three.js canvas
  * exactly — same position and same size — at all viewport widths.
- *
- * Tests run at three viewport widths:
- *   - narrow (600px)  — canvas fills container
- *   - desktop (1280px) — canvas hits max-width: 800px cap
- *   - wide (1600px)   — canvas well under container width
- *
- * At desktop/wide viewports the overlay must NOT spill beyond the canvas.
  */
 import { test, expect, type Page } from '../fixtures/gameFixture';
+import { startGame } from '../fixtures/startGame';
 
 async function startGameAndTriggerOverlay(page: Page) {
-  await page.goto('/');
-  await page.waitForLoadState('networkidle');
-  await page.getByRole('button', { name: 'Plugins' }).click();
-  await page.getByText('Subway Scaler', { exact: true }).first().click();
-  await page.getByRole('button', { name: 'START' }).waitFor({ timeout: 10000 });
-  // Setup screen START → onSetupComplete → auto-starts the run
-  await page.getByRole('button', { name: 'START' }).click();
-  await page.waitForFunction(
-    () => (window as any).__gameState?.session?.phase === 'playing',
-    { timeout: 10000 }
-  );
-  // Trigger run-failed overlay; wait for entry animation to settle (250ms)
+  await startGame(page);
   await page.evaluate(() => (window as any).__gameState._test.forceCollision());
   await page.locator('.game-wrap .overlay:not(.hidden)').waitFor({ timeout: 3000 });
   await page.waitForTimeout(300);
@@ -33,8 +16,6 @@ async function startGameAndTriggerOverlay(page: Page) {
 
 function viewportTest(label: string, width: number) {
   test(`canvas and overlay have identical bounding rect at ${label} viewport (${width}px)`, async ({ gamePage }) => {
-    // Navigate and start game at a standard width so Slopsmith nav is visible,
-    // then resize to the target viewport before checking alignment.
     await gamePage.setViewportSize({ width: 1280, height: 800 });
     await startGameAndTriggerOverlay(gamePage);
     await gamePage.setViewportSize({ width, height: 800 });

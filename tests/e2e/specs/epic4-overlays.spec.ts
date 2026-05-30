@@ -21,7 +21,7 @@
 import { test, expect, type Page } from '../fixtures/gameFixture';
 import { startGame } from '../fixtures/startGame';
 
-const ROOT = '#subway-scaler-root';
+const ROOT = '#mg-stage-body';
 
 test.skip(({ browserName }) => browserName !== 'chromium',
   'mic mock requires Chromium fake device flag');
@@ -122,7 +122,7 @@ test.describe('Epic 4 Tier 2: ATDD — pause overlay ARIA', () => {
     await openPauseState(gamePage);
     await gamePage.keyboard.press('Tab');
     const isInside = await gamePage.evaluate(() => {
-      const o = document.querySelector('#subway-scaler-root .overlay:not(.hidden)');
+      const o = document.querySelector('#mg-stage-body .overlay:not(.hidden)');
       return o ? o.contains(document.activeElement) : false;
     });
     expect(isInside).toBe(true);
