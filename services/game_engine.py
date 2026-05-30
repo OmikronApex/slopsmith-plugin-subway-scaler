@@ -345,25 +345,6 @@ class GameEngine:
                 return 0, target_num_lanes, 0, base_string
         return None
 
-    def _find_root_for_highest(self, scale_id: str, target_highest: int, instrument: Instrument):
-        """Search for a root such that _build_full_scale_notes yields apex == target_highest.
-
-        Used by RIGHT accept: variant.root_midi is the target apex, not the actual root.
-        Returns (candidate_root, notes, asc_count) or (None, None, None) if no match found.
-        """
-        for semitone_offset in range(2, 49):
-            candidate = target_highest - semitone_offset
-            if not self._is_playable_root(candidate, instrument):
-                continue
-            notes, asc_count = self._build_full_scale_notes(scale_id, candidate, instrument)
-            if notes and asc_count > 0 and asc_count < len(notes) and notes[asc_count - 1].midi == target_highest:
-                return candidate, notes, asc_count
-        logger.warning(
-            "_find_root_for_highest no match for target_highest=%d scale=%s — falling back to current root",
-            target_highest, scale_id,
-        )
-        return None, None, None
-
     def _fret_in_window(self, midi: int, instrument: Instrument, base_fret: int, num_lanes: int):
         """Find any (string, fret) playing `midi` inside the variant fret window.
 
@@ -504,20 +485,14 @@ class GameEngine:
             session.root_midi = variant.root_midi
             session.current_note_index = 1 if new_notes and len(new_notes) > 1 else 0
             session.total_notes_played = 1
-        else:  # RIGHT
-            candidate, new_notes, new_asc_count = self._find_root_for_highest(
-                session.scale_id_for_variant, variant.root_midi, instrument
+        else:  # RIGHT — shift root up by the same interval used for LEFT
+            new_root = session.root_midi + VARIANT_SHIFT_DOWN
+            new_notes, new_asc_count = self._build_full_scale_notes(
+                session.scale_id_for_variant, new_root, instrument
             )
-            if candidate is not None:
-                session.root_midi = candidate
-                session.current_note_index = new_asc_count if new_notes and new_asc_count < len(new_notes) else 0
-                session.total_notes_played = 1
-            else:
-                new_notes, new_asc_count = self._build_full_scale_notes(
-                    session.scale_id_for_variant, session.root_midi, instrument
-                )
-                session.current_note_index = 0
-                session.total_notes_played = 0
+            session.root_midi = new_root
+            session.current_note_index = new_asc_count if new_notes and new_asc_count < len(new_notes) else 0
+            session.total_notes_played = 1
 
         session.notes = new_notes
         session.ascending_note_count = new_asc_count

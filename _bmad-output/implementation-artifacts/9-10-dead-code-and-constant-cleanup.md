@@ -382,3 +382,4 @@ All Low-risk audit findings implemented:
 
 - 2026-05-29: Story created from 9-9 refactor-findings.md — implements all Low-risk findings from audit
 - 2026-05-29: Implemented all T1–T11 — dead code removal, constant consolidation, backend cleanup, texture caching, gameNow helper
+- 2026-05-30: Removed `_find_root_for_highest` dead code from game_engine.py; simplified RIGHT variant accept to use the same `VARIANT_SHIFT_DOWN` offset as LEFT (search loop was over-engineered and produced inconsistent results)
