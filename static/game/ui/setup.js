@@ -54,6 +54,28 @@ function saveSettings(settings) {
   }
 }
 
+// ─── Instrument-kind + string-count helpers ───────────────────────────────────
+const _INSTRUMENT_ID_MAP = {
+  guitar: { 6: 'guitar-standard', 7: 'guitar-7-standard', 8: 'guitar-8-standard' },
+  bass:   { 4: 'bass-4-standard',  5: 'bass-5-standard' },
+};
+const _STRING_COUNT_OPTIONS = { guitar: [6, 7, 8], bass: [4, 5] };
+const _DEFAULT_STRING_COUNT  = { guitar: 6, bass: 4 };
+
+function resolveInstrumentId(kind, stringCount) {
+  return (_INSTRUMENT_ID_MAP[kind] ?? {})[stringCount] ?? 'guitar-standard';
+}
+
+function deriveKindAndCount(instrumentId) {
+  for (const [kind, counts] of Object.entries(_INSTRUMENT_ID_MAP)) {
+    for (const [count, id] of Object.entries(counts)) {
+      if (id === instrumentId) return { kind, stringCount: Number(count) };
+    }
+  }
+  return { kind: 'guitar', stringCount: 6 };
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 function computeRandomRootMidi(instrument) {
   if (!instrument || !instrument.tuning || !instrument.tuning[0]) return 60;
   const lowestString = instrument.tuning[0];
@@ -141,11 +163,12 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
 
   const defaultScaleId = stored.scale_id || scales[0].id;
   const defaultDifficulty = stored.difficulty || 'medium';
-  const defaultInstrumentId = stored.instrument_id || instruments[0].id;
+  const defaultInstrumentId = stored.instrument_id || 'guitar-standard';
 
   let currentScaleId = defaultScaleId;
   let currentDifficulty = defaultDifficulty;
-  let currentInstrumentId = defaultInstrumentId;
+  let { kind: currentKind, stringCount: currentStringCount } = deriveKindAndCount(defaultInstrumentId);
+  let currentInstrumentId = resolveInstrumentId(currentKind, currentStringCount);
 
   // Add title
   setupSection.appendChild(el('div', { class: 'game-title' }, 'SUBWAY SCALER'));
@@ -182,19 +205,47 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
   diffGroup.appendChild(diffToggle);
   form.appendChild(diffGroup);
 
-  // Instrument toggle
+  // Instrument kind toggle (Guitar / Bass)
   const instGroup = el('div', { class: 'form-group' });
   const instLabel = el('label', { id: 'label-instrument' }, 'Instrument');
   instGroup.appendChild(instLabel);
   const instToggle = createToggleGroup(
     'Instrument',
-    instruments.map(i => ({ id: i.id, name: i.name })),
-    defaultInstrumentId,
-    (val) => { currentInstrumentId = val; }
+    [{ id: 'guitar', name: 'Guitar' }, { id: 'bass', name: 'Bass' }],
+    currentKind,
+    (val) => {
+      currentKind = val;
+      currentStringCount = _DEFAULT_STRING_COUNT[val];
+      currentInstrumentId = resolveInstrumentId(val, currentStringCount);
+      // Rebuild string count control for the new kind, then re-wire tab order
+      const old = stringCountGroup.querySelector('.toggle-group');
+      if (old) old.remove();
+      stringCountGroup.appendChild(buildStringCountToggle(currentKind, currentStringCount));
+      if (typeof wireStringCountTabOrder === 'function') {
+        lastStrBtn = wireStringCountTabOrder();
+      }
+    }
   );
   instToggle.setAttribute('aria-labelledby', 'label-instrument');
   instGroup.appendChild(instToggle);
   form.appendChild(instGroup);
+
+  // Number of Strings toggle
+  function buildStringCountToggle(kind, selected) {
+    return createToggleGroup(
+      'Number of Strings',
+      _STRING_COUNT_OPTIONS[kind].map(n => ({ id: String(n), name: String(n) })),
+      String(selected),
+      (val) => {
+        currentStringCount = Number(val);
+        currentInstrumentId = resolveInstrumentId(currentKind, currentStringCount);
+      }
+    );
+  }
+  const stringCountGroup = el('div', { class: 'form-group' });
+  stringCountGroup.appendChild(el('label', { id: 'label-strings' }, 'Number of Strings'));
+  stringCountGroup.appendChild(buildStringCountToggle(currentKind, currentStringCount));
+  form.appendChild(stringCountGroup);
 
   // Root label
   const rootLabel = el('div', { class: 'form-group' });
@@ -300,8 +351,7 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
     }
   });
 
-  // Tab order and keyboard handling
-  // Tab order: Scale → Difficulty → Instrument → START
+  // Tab order: Scale → Difficulty → Instrument (kind) → Number of Strings → START
   scaleSelect.addEventListener('keydown', (e) => {
     if (e.key === 'Tab' && !e.shiftKey) {
       e.preventDefault();
@@ -327,7 +377,7 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
   const diffBtns = Array.from(diffToggle.querySelectorAll('.toggle-button'));
   const lastDiffBtn = diffBtns[diffBtns.length - 1];
 
-  // Add Tab handlers to all difficulty buttons
+  // Difficulty buttons tab wiring
   diffBtns.forEach((btn, idx) => {
     btn.addEventListener('keydown', (e) => {
       if (e.key === 'Tab' && !e.shiftKey && idx === diffBtns.length - 1) {
@@ -341,16 +391,16 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
     });
   });
 
+  // Instrument kind buttons tab wiring: last → first string-count button
   const instBtns = Array.from(instToggle.querySelectorAll('.toggle-button'));
-  const firstInstBtn = instBtns[0];
   const lastInstBtn = instBtns[instBtns.length - 1];
 
-  // Add Tab handlers to all instrument buttons
   instBtns.forEach((btn, idx) => {
     btn.addEventListener('keydown', (e) => {
       if (e.key === 'Tab' && !e.shiftKey && idx === instBtns.length - 1) {
         e.preventDefault();
-        startBtn.focus();
+        const firstStrBtn = stringCountGroup.querySelector('.toggle-button');
+        if (firstStrBtn) firstStrBtn.focus();
       } else if (e.key === 'Tab' && e.shiftKey && idx === 0) {
         e.preventDefault();
         const focusBtn = lastDiffBtn || firstDiffBtn;
@@ -359,10 +409,31 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
     });
   });
 
+  // String count buttons tab wiring: last → START, first → last kind button
+  function wireStringCountTabOrder() {
+    const strBtns = Array.from(stringCountGroup.querySelectorAll('.toggle-button'));
+    const lastStrBtn = strBtns[strBtns.length - 1];
+    strBtns.forEach((btn, idx) => {
+      btn.addEventListener('keydown', (e) => {
+        if (e.key === 'Tab' && !e.shiftKey && idx === strBtns.length - 1) {
+          e.preventDefault();
+          startBtn.focus();
+        } else if (e.key === 'Tab' && e.shiftKey && idx === 0) {
+          e.preventDefault();
+          if (lastInstBtn) lastInstBtn.focus();
+        }
+      });
+    });
+    return lastStrBtn;
+  }
+  let lastStrBtn = wireStringCountTabOrder();
+
   startBtn.addEventListener('keydown', (e) => {
     if (e.key === 'Tab' && e.shiftKey) {
       e.preventDefault();
-      if (lastInstBtn) lastInstBtn.focus();
+      const strBtns = stringCountGroup.querySelectorAll('.toggle-button');
+      const last = strBtns[strBtns.length - 1];
+      if (last) last.focus();
     }
   });
 

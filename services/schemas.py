@@ -33,7 +33,7 @@ class Scale(BaseModel):
 
 
 class StringFretPair(BaseModel):
-    string: int = Field(..., ge=1, le=6)
+    string: int = Field(..., ge=1, le=8)
     fret: int = Field(..., ge=0, le=24)
 
 
@@ -75,7 +75,7 @@ class Instrument(BaseModel):
     id: str
     name: str
     kind: InstrumentKind
-    stringCount: int = Field(..., ge=4, le=6)
+    stringCount: int = Field(..., ge=4, le=8)
     tuning: list[int]
     maxFret: int = Field(..., ge=12, le=24)
 
@@ -90,8 +90,8 @@ class Instrument(BaseModel):
     @field_validator("tuning")
     @classmethod
     def _validate_tuning(cls, v: list[int]) -> list[int]:
-        if len(v) not in (4, 6):
-            raise ValueError("tuning length must be 4 or 6")
+        if len(v) not in (4, 5, 6, 7, 8):
+            raise ValueError("tuning length must be 4, 5, 6, 7, or 8")
         if any(not (21 <= x <= 108) for x in v):
             raise ValueError("tuning values must be in [21, 108]")
         for a, b in zip(v, v[1:]):
@@ -157,7 +157,7 @@ class VariantTrackSet(BaseModel):
     base_fret: int = Field(..., ge=0, le=24)
     num_lanes: int = Field(..., ge=3, le=24)
     base_lane: int = Field(0, ge=0, le=23)
-    base_string: int = Field(1, ge=1, le=6)
+    base_string: int = Field(1, ge=1, le=8)
     side: VariantSide
     state: VariantStateLit = "SPAWNING"
     spawned_at_ms: int

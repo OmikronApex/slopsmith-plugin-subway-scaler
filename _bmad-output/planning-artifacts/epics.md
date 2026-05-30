@@ -1,5 +1,6 @@
 ---
 stepsCompleted: [1, 2, 3, 4]
+epic11Amendment: true
 epic10Amendment: true
 status: validated
 epic9Amendment: true
@@ -1303,3 +1304,247 @@ So that settings survive restarts and work in Docker.
 - Atomic write pattern: `tempfile.mkstemp` → write → `os.fsync` → `os.replace`
 - One-time migration: if `data/settings.json` exists and config target doesn't, copy then rename old to `.bak`
 - No change to `PlayerSettings` schema or endpoint contracts — paths only
+
+---
+
+## Epic 11: Multi-String Support & v1.0 Release Preparation
+
+Players can select 5-string bass, 7-string guitar, and 8-string guitar from the setup screen via a new "Number of Strings" control; the character runs from the very first frame of every session; the legacy bottom-left HUD is gone; and the README accurately documents the released game. Together these changes clear the v1.0 release gate.
+
+**User Outcomes:**
+- Bass players can choose 4 or 5 strings; guitar players can choose 6, 7, or 8 strings from the setup screen — the correct instrument with the correct standard tuning is selected automatically
+- String count is persisted alongside instrument type and restored on next session
+- The character starts its running animation on the very first frame of the countdown, not after it ends
+- The old bottom-left score/note readout is gone — the Epic 8 HUD is the sole source of game feedback
+- The README accurately describes Subway Scaler v1.0: what it is, how to install and run it, and how to play
+
+**Depends on:** Epic 1 (session setup and instrument API), Epic 8 (HUD overlay — canonical score/note display replacing the legacy HUD)
+
+**Stories:**
+
+| Story | Title | Status | Depends on |
+|---|---|---|---|
+| 11-1 | Expand Instrument Registry — 5-String Bass, 7-String & 8-String Guitar | todo | — |
+| 11-2 | Number of Strings Selector in Setup UI | todo | 11-1 |
+| 11-3 | Fix: Character Running Animation From Start | todo | — |
+| 11-4 | Remove Legacy Score/Note HUD | todo | — |
+| 11-5 | README Update for v1.0 | todo | — |
+
+### FR Coverage Map (Epic 11)
+
+| FR | Story | Coverage |
+|---|---|---|
+| FR-E11-01 (Strings selector UI) | 11-2 | Number of Strings control in setup — 4–5 for Bass, 6–8 for Guitar |
+| FR-E11-02 (Compound instrument_id) | 11-2 | (Kind × string count) → instrument_id lookup |
+| FR-E11-03 (New instrument definitions) | 11-1 | `bass-5-standard`, `guitar-7-standard`, `guitar-8-standard` added to registry |
+| FR-E11-04 (String count persistence) | 11-2 | String count stored in localStorage via instrumentId |
+| FR-E11-05 (Remove legacy HUD) | 11-4 | Bottom-left `.hud` div and driving code removed |
+| FR-E11-06 (Character animation from start) | 11-3 | Running animation plays from frame 1 of the countdown |
+| FR-E11-07 (README update) | 11-5 | README reflects v1.0 state |
+
+---
+
+### Story 11-1: Expand Instrument Registry — 5-String Bass, 7-String & 8-String Guitar
+
+As a **developer**, I want the instrument registry to define 5-string bass, 7-string guitar, and 8-string guitar with correct standard tunings, so that the game engine can compute accurate fret/string positions for these instruments and the setup UI can offer them as selections.
+
+**Acceptance Criteria:**
+
+**Given** the plugin loads
+**When** `GET /api/plugins/subway-scaler/instruments` is called
+**Then** the response includes all five instruments:
+  - `guitar-standard` (existing — unchanged)
+  - `bass-4-standard` (existing — unchanged)
+  - `bass-5-standard`: `kind="bass"`, `stringCount=5`, `tuning=[23, 28, 33, 38, 43]` (B0, E1, A1, D2, G2), `maxFret=24`
+  - `guitar-7-standard`: `kind="guitar"`, `stringCount=7`, `tuning=[35, 40, 45, 50, 55, 59, 64]` (B1, E2, A2, D3, G3, B3, E4), `maxFret=24`
+  - `guitar-8-standard`: `kind="guitar"`, `stringCount=8`, `tuning=[30, 35, 40, 45, 50, 55, 59, 64]` (F#1, B1, E2, A2, D3, G3, B3, E4), `maxFret=24`
+
+**Given** a `GET /api/plugins/subway-scaler/instruments` response
+**When** each new instrument is inspected
+**Then** `tuning` is strictly increasing
+**And** all tuning MIDI values are in [21, 108]
+**And** `stringCount` equals `len(tuning)`
+
+**Given** `GET /api/plugins/subway-scaler/settings` is called with `instrument_id = "guitar-7-standard"`
+**When** the settings endpoint validates the instrument
+**Then** the validation passes (instrument exists in registry)
+
+**Given** `PUT /api/plugins/subway-scaler/settings` with `instrument_id = "guitar-8-standard"`
+**When** the request is processed
+**Then** the settings are saved successfully (response 200)
+
+**Given** all existing contract tests in `tests/contract/`
+**When** run after this change
+**Then** all pass without modification
+
+**Given** new contract tests for the expanded registry
+**When** run
+**Then** `test_instruments.py` asserts all five instrument IDs are present in the response
+**And** asserts each new instrument's `stringCount`, `tuning` length, and `tuning` values are correct
+
+**Implementation Notes:**
+- `services/instruments.py`: Add three new `Instrument(...)` entries to `_RAW`
+- `services/schemas.py`: Update `Instrument` validators:
+  - `stringCount: int = Field(..., ge=4, le=8)` (was `le=6`)
+  - `_validate_tuning`: accept `len(v) in (4, 5, 6, 7, 8)` (was `(4, 6)`)
+  - `StringFretPair.string: int = Field(..., ge=1, le=8)` (was `le=6`)
+  - `VariantTrackSet.base_string: int = Field(1, ge=1, le=8)` (was `le=6`)
+- No changes to `settings.py`, `game_routes.py`, or `tabulator.py` needed in this story — those consume the instrument object and will work with any valid instrument once the schema allows it
+
+---
+
+### Story 11-2: Number of Strings Selector in Setup UI
+
+As a **player**, I want a "Number of Strings" control in the setup screen that adjusts based on my instrument choice, so I can select my specific guitar or bass configuration and the game uses the correct tuning.
+
+**Acceptance Criteria:**
+
+**Given** the setup screen renders
+**When** the Instrument toggle shows "Guitar" selected (derived from current `instrumentId`)
+**Then** a "Number of Strings" control appears below the Instrument toggle
+**And** the control offers values 6, 7, 8 for Guitar
+**And** the current string count for the active instrument is pre-selected (e.g., `guitar-7-standard` → 7 selected)
+
+**Given** the setup screen renders with "Bass" selected
+**When** the Number of Strings control renders
+**Then** the control offers values 4, 5 for Bass
+**And** the current string count is pre-selected (e.g., `bass-5-standard` → 5 selected)
+
+**Given** the player changes the Instrument toggle from Guitar to Bass
+**When** the toggle fires its `onSelect` callback
+**Then** the Number of Strings control updates to show Bass values (4, 5)
+**And** the selected count resets to the default for Bass (4)
+**And** `currentInstrumentId` updates to `bass-4-standard`
+
+**Given** the player changes the Instrument toggle from Bass to Guitar
+**When** the toggle fires its `onSelect` callback
+**Then** the Number of Strings control updates to show Guitar values (6, 7, 8)
+**And** the selected count resets to the default for Guitar (6)
+**And** `currentInstrumentId` updates to `guitar-standard`
+
+**Given** the player selects 7 on the Guitar Number of Strings control
+**When** the control's selection changes
+**Then** `currentInstrumentId` becomes `"guitar-7-standard"`
+
+**Given** the player clicks START with `currentInstrumentId = "guitar-8-standard"`
+**When** the session config request is made
+**Then** `instrument_id = "guitar-8-standard"` is sent to `/api/plugins/subway-scaler/game/start`
+
+**Given** the player starts a session
+**When** settings are saved to `localStorage`
+**Then** the `instrument_id` stored includes the string count (e.g., `"guitar-7-standard"`)
+**And** on the next page load, the setup screen pre-selects Guitar + 7 strings
+
+**Given** the Instrument toggle shows Guitar and Number of Strings shows 6
+**When** the player opens the setup screen
+**Then** the instrument toggle shows two options: "Guitar" and "Bass" (not individual instrument names)
+**And** the Number of Strings control is a toggle group (consistent with the existing Difficulty and Instrument toggle group pattern)
+
+**Implementation Notes:**
+- Modify `static/game/ui/setup.js`:
+  - Change instrument toggle from listing all instrument objects by name to two options: `{ id: 'guitar', name: 'Guitar' }` and `{ id: 'bass', name: 'Bass' }`
+  - Add `createStringCountToggle(kind, currentCount, instruments, onChange)` helper that renders the correct values for the given kind
+  - Add `resolveInstrumentId(kind, stringCount)` pure function: `{ guitar: { 6: 'guitar-standard', 7: 'guitar-7-standard', 8: 'guitar-8-standard' }, bass: { 4: 'bass-4-standard', 5: 'bass-5-standard' } }`
+  - On instrument-kind change: rebuild string-count toggle; reset to default count; call `resolveInstrumentId` to update `currentInstrumentId`
+  - On string-count change: call `resolveInstrumentId` to update `currentInstrumentId`
+  - Derive initial kind and count from `stored.instrument_id` using `instruments` list
+- The `instruments` list (from `GET /instruments`) is passed in and used only to derive initial state — `resolveInstrumentId` uses a hardcoded map for reliability
+- `setup.css`: no new styles needed if existing `.toggle-group` / `.toggle-button` classes are reused
+
+---
+
+### Story 11-3: Fix: Character Running Animation From Start
+
+As a **player**, I want the character to be visibly running from the very first frame of the countdown, so the game feels alive and responsive immediately rather than waiting for the countdown to finish.
+
+**Acceptance Criteria:**
+
+**Given** the player clicks START and the game scene initialises
+**When** the first animation frame renders (before the countdown ends)
+**Then** the character sprite is animating through its running frames — not frozen on frame 0
+
+**Given** the 3-second countdown is running (`showOverlay("3")`, `showOverlay("2")`, `showOverlay("1")`)
+**When** each RAF tick fires during the countdown
+**Then** `updateCharacterSprite` advances through the sprite sheet frames at the configured `CHARACTER_FPS` rate
+**And** the character visibly cycles through frames while the countdown overlays are shown
+
+**Given** the countdown completes and `run.start(gameStartTime)` is called
+**When** the game is fully active
+**Then** the character continues animating without any jump or reset in the frame cycle
+
+**Given** the game is paused and then resumed
+**When** the RAF loop resumes
+**Then** the character animation continues from where it left off — no freeze or reset
+
+**Given** the game-over state is entered
+**When** the session ends
+**Then** the character animation stops (scene is no longer rendered)
+
+**Implementation Notes:**
+- Root cause: `updateCharacterSprite(nowGameMs)` computes `elapsed = nowGameMs - gameStartTime` where `gameStartTime = countdownStart + 3500` (3.5 s in the future). During the countdown, `elapsed < 0`, causing `_frameTimelineFn` to always return frame 0.
+- Fix: introduce a `_charAnimStartMs` variable in `SceneManager.js`, set to `performance.now()` when the first render frame fires after `setGameStartTime()` is called. In `updateCharacterSprite`, use `elapsed = Math.max(0, nowGameMs - _charAnimStartMs)` for frame computation — independent of the game clock that the wave scheduler uses.
+- `_charAnimStartMs` is reset to `null` on `scene.reset()` and set lazily on the first `render()` call after a `setGameStartTime()` call.
+- No changes needed in `main.js` or `GameLoop.js` — the fix is internal to `SceneManager.js`
+- Verify: sprite frame advances during countdown period in manual browser test
+
+---
+
+### Story 11-4: Remove Legacy Score/Note HUD
+
+As a **player**, I want the game screen to be clean with only the Epic 8 HUD overlay showing score and feedback, so there is no redundant or confusing readout in the bottom-left corner.
+
+**Acceptance Criteria:**
+
+**Given** the game is running
+**When** the player looks at the game screen
+**Then** there is no score or note-name readout in the bottom-left corner of the game shell
+**And** the Epic 8 HUD overlay (top-right score, bottom-right pause button, top-left fret box) remains fully functional
+
+**Given** a correct note is played
+**When** audio detection fires
+**Then** feedback is shown only via the Epic 8 HUD elements (score flash, fret box)
+**And** no legacy `<div class="hud">` content appears or updates
+
+**Given** the DOM is inspected during active gameplay
+**When** queried for `.hud` (the legacy container)
+**Then** the element is absent — not hidden, not empty, but removed from the DOM entirely
+
+**Given** all existing unit tests and E2E specs
+**When** run after the removal
+**Then** all pass — no test references the removed legacy HUD elements
+
+**Implementation Notes:**
+- `static/game/main.js`: Remove the `const hud = el('div', { class: 'hud' })` block (around lines 295–300), the `expectedEl` and `feedbackEl` element creation, and the `hud.appendChild(expectedEl)` / `hud.appendChild(feedbackEl)` calls
+- Also remove `hud` from the `gameWrap` children: `el('div', { class: 'game-wrap', ... }, canvas, overlay, hud)` → remove `hud`
+- Trace all references to `expectedEl` and `feedbackEl` throughout `main.js` and any imported modules (`GamePoller.js`, `NoteAcceptor.js`) — replace with no-ops or remove entirely
+- `static/game/ui/overlays.css` or `hud.css`: remove any `.hud`, `.expected`, `.feedback` CSS rules if present
+- Do not remove `feedbackEl` from `GamePoller` if it is still wired to Epic 8 score feedback — audit usages first. If `feedbackEl` drives only the removed legacy element, remove it entirely. If it drives Epic 8 elements, keep the reference but point it to the correct Epic 8 DOM element.
+
+---
+
+### Story 11-5: README Update for v1.0
+
+As a **new user or contributor**, I want the README to accurately describe the current state of Subway Scaler v1.0, so I can understand what the game is, how to set it up, and how to play it without reading outdated or incomplete information.
+
+**Acceptance Criteria:**
+
+**Given** a developer clones the repository
+**When** they read `README.md`
+**Then** the README describes Subway Scaler as a guitar/bass scale trainer Slopsmith plugin with Subway Surfers-style gameplay
+**And** includes setup instructions for running it (Docker / native, Slopsmith integration)
+**And** describes the controls: instrument selection, scale selection, difficulty, how playing a note moves the character
+**And** lists the supported instruments: 4-string bass, 5-string bass, 6-string guitar, 7-string guitar, 8-string guitar
+**And** describes the string colour system (Rocksmith convention) so players know how to read the track
+**And** mentions the variant switching mechanic at a high level
+**And** does not contain references to features not yet implemented (e.g., tutorial screen, sound effects, multiplayer)
+**And** does not contain placeholder text, broken links, or TODO markers
+
+**Given** a first-time player reads the README
+**When** they follow the "How to Play" section
+**Then** the instructions are accurate for the currently implemented game: setup screen → pick scale/instrument/strings/difficulty → click START → play notes → avoid carts
+
+**Implementation Notes:**
+- Update `README.md` in the project root
+- Sections to include: Project overview, Prerequisites, Installation, Running (Docker + native), How to play, Instrument support, String colour reference, Known limitations / future work
+- Remove or rewrite any content written for an earlier planned-but-not-implemented state
+- No code changes required — documentation only

@@ -91,13 +91,13 @@ export class NoteAcceptor {
         }
       }
 
-      this.feedbackEl.textContent = '✓';
+      if (this.feedbackEl) this.feedbackEl.textContent = '✓';
       if (this.setExpectedFn) this.setExpectedFn();
       return { accepted: true, result: 'accepted' };
     }
 
     if (result === 'rejected') {
-      this.feedbackEl.textContent = '·';
+      if (this.feedbackEl) this.feedbackEl.textContent = '·';
       return { accepted: false, result: 'rejected' };
     }
 

@@ -857,7 +857,9 @@ export function createScene(canvas) {
       return;
     }
 
-    const elapsed = nowGameMs - gameStartTime;
+    // Use _charAnimStartMs (set on first render) so animation plays from frame 0
+    // during the countdown, independent of gameStartTime being set 3.5 s in the future.
+    const elapsed = Math.max(0, nowGameMs - (_charAnimStartMs ?? nowGameMs));
     const frameIdx = _frameTimelineFn(elapsed, _spriteFrames.length);
     if (frameIdx !== _charLastFrameIdx) {
       _charLastFrameIdx = frameIdx;
@@ -890,6 +892,7 @@ export function createScene(canvas) {
   let succeeded = false;
   let lastTime = 0;
   let gameStartTime = 0;
+  let _charAnimStartMs = null; // separate clock for sprite animation; set on first render after setGameStartTime
   let baseFret = 0;
   let numLanes = 6;
 
@@ -967,6 +970,7 @@ export function createScene(canvas) {
     clearWaves();
     clearVariantGeom();
     tween = null;
+    _charAnimStartMs = null;
     _charTraversal = null;
     _bendMidpointCb = null;
     _bendMidpointFired = false;
@@ -1481,6 +1485,7 @@ export function createScene(canvas) {
 
   function setGameStartTime(time) {
     gameStartTime = time;
+    _charAnimStartMs = null; // force re-capture on next render so animation starts immediately
   }
 
   function setBaseFret(f, nL = 6) {
@@ -1555,6 +1560,9 @@ export function createScene(canvas) {
   function render(nowMs) {
     const dt = lastTime ? Math.max(0, Math.min(0.05, (nowMs - lastTime) / 1000)) : 0.016;
     lastTime = nowMs;
+
+    // Capture animation start time on first render after setGameStartTime (story 11-3).
+    if (_charAnimStartMs === null) _charAnimStartMs = nowMs;
 
     // Animate character sprite frame (story 7-6).
     updateCharacterSprite(nowMs);

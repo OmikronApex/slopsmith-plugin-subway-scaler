@@ -292,14 +292,9 @@ export async function bootstrap(root) {
 
   // --- Game container ---
   const canvas = el('canvas', { class: 'game-canvas', width: '800', height: '450' });
-  const hud = el('div', { class: 'hud' });
-  const expectedEl = el('div', { class: 'expected' });
-  const feedbackEl = el('div', { class: 'feedback' });
   const overlay = el('div', { class: 'overlay hidden' });
-  hud.appendChild(expectedEl);
-  hud.appendChild(feedbackEl);
-  // game-wrap fills the shell absolutely; canvas, overlay, hud all position within it.
-  const gameWrap = el('div', { class: 'game-wrap', style: 'display:none' }, canvas, overlay, hud);
+  // game-wrap fills the shell absolutely; canvas and overlay position within it.
+  const gameWrap = el('div', { class: 'game-wrap', style: 'display:none' }, canvas, overlay);
   shell.appendChild(gameWrap);
   overlayMgr.mount(gameWrap);
 
@@ -373,8 +368,6 @@ const scene = createScene(canvas);
 
   function setExpected() {
     if (!run || !run.currentExpected()) return;
-    const exp = run.currentExpected();
-    expectedEl.textContent = `Play: ${exp.note.name}`;
     const upcoming = run.upcoming(3).map(e => e.name);
     scene.setUpcomingNotes(upcoming);
     // Sync cursor to safe zone renderer for primary-wave filtering (Story 9-1).
@@ -477,7 +470,6 @@ const scene = createScene(canvas);
         gameClient,
         scene,
         variantController,
-        feedbackEl,
         pushGameEvent,
         debugLogger: _debugLogger,
       });
@@ -901,7 +893,6 @@ const scene = createScene(canvas);
       const poller = new GamePoller({
         gameClient, scoreDisplay, variantController, scene,
       });
-      poller.feedbackEl = feedbackEl;
       poller.run = run;
       poller._nowFn = _now;
       poller.gameStartTime = gameStartTime;
