@@ -133,6 +133,9 @@ export async function bootstrap(root) {
   root.innerHTML = '';
   root.className = 'subway-scaler';
 
+  // Ensure SdkBridge bridge object exists so onGameOver can be wired late
+  window.__slopsmithSdkBridge = window.__slopsmithSdkBridge || {};
+
   const shell = el('div', { class: 'game-shell' });
   root.appendChild(shell);
 
@@ -309,10 +312,13 @@ const scene = createScene(canvas);
   }).observe(shell);
 
   // Grab the microphone on the setup screen so it's ready when the game starts.
+  // In SDK hub mode, SdkBridge provides the audio handle; skip startAudio() in that case.
   // Errors are handled silently here; start() will surface them if audio is still null.
-  startAudio({ deviceId: state.audio.deviceId })
-    .then(a => { audio = a; })
-    .catch(() => {});
+  if (!window.__slopsmithSdkBridge?.sdkAudioHandle) {
+    startAudio({ deviceId: state.audio.deviceId })
+      .then(a => { audio = a; })
+      .catch(() => {});
+  }
 
   const gameClient = new GameClient(API);
   const safeZoneRenderer = new SafeZoneRenderer(scene.threeScene || scene.scene);
@@ -820,6 +826,8 @@ const scene = createScene(canvas);
             window.__gameState.gameOver.reason = 'collision';
             window.__gameState.gameOver.triggeredAt = Date.now();
           }
+          // Notify SdkBridge to track best score (Story 10-5); end() only called on Quit.
+          window.__slopsmithSdkBridge?.onGameOver?.(finalScore);
           hudShell.onPhaseChange(PHASES.GAME_OVER);
           overlayMgr.show({ type: 'game-over', score: finalScore });
           cleanup();
@@ -866,8 +874,11 @@ const scene = createScene(canvas);
         scene.render(now);
         rafId = requestAnimationFrame(loop);
       };
-      // Ensure mic pipeline is ready before countdown; start fresh only if setup-screen grab failed.
-      if (!audio) audio = await startAudio({ deviceId: state.audio.deviceId });
+      // Ensure mic pipeline is ready before countdown; use SDK audio handle in hub mode.
+      if (!audio) {
+        audio = window.__slopsmithSdkBridge?.sdkAudioHandle
+          || await startAudio({ deviceId: state.audio.deviceId });
+      }
       // Wire error handler now so a disconnect during countdown aborts cleanly instead of silently.
       audio.onError(() => {
         if (run && run.state === 'running') pauseGame('audio-error');
@@ -911,6 +922,7 @@ const scene = createScene(canvas);
       // HUD: show and render initial finger pattern
       hudShell.onPhaseChange(PHASES.PLAYING);
       scoreDisplay.update(0);
+      scoreDisplay.setDifficulty(state.difficulty);
       fretBox.render(notesResp);
 
       // Proximity dismiss: SceneManager fires this when safe zone passes player (AC-2, AC-3)

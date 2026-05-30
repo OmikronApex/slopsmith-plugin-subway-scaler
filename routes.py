@@ -16,6 +16,11 @@ def setup(app: FastAPI, context: dict):
             name="subway-scaler-static",
         )
 
+    # Initialise settings with config_dir from host context (Story 10-6)
+    if "config_dir" in context:
+        from services import settings as settings_service
+        settings_service.init(Path(context["config_dir"]))
+
     # Routers added in later phases
     from services.scales_router import router as scales_router
     from services.settings_router import router as settings_router

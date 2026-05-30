@@ -1,5 +1,6 @@
 ---
 stepsCompleted: [1, 2, 3, 4]
+epic10Amendment: true
 status: validated
 epic9Amendment: true
 partyModeRefinements:
@@ -17,6 +18,7 @@ inputDocuments:
   - prds/prd-subway-scaler.md
   - architecture.md
   - ux-design-specification.md
+  - slopsmith-plugin-minigames (github.com/slopsmith/slopsmith-plugin-minigames)
 ---
 
 # slopsmith-plugin-subway-scaler - Epic Breakdown
@@ -38,6 +40,15 @@ This document provides the complete epic and story breakdown for slopsmith-plugi
 **FR-007:** Visual Feedback — Sparkle/glow effects on correct notes.
 **FR-008:** Variant Switching — Switch root note mid-session.
 
+**Gaming SDK Integration:**
+**FR-GSDK-01:** Minigame Registration — Plugin declares `minigame` block in `plugin.json` and calls `window.slopsmithMinigames.register(spec)` with matching ID, `start`/`stop` lifecycle
+**FR-GSDK-02:** Own Setup Screen — When launched via hub, game mounts its own setup (scale, root, instrument, difficulty) inside SDK container; difficulty picker skipped
+**FR-GSDK-03:** Lifecycle Contract — `start({container, modifiers, sdk})`: game ignores empty modifiers, uses own UI; `stop()`: clean teardown
+**FR-GSDK-04:** SDK Audio Detection — Use `sdk.scoring.createContinuous()` for pitch tracking when available; fall back to own `YinDetector` when SDK absent
+**FR-GSDK-05:** Difficulty Scoring Multiplier — Easy x1.0, Medium x2.0, Hard x3.0 applied to base score per correct note
+**FR-GSDK-06:** Quit-Only Run Submission — `end()` called once on Quit with best score across replay attempts; own game-over overlay remains intact
+**FR-GSDK-07:** Settings Config Migration — Persist via `context["config_dir"]` like other Slopsmith plugins, with atomic writes and one-time migration from legacy `data/settings.json`
+
 ### Non-Functional Requirements
 
 **NFR-011:** 60 FPS target — render loop at 60fps minimum.
@@ -46,6 +57,11 @@ This document provides the complete epic and story breakdown for slopsmith-plugi
 **NFR-014:** Session state — save to local storage.
 **NFR-015:** Audio input options — professional interfaces, USB-MIDI, Slopsmith centralized detection.
 **NFR-016:** Settings persistence — save last scale, root note, difficulty, audio device.
+
+**SDK Compliance:**
+**NFR-GSDK-01:** Minigame spec `id` must match `plugin.json` `id` for hub discovery and server-side registry
+**NFR-GSDK-02:** `end()` call must not block game UI (fire-and-forget)
+**NFR-GSDK-03:** Plugin is inert without SDK — no crash, no UI, no errors
 
 ### Additional Requirements (Architecture)
 
@@ -91,6 +107,16 @@ This document provides the complete epic and story breakdown for slopsmith-plugi
 | UX-DR6 (Button Hierarchy) | Epic 4, Epic 8 | Pause button = primary style |
 | UX-DR7 (Responsive Shell) | Epic 4, Epic 8 | HUD anchored to game-shell |
 | UX-DR8 (Accessibility) | Epic 4, Epic 8 | Focus, keyboard, reduced-motion |
+| FR-GSDK-01 (Registration) | Epic 10 | `plugin.json` minigame block + `SdkBridge.register()` |
+| FR-GSDK-02 (Own Setup Screen) | Epic 10 | Game mounts own setup in hub container; no modifier picker |
+| FR-GSDK-03 (Lifecycle start/stop) | Epic 10 | `start({container, modifiers, sdk})` with empty modifiers; `stop()` triggers end |
+| FR-GSDK-04 (SDK Audio Detection) | Epic 10 | `SdkDetector` wrapping `sdk.scoring.createContinuous()` |
+| FR-GSDK-05 (Diff Multiplier) | Epic 10 | `DIFFICULTY_MULTIPLIERS` in CartSystem scoring |
+| FR-GSDK-06 (Quit-Only end) | Epic 10 | `end()` once on Quit; best-score tracking across replays |
+| FR-GSDK-07 (Config Migration) | Epic 10 | Settings via `context["config_dir"]`; atomic writes; legacy migration |
+| NFR-GSDK-01 (plugin.json match) | Epic 10 | Registration spec id check vs plugin.json |
+| NFR-GSDK-02 (Non-blocking end) | Epic 10 | Fire-and-forget on game-over |
+| NFR-GSDK-03 (Inert without SDK) | Epic 10 | Plugin silent when SDK absent |
 
 ## Epic List
 
@@ -120,6 +146,12 @@ This document provides the complete epic and story breakdown for slopsmith-plugi
 
 ### Epic 7: Visual Polish — World Environment & Procedural Scenery
 *(existing — unchanged)*
+
+### Epic 9: Gameplay Correctness & Code Health
+*(existing — detailed above)*
+
+### Epic 10: Slopsmith Gaming SDK Integration
+Register Subway Scaler as a minigame via SDK (plugin.json + register()), own setup in hub container, SDK audio detection (createContinuous()), start/stop lifecycle, difficulty-based scoring multiplier, and Quit-only end() with best-score tracking.
 
 ---
 
@@ -922,3 +954,352 @@ As a **developer**, I want the highest-severity latent items from `deferred-work
 - Depends on: Story 9-7 (all extractions complete so D3 verification is accurate)
 - D2 is explicitly allowed to resolve as a decision-log entry if the race window is judged bounded
 - D3 requires verifying the post-extraction state before acting
+
+---
+
+## Epic 10: Slopsmith Gaming SDK Integration
+
+Subway Scaler becomes a **hub-only minigame** — playable exclusively from the Minigames Hub. `plugin.json` drops `nav` + `screen` (no standalone entry); the plugin registers via `window.slopsmithMinigames.register(spec)` and mounts into the SDK's container. Without the SDK present, the plugin is inert.
+
+Difficulty selection stays in Subway Scaler's own setup screen (no SDK modifier picker). The SDK's `scoring.createContinuous()` replaces the game's own YIN pitch detection. The game calls `end()` only on **Quit**, tracking the best score across replay attempts — the internal game-over overlay (Epic 4) and Play Again loop remain intact.
+
+Key SDK contract (from `slopsmith-plugin-minigames/screen.js`):
+- **`register({id, start, stop, title, tagline, thumbnail, availableTracks})`** — called on init; hub uses `plugin.json` `minigame` fields for display. No `modifiers` field — SDK shows empty picker (title + Start button only, no modifier rows)
+- **`start({container, modifiers, sdk})`** — SDK calls this after picker; `container` is a `<div>` the game mounts into; `modifiers` is `{}` (empty)
+- **`end({score, durationMs, modifiers, meta, summaryHtml})`** — game calls on **Quit only**; SDK auto-submits run, shows `runSummary()`, updates profile
+- **`scoring.createContinuous(opts)`** — built-in YIN pitch tracker emitting `{freqHz, midiFloat, cents, confidence, tMs}` at ~60Hz. **Replaces** Subway Scaler's own `yin.js`. Expected base freq derivable from root MIDI note.
+- **`sdk.submitRun()` / `sdk.getLeaderboard()` / `sdk.getProfile()`** — backend persist + retrieval (used internally by `end()`)
+- No modifier picker: `plugin.json` has no `minigame.modifiers` → SDK shows picker with just title/tagline + Start → user clicks through → `start()` called with `modifiers: {}`
+- Game calls `end()` only on **Quit** — not on game-over. Internal game-over overlay handles replay loop. `SdkBridge` tracks best score across replay attempts.
+
+**User Outcomes:**
+- Subway Scaler is discoverable only from the Minigames Hub — no standalone "Plugins → Subway Scaler" nav entry
+- Tile click → SDK shows brief launch screen (title + Start) → Subway Scaler's own setup shows scale, root, instrument, and difficulty controls
+- Difficulty (Easy x1.0, Medium x2.0, Hard x3.0) is chosen in the game's own setup screen
+- Pitch detection uses the SDK's built-in YIN; fallback to the game's own YIN if SDK's tracker fails
+- Completed runs auto-submit to the shared leaderboard; XP and profile update automatically
+- Post-run summary shows score, XP gained, best score, and custom game stats — all rendered by the SDK
+- Without SDK installed, the plugin does nothing (inert — no crash, no UI)
+
+**Depends on:** Epic 1 (session setup), Epic 3 (game loop), Epic 4 (game-over flow), Epic 8 (HUD shell)
+
+| Story | Title | Status | Depends on |
+|---|---|---|---|
+| 10-1 | Minigame Manifest + SDK Registration | todo | — |
+| 10-2 | SDK Lifecycle — Hub Container with Own Setup Screen | todo | 10-1 |
+| 10-3 | SDK Audio Detection via createContinuous() | todo | 10-1 |
+| 10-4 | Difficulty-Based Scoring Multiplier | todo | 10-2 |
+| 10-5 | Run end() — Auto-Submit via SDK on Quit | todo | 10-2, Epic 4 |
+| 10-6 | Migrate Settings to Slopsmith Standard Config | todo | 10-1 |
+
+---
+
+### Story 10-1: Minigame Manifest + SDK Registration
+
+As the **Slopsmith plugin system**,
+I want Subway Scaler to declare its minigame metadata in `plugin.json` and register with the SDK,
+So that the Minigames Hub discovers it as a playable tile — and it has no standalone entry point.
+
+**Acceptance Criteria:**
+
+**Given** Subway Scaler is installed alongside the minigames SDK
+**When** the Slopsmith plugin loader scans plugin directories
+**Then** `plugin.json` contains:
+  - Same `id`, `script`, `routes` as before
+  - **No** `nav` field — no direct nav link in the Slopsmith main menu
+  - **No** `screen` field — no standalone screen entry point
+  - A `minigame` block with:
+    - `title`: "Subway Scaler"
+    - `tagline`: descriptive one-liner
+    - `type`: `"chart-free"`
+    - `scoring`: `"pitch-continuous"`
+    - `thumbnail`: path to a tile image
+    - No `modifiers` array
+
+**Given** the frontend initializes and the SDK is loaded
+**When** the plugin's `script` runs
+**Then** `SdkBridge.js` calls `window.slopsmithMinigames.register()` with an `id` matching `plugin.json`'s `id`
+**And** the registration spec includes `start` and `stop` lifecycle functions
+**And** the hub tile renders with the correct title, tagline, and thumbnail image
+**And** the server-side `/api/plugins/minigames/registry` endpoint returns Subway Scaler's `minigame` manifest
+
+**Given** `window.slopsmithMinigames` is undefined (SDK not installed)
+**When** the plugin script runs
+**Then** registration fails silently and is logged
+**And** the plugin is **inert** — no UI, no crash, no errors visible to the user
+
+**Given** `window.slopsmithMinigames` is undefined
+**When** a user navigates to any Subway Scaler URL
+**Then** no route or screen handler responds (no standalone view)
+
+**Implementation Notes:**
+- Update `plugin.json`: remove `"nav"` and `"screen"` entries. Add `"minigame"` block. Keep `"script"` and `"routes"` unchanged.
+- New file: `static/game/SdkBridge.js` — wraps all SDK interactions
+- Registration call: `window.slopsmithMinigames.register({ id: 'subway-scaler', start, stop, title: 'Subway Scaler', tagline: '...', thumbnail: '...' })`
+- Registration guard: `if (typeof window.slopsmithMinigames?.register === 'function')` — else log warning and return (no further init)
+- The plugin's `script` does nothing besides registering — no game logic runs until `start()` is called by the SDK
+- Tests: Vitest with mock SDK verifying register called with correct spec shape; E2E verifying hub tile presence; E2E verifying no standalone nav entry exists
+
+---
+
+### Story 10-2: SDK Lifecycle — Hub Container with Own Setup Screen
+
+As a **player**,
+I want to click Subway Scaler's tile in the hub, see a brief launch confirm, then choose scale/root/instrument/difficulty in the game's own setup,
+So that difficulty selection stays exactly where it is — no separate SDK picker step.
+
+**Acceptance Criteria:**
+
+**Given** the player clicks Subway Scaler's tile in the Minigames Hub
+**When** the SDK's modifier picker opens
+**Then** only the game title and a "Start" button are shown (no modifier rows — no modifiers in `plugin.json`)
+**And** the player clicks "Start" to proceed immediately
+
+**Given** the player clicks Start in the SDK picker
+**When** the SDK calls `start({container, modifiers, sdk})`
+**Then** `container` is a `<div class="mg-game-root">` inside the SDK's stage area
+**And** `modifiers` is `{}` (empty — no SDK modifiers)
+**And** the game mounts its full setup screen (scale selector, root note, instrument, difficulty) inside the container div
+**And** the difficulty selector is present with Easy (default), Medium, Hard options
+
+**Given** the setup screen renders inside the hub container
+**When** the player selects difficulty, scale, root, instrument and clicks START
+**Then** `GameState.session.difficulty` is set from the setup screen's difficulty control
+**And** the game loop begins normally (no regression from Epic 1/3)
+**And** `GameState.session.difficulty` reads `'easy'`, `'medium'`, or `'hard'`
+
+**Given** the player clicks the Quit button in the SDK stage chrome
+**When** the game session is active
+**Then** `GameState.runtime.phase` transitions to `GAME_OVER`
+**And** `SdkBridge.end()` is called with the current best score and `meta: { reason: 'quit' }`
+
+**Given** the hub navigates away from Subway Scaler
+**When** the SDK calls `stop()`
+**Then** any active session is torn down via the existing `cleanup()` flow
+**And** no orphaned timers or event listeners remain
+
+**Given** the plugin is loaded without the SDK (inert mode, Story 10-1)
+**When** no `start()` call ever arrives
+**Then** no setup screen or game code executes
+
+**Implementation Notes:**
+- This is the **only** entry point — no standalone mode exists
+- `start({container, modifiers, sdk})`: mount setup screen DOM into the provided `container` div
+- `stop()`: call existing `cleanup()` which stops audio, resets GameState, clears timers
+- `sdk` reference stored in `SdkBridge` for later `end()` and `createContinuous()` calls
+- Test: Vitest with mock `start({container, modifiers, sdk})` verifying setup screen mounts into container; E2E verifying full hub flow
+
+---
+
+### Story 10-3: SDK Audio Detection via createContinuous()
+
+As the **game engine**,
+I want to use the SDK's built-in YIN pitch tracker (`scoring.createContinuous()`) as the primary audio source,
+So that pitch detection comes from a shared SDK component rather than the game's own `yin.js`.
+
+**Acceptance Criteria:**
+
+**Given** Subway Scaler is launched via the hub
+**When** `start({container, modifiers, sdk})` is called and the game session begins
+**Then** `SdkBridge` calls `sdk.scoring.createContinuous({ expectedBaseFreqHz, smoothingMs })`
+**And** `expectedBaseFreqHz` is derived from the root MIDI note: `440 * 2^((rootMidi - 69) / 12)`
+**And** `smoothingMs` defaults to 30 (SDK default)
+
+**Given** the SDK pitch tracker is running
+**When** a `'pitch'` event fires with `{freqHz, midiFloat, cents, confidence, tMs}`
+**Then** `SdkBridge` converts the pitch event into the existing `AudioDetector.detect()` interface shape:
+  - `midi`: `Math.round(midiFloat)` — validated to [21, 108]
+  - `confidence`: from the SDK event
+  - `cents`: from the SDK event
+  - `tMs`: from the SDK event
+**And** the pitch data is passed into `GameLoop.js` via the existing detection pipeline (`runtime.currentNote`)
+
+**Given** the SDK pitch tracker fails to start (mic denied, AudioContext error)
+**When** `createContinuous()` rejects or throws
+**Then** `SdkBridge` catches the error and logs a warning
+**And** the game falls back to the existing `YinDetector` (wrapping `yin.js` / `yin-worklet.js`) for that session
+**And** gameplay continues without interruption
+
+**Given** the SDK pitch tracker is running but emits low confidence (`confidence < 0.3`)
+**When** a pitch event arrives
+**Then** the event is treated as silence (same energy-gate behavior as existing `YinDetector`)
+**And** no note detection fires
+
+**Given** a player quits the session or the hub navigates away
+**When** `stop()` is called on the continuous handle
+**Then** the `getUserMedia` stream is released by the SDK (`handle.stop()`)
+**And** the AudioContext is closed
+
+**Given** the SDK is not loaded at all (inert mode)
+**When** no game session ever starts
+**Then** no audio detection is initialized — plugin remains silent
+
+**Implementation Notes:**
+- Extends `SdkBridge.js` with `startPitchDetection(rootMidi)` and `stopPitchDetection()` methods
+- Wraps `sdk.scoring.createContinuous()` in an `SdkDetector` class implementing the `AudioDetector` interface (adapter pattern from Architecture doc)
+- Existing `AudioDetector` interface: `async detect()` returning `{midi, confidence, cents, tMs}` or `null`. SDK emits events asynchronously — `SdkDetector` buffers the latest event and `detect()` returns it synchronously (same pattern as existing audio callback → `run.onDetection()` flow)
+- `expectedBaseFreqHz` computation: `440 * Math.pow(2, (rootMidi - 69) / 12)`
+- Fallback chain: try `SdkDetector` first; if unavailable → use `YinDetector`
+- The SDK's `createContinuous` handles its own `getUserMedia` + AudioContext lifecycle — no double-initialization
+- Test: Vitest with mock SDK's `scoring.createContinuous()` verifying pitch events are converted to correct `{midi, confidence, cents, tMs}` shape; test fallback to `YinDetector` when SDK tracker fails
+
+---
+
+### Story 10-4: Difficulty-Based Scoring Multiplier
+
+As a **player**,
+I want higher difficulty levels to award more points per correct note,
+So that challenging settings are properly rewarded.
+
+**Acceptance Criteria:**
+
+**Given** difficulty is set to **Easy** via the setup screen
+**When** `GameState.session.difficulty` is `'easy'`
+**Then** `CartSystem.js` uses multiplier **x1.0** → each correct note awards `BASE_SCORE × 1.0`
+
+**Given** difficulty is set to **Medium**
+**When** difficulty is `'medium'`
+**Then** multiplier is **x2.0**
+
+**Given** difficulty is set to **Hard**
+**When** difficulty is `'hard'`
+**Then** multiplier is **x3.0**
+
+**Given** a session is in progress
+**When** `CartSystem.js` computes score for a correct note
+**Then** `increment = BASE_SCORE × DIFFICULTY_MULTIPLIERS[GameState.session.difficulty]`
+**And** the multiplier is immutable for the run duration
+
+**Given** the base score is 100 (FR-004)
+**When** a Hard-mode correct note is scored
+**Then** the displayed increment is 300
+**And** a "x3.0" badge is shown next to the score in the HUD (color-accent text, Epic 8)
+
+**Given** `window.slopsmithMinigames.end()` is called on Quit (Story 10-5)
+**When** the modifiers payload includes `difficulty`
+**Then** the SDK's leaderboard stores the difficulty level for filtering
+
+**Implementation Notes:**
+- Multiplier constants: `DIFFICULTY_MULTIPLIERS = { easy: 1.0, medium: 2.0, hard: 3.0 }` in `GameState.js`
+- `BASE_SCORE = 100` constant
+- Score increment in `CartSystem.js`: `increment = Math.round(BASE_SCORE * DIFFICULTY_MULTIPLIERS[difficulty])`
+- Multiplier badge: extend `ScoreDisplay.js` to show `x1.0` / `x2.0` / `x3.0` — use `color-accent` text
+- Test: parameterised Vitest asserting correct increment for each difficulty level
+
+---
+
+### Story 10-5: Run end() — Auto-Submit via SDK on Quit Only
+
+As the **game engine**,
+I want to call `window.slopsmithMinigames.end()` only when the player quits the game session,
+So that Subway Scaler's own game-over overlay and Play Again flow remain intact across replay attempts, with only the best score of the session submitted to the leaderboard.
+
+**Acceptance Criteria:**
+
+**Given** a game-over occurs (`GameState.runtime.phase === PHASES.GAME_OVER`) during a play attempt
+**When** the player dies
+**Then** Subway Scaler's own game-over overlay (Epic 4) is shown
+**And** `end()` is NOT called — the SDK summary does not appear
+**And** `SdkBridge` records the current session score as `bestScore` if it exceeds the previous best
+
+**Given** the player clicks "Play Again" on the game-over overlay
+**When** the game restarts internally
+**Then** the scene, score, and wave state are reset (existing Epic 3 flow)
+**And** the SDK's `createContinuous()` pitch tracker continues running (no stop/restart needed)
+**And** `SdkBridge.bestScore` persists across replays within this hub session
+
+**Given** the player completes multiple replay attempts with scores [200, 500, 300]
+**When** the player clicks the SDK Quit button (or hub navigates away)
+**Then** `SdkBridge.end()` calls `window.slopsmithMinigames.end()` once with:
+```js
+{
+  score: 500,  // best across all attempts
+  durationMs: Math.round(performance.now() - sessionStartTime),
+  modifiers: { difficulty: 'easy' },
+  meta: { scale_id, root_midi, instrument_id, notes_played, accuracy_pct, attempts: 3 },
+  summaryHtml: '<div>...custom stats...<div>'
+}
+```
+**And** the call is fire-and-forget
+
+**Given** the Quit button is clicked
+**When** `end()` is called
+**Then** the SDK shows the runSummary modal once with the best score and XP gained
+**And** the profile strip updates
+**And** `SdkBridge` resets `bestScore` to 0 for the next `start()` cycle
+
+**Given** the hub navigates away from Subway Scaler
+**When** the SDK calls `stop()`
+**Then** `stop()` first calls `end()` with the best score (same payload as Quit)
+**And** a reentry guard prevents `end()` → `stop()` → `end()` loops:
+```js
+let _ending = false;
+function stop() {
+  if (_ending) return;
+  _ending = true;
+  if (!_ended) { _ended = true; window.slopsmithMinigames.end({...}); }
+}
+```
+
+**Given** submission fails (SDK unavailable, network error)
+**When** `end()` throws or rejects
+**Then** the SDK summary still shows (SDK's `end()` swallows errors internally)
+**And** a warning is logged to console
+
+**Given** Subway Scaler is only available through the hub
+**When** game-over occurs
+**Then** the same game-over overlay (Epic 4) and Play Again flow work
+**And** no SDK call is attempted
+
+**Implementation Notes:**
+- `SdkBridge.bestScore = 0` tracked across replays; updated on each game-over: `bestScore = Math.max(bestScore, GameState.runtime.score)`
+- `SdkBridge.sessionStartTime = performance.now()` set in `start()` — total time across all replay attempts
+- Override SDK's Quit button onclick (SDK hardcodes `score: 0`): within `start()`, replace `document.getElementById('mg-stage-quit').onclick` handler
+- Reentry guard: `_ended` flag prevents double-submission if both Quit button and `stop()` fire
+- The SDK's internal `end()` handles `submitRun()` + `runSummary()` + profile update — game just passes the payload
+- Test: Vitest with mock SDK verifying `end()` is called once with best score; verifying `stop()` → `end()` reentry guard; verifying multiple game-overs only update `bestScore` without calling `end()`
+
+---
+
+### Story 10-6: Migrate Settings to Slopsmith Standard Config
+
+As the **plugin system**,
+I want Subway Scaler to persist settings via `context["config_dir"]` like other Slopsmith plugins,
+So that settings survive restarts and work in Docker.
+
+**Acceptance Criteria:**
+
+**Given** Subway Scaler's `routes.py` `setup(app, context)` is called by the Slopsmith plugin loader
+**When** the function begins
+**Then** `config_dir = Path(context["config_dir"])` is used as the settings root
+**And** the settings file path is `config_dir / "subway_scaler.json"`
+
+**Given** settings are persisted via the plugin's REST endpoints
+**When** `GET /api/plugins/subway-scaler/settings` is called
+**Then** settings are read from `config_dir / "subway_scaler.json"`
+**And** if the file doesn't exist, defaults are returned (existing `PlayerSettings` defaults)
+
+**Given** settings are saved via `PUT /api/plugins/subway-scaler/settings`
+**When** a valid payload is submitted
+**Then** the full settings object is written to `config_dir / "subway_scaler.json"`
+**And** writing uses atomic temp+rename to prevent partial writes
+
+**Given** the `data/settings.json` file exists from a previous version
+**When** the plugin starts for the first time after migration
+**Then** settings are migrated from `data/settings.json` to `config_dir / "subway_scaler.json"`
+**And** the old file is renamed to `data/settings.json.bak`
+
+**Given** the settings file contains corrupt JSON
+**When** `_read()` attempts to parse it
+**Then** the error is logged and defaults are returned
+
+**Given** all existing tests in `tests/`
+**When** run after the migration
+**Then** existing contract tests for `GET /settings` and `PUT /settings` pass (response shape unchanged)
+
+**Implementation Notes:**
+- Modify `services/settings.py`: remove hardcoded `SETTINGS_PATH`; add `init(config_dir)` called from `routes.py setup()`
+- Modify `routes.py`: pass `Path(context["config_dir"])` to `settings_service.init()` in `setup()`
+- Atomic write pattern: `tempfile.mkstemp` → write → `os.fsync` → `os.replace`
+- One-time migration: if `data/settings.json` exists and config target doesn't, copy then rename old to `.bak`
+- No change to `PlayerSettings` schema or endpoint contracts — paths only

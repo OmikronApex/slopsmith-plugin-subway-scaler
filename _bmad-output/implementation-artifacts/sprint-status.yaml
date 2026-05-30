@@ -118,3 +118,12 @@ development_status:
   9-10-dead-code-and-constant-cleanup: review
   9-11-remaining-cleanup-main5-main6: review
   9-12-slide-obstacle-for-consecutive-same-fret-notes: review
+
+  # Epic 10 — Minigame SDK Integration
+  epic-10: in-progress
+  10-1-minigame-manifest-registration: review
+  10-2-sdk-lifecycle-hub-container: review
+  10-3-sdk-audio-detection: review
+  10-4-difficulty-scoring-multiplier: review
+  10-5-run-end-quit-only: review
+  10-6-migrate-settings-config: review

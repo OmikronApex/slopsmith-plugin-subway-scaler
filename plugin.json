@@ -4,8 +4,13 @@
   "version": "1.0.0",
   "private": false,
   "bundled": true,
-  "nav": { "label": "Subway Scaler", "screen": "plugin-subway-scaler" },
-  "screen": "screen.html",
+  "minigame": {
+    "title": "Subway Scaler",
+    "tagline": "Dodge obstacles by playing the right notes on your instrument",
+    "type": "chart-free",
+    "scoring": "pitch-continuous",
+    "thumbnail": "/plugins/subway-scaler/static/thumbnail.png"
+  },
   "script": "screen.js",
   "routes": "routes.py"
 }

@@ -42,6 +42,9 @@ export const GameState = {
   },
 };
 
+export const DIFFICULTY_MULTIPLIERS = { easy: 1.0, medium: 2.0, hard: 3.0 };
+export const BASE_SCORE = 100;
+
 // ===== Original Run class + utilities =====
 const DIFF_TABLE = { easy: 4000, medium: 2500, hard: 1500 };
 

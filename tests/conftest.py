@@ -16,13 +16,11 @@ import routes  # noqa: E402
 
 
 @pytest.fixture
-def tmp_settings_path(tmp_path, monkeypatch):
-    """Point services.settings at a per-test temp file."""
+def tmp_settings_path(tmp_path):
+    """Point services.settings at a per-test temp directory via init()."""
     from services import settings as settings_module
-
-    path = tmp_path / "settings.json"
-    monkeypatch.setattr(settings_module, "SETTINGS_PATH", path)
-    return path
+    settings_module.init(tmp_path)
+    return tmp_path / "subway_scaler.json"
 
 
 @pytest.fixture
