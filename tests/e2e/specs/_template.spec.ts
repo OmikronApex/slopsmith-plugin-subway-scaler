@@ -8,22 +8,9 @@
  * This file tests only the story's specific acceptance criteria.
  */
 import { test, expect } from '../fixtures/gameFixture';
+import { openSubwayScalerSetup, startGame } from '../fixtures/startGame';
 import { injectAudioFile } from '../helpers/audioHelper';
 import path from 'path';
-
-// Replace with story-specific selectors confirmed from screen.html / DevTools
-const SELECTORS = {
-  // exampleButton: 'button:has-text("Start")',
-};
-
-// Navigate to the plugin setup screen (bootstrap() has run at this point)
-async function navigateToPlugin(page: any) {
-  await page.goto('/');
-  await page.waitForLoadState('networkidle');
-  await page.getByRole('button', { name: 'Plugins' }).click();
-  await page.getByText('Subway Scaler', { exact: true }).first().click();
-  await page.getByRole('button', { name: 'START' }).waitFor({ timeout: 10000 });
-}
 
 test.describe('Epic N: [Feature Name]', () => {
 
@@ -36,7 +23,7 @@ test.describe('Epic N: [Feature Name]', () => {
 
   // Example: test that needs window.__gameState (uses gamePage fixture)
   test('game state reflects action', async ({ gamePage }) => {
-    await navigateToPlugin(gamePage);
+    await openSubwayScalerSetup(gamePage);
     await gamePage.waitForFunction(() => (window as any).__gameState != null);
     const phase = await gamePage.evaluate(() => (window as any).__gameState?.session?.phase);
     expect(phase).toBe('idle');

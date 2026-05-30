@@ -34,7 +34,6 @@ test('score increments when A4 WAV is injected and game starts with A major', as
     path.join('tests', 'e2e', 'fixtures', 'audio', 'A4_440hz.wav')
   );
 
-  // Pin session-config so A4 is the first note — matches the injected WAV
   await context.route('**/game/session-config**', route =>
     route.fulfill({
       status: 200,
@@ -47,30 +46,28 @@ test('score increments when A4 WAV is injected and game starts with A major', as
   await page.addInitScript(() => { (window as any).__TEST_MODE = true; });
 
   try {
-    // Navigate to plugin
+    // Navigate via hub
     await page.goto('http://localhost:8000');
     await page.waitForLoadState('networkidle');
     await page.getByRole('button', { name: 'Plugins' }).click();
-    await page.getByText('Subway Scaler', { exact: true }).first().click();
+    await page.getByText('Minigames', { exact: true }).first().click();
+    await page.locator('[aria-label="Subway Scaler"]').waitFor({ timeout: 10000 });
+    await page.locator('[aria-label="Subway Scaler"]').click();
+    await page.locator('#mg-picker-start').waitFor({ timeout: 5000 });
+    await page.locator('#mg-picker-start').click();
     await page.getByRole('button', { name: 'START' }).waitFor({ timeout: 10000 });
-
-    // Setup screen START → session-config intercepted → auto-starts run
     await page.getByRole('button', { name: 'START' }).click();
 
-    // Wait for phase to reach 'playing'
     await page.waitForFunction(
       () => (window as any).__gameState?.session?.phase === 'playing',
       { timeout: 10000 }
     );
 
-    // Confirm A4 is being detected from the WAV
     await page.waitForFunction(
       () => (window as any).__gameState?.lastDetectedNote === 'A4',
       { timeout: 5000 }
     );
 
-    // Wait for at least one scoring event — wave must arrive in safe zone
-    // Give up to 20s: wave spawn timing is backend-controlled
     await page.waitForFunction(
       () => ((window as any).__gameState?.score?.current ?? 0) > 0,
       { timeout: 20000 }

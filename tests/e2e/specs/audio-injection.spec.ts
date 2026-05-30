@@ -7,13 +7,16 @@ import path from 'path';
 test.skip(({ browserName }) => browserName !== 'chromium',
   'WAV injection requires Chromium --use-file-for-fake-audio-capture flag');
 
-async function navigateToPlugin(page: any) {
+async function navigateAndStartGame(page: any) {
   await page.goto('http://localhost:8000');
   await page.waitForLoadState('networkidle');
   await page.getByRole('button', { name: 'Plugins' }).click();
-  await page.getByText('Subway Scaler', { exact: true }).first().click();
+  await page.getByText('Minigames', { exact: true }).first().click();
+  await page.locator('[aria-label="Subway Scaler"]').waitFor({ timeout: 10000 });
+  await page.locator('[aria-label="Subway Scaler"]').click();
+  await page.locator('#mg-picker-start').waitFor({ timeout: 5000 });
+  await page.locator('#mg-picker-start').click();
   await page.getByRole('button', { name: 'START' }).waitFor({ timeout: 10000 });
-  // START → onSetupComplete → auto-starts the run and calls startAudio()
   await page.getByRole('button', { name: 'START' }).click();
   await page.waitForFunction(
     () => (window as any).__gameState?.session?.phase !== 'idle',
@@ -28,7 +31,7 @@ test('A4 440Hz is detected as "A4" within 2000ms', async () => {
   const page = await context.newPage();
   await page.addInitScript(() => { (window as any).__TEST_MODE = true; });
   try {
-    await navigateToPlugin(page);
+    await navigateAndStartGame(page);
 
     await page.waitForFunction(
       () => (window as any).__audioState?.pipelineReady === true,
@@ -53,7 +56,7 @@ test('silence.wav produces no detected note after 2000ms', async () => {
   const page = await context.newPage();
   await page.addInitScript(() => { (window as any).__TEST_MODE = true; });
   try {
-    await navigateToPlugin(page);
+    await navigateAndStartGame(page);
 
     await page.waitForFunction(
       () => (window as any).__audioState?.pipelineReady === true,

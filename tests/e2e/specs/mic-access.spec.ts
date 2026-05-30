@@ -1,21 +1,11 @@
 // Chromium-only: fake mic device flags are --use-fake-device-for-media-stream
 // and --use-fake-ui-for-media-stream (set in playwright.config.ts).
-// Firefox/Safari mic testing is deferred to a future story.
 import { test, expect, type Page } from '@playwright/test';
+import { openSubwayScalerSetup, startGame } from '../fixtures/startGame';
 
-async function navigateToPlugin(page: Page) {
-  await page.goto('/');
-  await page.waitForLoadState('networkidle');
-  // Plugin nav item is injected dynamically by Slopsmith under the Plugins dropdown
-  await page.getByRole('button', { name: 'Plugins' }).click();
-  await page.getByText('Subway Scaler', { exact: true }).first().click();
-  // Submit setup screen — START → onSetupComplete → auto-starts run and calls startAudio()
-  await page.getByRole('button', { name: 'START' }).waitFor({ timeout: 10000 });
-  await page.getByRole('button', { name: 'START' }).click();
-  await page.waitForFunction(
-    () => (window as any).__gameState?.session?.phase !== 'idle',
-    { timeout: 10000 }
-  );
+async function startGameViaHub(page: Page) {
+  await page.addInitScript(() => { (window as any).__TEST_MODE = true; });
+  await startGame(page);
 }
 
 test.describe('fake microphone device', () => {
@@ -35,7 +25,7 @@ test.describe('fake microphone device', () => {
   });
 
   test('window.__audioState.micActive becomes true within 3000ms of audio start', async ({ page }) => {
-    await navigateToPlugin(page);
+    await startGameViaHub(page);
 
     await page.waitForFunction(
       () => (window as any).__audioState?.micActive === true,
@@ -47,7 +37,7 @@ test.describe('fake microphone device', () => {
   });
 
   test('window.__audioState.pipelineReady becomes true within 5000ms of audio start', async ({ page }) => {
-    await navigateToPlugin(page);
+    await startGameViaHub(page);
 
     await page.waitForFunction(
       () => (window as any).__audioState?.pipelineReady === true,
@@ -59,7 +49,7 @@ test.describe('fake microphone device', () => {
   });
 
   test('window.__audioState.streamType equals "fake" with Chromium fake device', async ({ page }) => {
-    await navigateToPlugin(page);
+    await startGameViaHub(page);
 
     await page.waitForFunction(
       () => (window as any).__audioState?.streamType != null,
