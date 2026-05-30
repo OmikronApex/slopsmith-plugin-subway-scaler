@@ -56,6 +56,7 @@ export class YinDetector {
     // Tau search bounds derived from playable frequency range.
     // fMax=2637 Hz covers E7, the highest note on standard-tuned guitar.
     // tauMin backs off by 1 so parabolic interpolation has a valid left neighbor at the boundary.
+    if (fMin >= fMax) throw new Error(`fMin (${fMin}) must be less than fMax (${fMax})`);
     this.tauMin = Math.max(2, Math.ceil(sampleRate / fMax) - 1);
     this.tauMax = Math.min(this.halfSize - 1, Math.floor(sampleRate / fMin));
     // Pre-allocated buffers for difference and cumulative-mean-normalized-difference.
@@ -146,7 +147,8 @@ export class YinDetector {
   _parabolicInterpolation(tau) {
     const c = this.cmnd;
     const H = this.halfSize;
-    if (tau <= 0 || tau + 1 >= H) return tau;
+    // Also guard tau >= tauMax: c[tauMax+1] is zero-filled by _difference, corrupting interpolation.
+    if (tau <= 0 || tau + 1 >= H || tau >= this.tauMax) return tau;
     const s0 = c[tau - 1];
     const s1 = c[tau];
     const s2 = c[tau + 1];
@@ -163,7 +165,11 @@ export class YinDetector {
     rms = Math.sqrt(rms / this.windowSize);
     if (rms < 1e-4) return { frequencyHz: null, confidence: 0 };
 
-    this._difference(buf);
+    try {
+      this._difference(buf);
+    } catch {
+      return { frequencyHz: null, confidence: 0 };
+    }
     this._cmnd();
     const tauInt = this._absoluteThreshold();
     if (tauInt < 0) return { frequencyHz: null, confidence: 0 };

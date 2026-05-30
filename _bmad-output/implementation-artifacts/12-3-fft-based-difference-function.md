@@ -1,6 +1,6 @@
 # Story 12.3: FFT-Based Difference Function — O(n log n)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -247,3 +247,10 @@ Claude Sonnet 4.6
 - `static/game/yin.js`
 - `static/game/yin-worklet.js`
 - `tests/unit/js/yin.test.js`
+
+### Review Findings
+
+- [x] [Review][Decision] AC4 property naming: spec says `_scratchRe`/`_scratchIm`, implementation uses `_fftRe`/`_fftIm` — dismissed, `_fftRe`/`_fftIm` clearer; spec naming aspirational
+- [x] [Review][Patch] AC6 pitch stability test silently skips freq > 2000 Hz via `continue`, leaving upper A0–C7 range (spec: C6–C7, 1047–2093 Hz) uncovered — guard should be removed or converted to tolerance-adjusted assertion [tests/unit/js/yin.test.js:196] (12-3 AC6)
+- [x] [Review][Patch] Parabolic interpolation at tauMax accesses zero-filled c[tauMax+1] — when tauInt == tauMax, c[tau+1] = 0 (never written by _difference), pulling interpolated peak toward larger tau and yielding frequency below fMin [static/game/yin.js:146-156]
+- [x] [Review][Patch] _fftInPlace throw propagates uncaught through AudioWorklet process() — if triggered, permanently silences the processor with no main-thread diagnostic [static/game/yin.js:14 + yin-worklet.js]

@@ -76,7 +76,7 @@ describe('YIN - window size', () => {
     expect(res.confidence).toBeGreaterThan(0.5);
   });
 
-  it('worklet ring and frame buffers match windowSize=4096 default', () => {
+  it('YinDetector default windowSize is 4096 (worklet inherits this via processorOptions default)', () => {
     const yin = new YinDetector({ sampleRate: 44100 });
     expect(yin.windowSize).toBe(4096);
   });
@@ -119,7 +119,8 @@ describe('YIN - tau bounds', () => {
 
   it('tauMin/tauMax with SR=48000 and windowSize=2048 cover existing test frequencies', () => {
     const yin = new YinDetector({ sampleRate: 48000, windowSize: 2048 });
-    // tauMin = max(2, ceil(48000/2637) - 1) = max(2, 19-1) = 18, tauMax = min(1023, floor(48000/27)) = 1023
+    // tauMin = max(2, ceil(48000/2637) - 1) = max(2, 19-1) = 18
+    // tauMax = min(halfSize-1, floor(48000/27)) = min(1023, 1777) = 1023 (clamped by halfSize-1, not fMin)
     expect(yin.tauMin).toBe(18);
     expect(yin.tauMax).toBe(1023);
     // 220 Hz at SR=48000: tau ≈ 218 — within [18, 1023]
@@ -188,12 +189,12 @@ describe('YIN - FFT difference fn', () => {
     expect(avgMs).toBeLessThan(5);
   });
 
-  it('0.5-cent pitch stability: detects A0–C7 within 0.5 cents of reference O(n²)', () => {
-    // 20 semitones spanning A0 (27.5 Hz) to ~C6 (1046 Hz) — avoids extremes where both paths may struggle
-    const semitones = Array.from({ length: 20 }, (_, i) => i * 4); // every 4 semitones
+  it('0.5-cent pitch stability: detects A0–E7 within 0.5 cents of reference O(n²)', () => {
+    // Every 4 semitones from A0 (27.5 Hz) through E7 (2637 Hz) — full playable guitar range
+    const semitones = Array.from({ length: 20 }, (_, i) => i * 4);
+    semitones.push(79); // E7 ≈ 2637 Hz
     for (const st of semitones) {
       const freq = 27.5 * Math.pow(2, st / 12);
-      if (freq > 2000) continue; // skip ultrahigh in stability test
       const buf = sine44k(freq);
 
       // FFT path result

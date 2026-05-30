@@ -1,6 +1,6 @@
 # Story 12.1: Fix Window Size — Enable B0 Detection
 
-Status: review
+Status: done
 
 ## Story
 
@@ -113,3 +113,8 @@ Claude Sonnet 4.6
 - `static/game/yin.js`
 - `static/game/yin-worklet.js`
 - `tests/unit/js/yin.test.js`
+
+### Review Findings
+
+- [x] [Review][Patch] AudioDetector.js hard-codes windowSize=2048, bypassing B0 fix — production code never uses windowSize=4096 default; tauMax clamps to 1023 at SR=44100 so B0 (tau≈1429) is unreachable [static/game/AudioDetector.js:~148]
+- [x] [Review][Patch] Test 'worklet ring and frame buffers match windowSize=4096 default' never tests the worklet — it only instantiates YinDetector; rename or add actual worklet assertions [tests/unit/js/yin.test.js:79-83] (12-1 AC5)

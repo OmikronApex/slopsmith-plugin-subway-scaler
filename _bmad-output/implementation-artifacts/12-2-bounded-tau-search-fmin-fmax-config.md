@@ -1,6 +1,6 @@
 # Story 12.2: Bounded Tau Search — fMin/fMax Config
 
-Status: review
+Status: done
 
 ## Story
 
@@ -153,3 +153,8 @@ Claude Sonnet 4.6
 - `static/game/yin.js`
 - `static/game/yin-worklet.js`
 - `tests/unit/js/yin.test.js`
+
+### Review Findings
+
+- [x] [Review][Patch] Misleading test comment: claims `min(1023, floor(48000/27)) = 1023` but clamping source is halfSize-1=1023, not fMin — comment implies fMin drives the clamp when halfSize does [tests/unit/js/yin.test.js:122] (12-2 AC8)
+- [x] [Review][Patch] fMin > fMax produces tauMin > tauMax, causing silent perpetual no-detection with no diagnostic — no constructor validation [static/game/yin.js:59-60]
