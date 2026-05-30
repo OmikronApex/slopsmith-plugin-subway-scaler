@@ -135,3 +135,9 @@ development_status:
   11-3-fix-character-animation-from-start: review
   11-4-remove-legacy-hud: review
   11-5-readme-update: review
+
+  # Epic 12 — YIN Pitch Detector Correctness & Performance
+  epic-12: in-progress
+  12-1-fix-window-size-enable-b0-detection: review
+  12-2-bounded-tau-search-fmin-fmax-config: review
+  12-3-fft-based-difference-function: review

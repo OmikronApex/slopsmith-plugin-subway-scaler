@@ -7,12 +7,14 @@ class YinProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
     const opts = (options && options.processorOptions) || {};
-    this.windowSize = opts.windowSize || 2048;
+    this.windowSize = opts.windowSize || 4096;
     this.hopSize = opts.hopSize || 1024;
     this.detector = new YinDetector({
       sampleRate: sampleRate,
       windowSize: this.windowSize,
       threshold: opts.threshold || 0.1,
+      ...(opts.fMin !== undefined && { fMin: opts.fMin }),
+      ...(opts.fMax !== undefined && { fMax: opts.fMax }),
     });
     this.ring = new Float32Array(this.windowSize);
     this.frame = new Float32Array(this.windowSize);

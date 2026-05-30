@@ -1,5 +1,6 @@
 ---
 stepsCompleted: [1, 2, 3, 4]
+epic12Amendment: true
 epic11Amendment: true
 epic10Amendment: true
 status: validated
@@ -118,6 +119,10 @@ This document provides the complete epic and story breakdown for slopsmith-plugi
 | NFR-GSDK-01 (plugin.json match) | Epic 10 | Registration spec id check vs plugin.json |
 | NFR-GSDK-02 (Non-blocking end) | Epic 10 | Fire-and-forget on game-over |
 | NFR-GSDK-03 (Inert without SDK) | Epic 10 | Plugin silent when SDK absent |
+| FR-E12-01 (B0 detection) | Epic 12 | windowSize 4096, halfSize 2048, B0 detectable |
+| FR-E12-02 (Bounded tau search) | Epic 12 | tauMin/tauMax from fMin/fMax config |
+| FR-E12-03 (FFT difference fn) | Epic 12 | Hand-rolled Cooley-Tukey, O(n log n) |
+| NFR-E12-01 (< 5ms processing) | Epic 12 | Per-hop budget verified by smoke test |
 
 ## Epic List
 
@@ -153,6 +158,9 @@ This document provides the complete epic and story breakdown for slopsmith-plugi
 
 ### Epic 10: Slopsmith Gaming SDK Integration
 Register Subway Scaler as a minigame via SDK (plugin.json + register()), own setup in hub container, SDK audio detection (createContinuous()), start/stop lifecycle, difficulty-based scoring multiplier, and Quit-only end() with best-score tracking.
+
+### Epic 12: YIN Pitch Detector Correctness & Performance
+Fix silent B0 detection bug (windowSize 2048→4096), bound tau search to playable frequency range, and replace O(n²) difference function with FFT-based O(n log n) implementation — keeping pitch detection within the 5ms real-time budget.
 
 ---
 
@@ -1548,3 +1556,194 @@ As a **new user or contributor**, I want the README to accurately describe the c
 - Sections to include: Project overview, Prerequisites, Installation, Running (Docker + native), How to play, Instrument support, String colour reference, Known limitations / future work
 - Remove or rewrite any content written for an earlier planned-but-not-implemented state
 - No code changes required — documentation only
+
+---
+
+## Epic 12: YIN Pitch Detector Correctness & Performance
+
+The game correctly detects bass and guitar notes down to B0 (30.87 Hz) — fixing a silent correctness bug where the current window size makes low bass notes undetectable — and the pitch detection pipeline remains within its real-time processing budget even with the larger window.
+
+**User Outcomes:**
+- Bass players on 5-string bass or 7/8-string guitar can reliably trigger correct-note detection on their lowest strings (B0, F#1) — notes that were silently undetectable before this epic
+- Pitch detection runs within the AudioWorklet hop budget (~23ms at 44100 Hz) with windowSize=4096, keeping the game at 60 FPS
+- Tau search is bounded to the playable frequency range, skipping irrelevant computation and giving headroom for the larger window
+
+**New Functional Requirements:**
+
+**FR-E12-01:** B0 Detection — The YIN detector must correctly detect pitches down to B0 (30.87 Hz). At 44100 Hz sample rate, this requires `halfSize ≥ 1429`, meaning `windowSize ≥ 4096`. Current `windowSize=2048` silently fails to detect any note below ~43 Hz.
+
+**FR-E12-02:** Bounded Tau Search — Tau computation must be constrained to `[tauMin, tauMax]` where `tauMin = ceil(sampleRate / fMax)` and `tauMax = min(halfSize - 1, floor(sampleRate / fMin))`, using configurable `fMin` (default 27 Hz) and `fMax` (default 2637 Hz — E7, highest note on standard-tuned guitar).
+
+**FR-E12-03:** FFT-Based Difference Function — The O(n²) `_difference()` implementation must be replaced with an FFT-based autocorrelation approach: `d(τ) = 2·r(0) - 2·ACF(τ)` via `IFFT(|FFT(zero-padded signal)|²)`. Implementation must be a hand-rolled Cooley-Tukey FFT (no external dependency) inlined in `yin.js`. FFT size must be `nextPow2(2 * windowSize)` to avoid circular autocorrelation.
+
+**New Non-Functional Requirement:**
+
+**NFR-E12-01:** Pitch detection processing per hop must complete in < 5ms wall-clock time with `windowSize=4096` at 44100 Hz sample rate. The AudioWorklet hop budget is ~23ms; this leaves headroom for the rest of the audio pipeline.
+
+**Depends on:** None (self-contained changes to `static/game/yin.js` and `static/game/yin-worklet.js`). Story 10-3's `YinDetector` fallback path benefits directly.
+
+**GitHub:** Epic issue [#25](https://github.com/OmikronApex/slopsmith-plugin-subway-scaler/issues/25)
+
+**Stories:**
+
+| Story | Title | Status | Depends on | GitHub |
+|---|---|---|---|---|
+| 12-1 | Fix Window Size — Enable B0 Detection | todo | — | [#26](https://github.com/OmikronApex/slopsmith-plugin-subway-scaler/issues/26) |
+| 12-2 | Bounded Tau Search — fMin/fMax Config | todo | 12-1 | [#27](https://github.com/OmikronApex/slopsmith-plugin-subway-scaler/issues/27) |
+| 12-3 | FFT-Based Difference Function — O(n log n) | todo | 12-2 | [#28](https://github.com/OmikronApex/slopsmith-plugin-subway-scaler/issues/28) |
+
+---
+
+### Story 12-1: Fix Window Size — Enable B0 Detection
+
+As a **bass player**,
+I want the pitch detector to correctly identify notes down to B0 (30.87 Hz),
+So that my lowest bass strings trigger note detection reliably in the game.
+
+**Acceptance Criteria:**
+
+**Given** the `YinDetector` is constructed with default options
+**When** `windowSize` and `halfSize` are inspected
+**Then** `windowSize` equals `4096`
+**And** `halfSize` equals `2048`
+**And** `this.diff` and `this.cmnd` are both `Float32Array` of length `2048`
+
+**Given** a synthetic 30.87 Hz sine wave (B0) at 44100 Hz sample rate, 4096 samples
+**When** `process(buf)` is called with that buffer
+**Then** `frequencyHz` is within ±2 Hz of 30.87
+**And** `confidence` is above `0.5`
+
+**Given** a synthetic 440 Hz sine wave at 44100 Hz, 4096 samples (regression)
+**When** `process(buf)` is called
+**Then** `frequencyHz` is within ±2 Hz of 440
+**And** `confidence` is above `0.5`
+
+**Given** the `YinProcessor` AudioWorklet is constructed with default `processorOptions`
+**When** `this.windowSize` and `this.ring.length` are inspected
+**Then** both equal `4096`
+**And** `this.frame.length` equals `4096`
+**And** `this.hopSize` remains `1024` (unchanged — no scope increase)
+
+**Given** all existing tests in `tests/unit/js/yin.test.js`
+**When** run after this change
+**Then** all pass without modification
+
+**Implementation Notes:**
+- `static/game/yin.js`: Change constructor default `windowSize = 2048` → `windowSize = 4096`
+- `static/game/yin-worklet.js`: Change `this.windowSize = opts.windowSize || 2048` → `opts.windowSize || 4096`. Do NOT change `hopSize` — keep at `1024`.
+- B0 test fixture: `new Float32Array(4096).map((_, i) => Math.sin(2 * Math.PI * 30.87 * i / 44100))`
+- 440 Hz test fixture: `new Float32Array(4096).map((_, i) => Math.sin(2 * Math.PI * 440 * i / 44100))`
+- No changes to `_difference`, `_cmnd`, `_absoluteThreshold`, or `_parabolicInterpolation` in this story
+
+---
+
+### Story 12-2: Bounded Tau Search — fMin/fMax Config
+
+As a **developer**,
+I want the YIN detector's tau search bounded to a configurable playable frequency range,
+So that computation skips irrelevant lag values and the larger 4096-sample window stays within the real-time hop budget.
+
+**Acceptance Criteria:**
+
+**Given** `YinDetector` constructed with `{ sampleRate: 44100, fMin: 27, fMax: 2637 }`
+**When** `this.tauMin` and `this.tauMax` are inspected
+**Then** `tauMin` equals `ceil(44100 / 2637)` = `17`
+**And** `tauMax` equals `min(2047, floor(44100 / 27))` = `min(2047, 1633)` = `1633`
+
+**Given** `YinDetector` constructed without `fMin`/`fMax` (defaults: `fMin=27`, `fMax=2637`)
+**When** `tauMin` and `tauMax` are inspected
+**Then** they equal the same values as above (27 and 2637 are the constructor defaults)
+
+**Given** a synthetic 30.87 Hz sine wave (B0, τ ≈ 1429) — within [tauMin=17, tauMax=1633]
+**When** `process(buf)` is called
+**Then** `frequencyHz` is within ±2 Hz of 30.87
+**And** detection succeeds (was already passing from 12-1 — regression guard)
+
+**Given** a synthetic 27.5 Hz sine wave (A0, τ ≈ 1603) — at the lower boundary
+**When** `process(buf)` is called
+**Then** `frequencyHz` is within ±2 Hz of 27.5 (boundary note not silently dropped)
+
+**Given** a synthetic 2637 Hz sine wave (E7, τ ≈ 17) — at the upper boundary (highest note on standard-tuned guitar)
+**When** `process(buf)` is called
+**Then** `frequencyHz` is within ±5 Hz of 2637 (upper boundary note detected)
+
+**Given** the `_difference(buf)` method with bounded tau
+**When** called with any buffer
+**Then** the outer loop runs only from `tauMin` to `tauMax` (inclusive)
+**And** `diff[tau]` for `tau < tauMin` or `tau > tauMax` is `0` or untouched (never written)
+**And** the `_absoluteThreshold()` search starts from `tauMin`, not `tau=2`
+
+**Given** all existing tests in `tests/unit/js/yin.test.js`
+**When** run after this change
+**Then** all pass without modification
+
+**Implementation Notes:**
+- `static/game/yin.js` constructor: add `fMin = 27` and `fMax = 1600` to options destructuring. Compute and store `this.tauMin = Math.ceil(sampleRate / fMax)` and `this.tauMax = Math.min(this.halfSize - 1, Math.floor(sampleRate / fMin))`.
+- `_difference(buf)`: change outer loop `for (let tau = 1; tau < H; tau++)` → `for (let tau = this.tauMin; tau <= this.tauMax; tau++)`
+- `_absoluteThreshold()`: change start `for (let tau = 2; tau < H; tau++)` → `for (let tau = this.tauMin; tau <= this.tauMax; tau++)`
+- `_cmnd()`: keep running from `tau=1` to `halfSize` (CMNDF normalization must cover all taus to be correct; only search is bounded)
+- `yin-worklet.js`: pass `fMin` and `fMax` from `processorOptions` through to `YinDetector` constructor
+
+---
+
+### Story 12-3: FFT-Based Difference Function — O(n log n)
+
+As a **developer**,
+I want the YIN difference function computed via FFT-based autocorrelation,
+So that pitch detection with `windowSize=4096` stays within the real-time 5ms processing budget instead of doing 8M operations per hop.
+
+**Acceptance Criteria:**
+
+**Given** `YinDetector` constructed with `{ sampleRate: 44100, windowSize: 4096 }`
+**When** `process(buf)` is called with a 440 Hz sine wave buffer
+**Then** `frequencyHz` is within ±1 Hz of 440 (end-to-end correctness with FFT path)
+
+**Given** the FFT implementation inside `yin.js`
+**When** inspected
+**Then** the FFT size is `nextPow2(2 * windowSize)` — for `windowSize=4096` this is `8192`
+**And** the input signal is zero-padded to `fftSize` before transformation (no circular autocorrelation)
+**And** after IFFT, values are divided by `fftSize` (correct normalization)
+**And** all scratch buffers (`_fftRe`, `_fftIm`, `_scratchRe`, `_scratchIm`) are pre-allocated `Float32Array` of length `fftSize` in the constructor — no per-hop heap allocation
+
+**Given** a 440 Hz sine wave buffer processed by both the original O(n²) `_difference` and the FFT-based path
+**When** the raw `d[tau]` arrays are compared element-by-element for `tau` in `[tauMin, tauMax]`
+**Then** the maximum absolute difference between any element is less than `1e-3`
+
+**Given** 20 test signals spanning the full playable range (A0 at 27.5 Hz to C7 at 2093 Hz, sampled at musically meaningful intervals)
+**When** the FFT path is used for each
+**Then** the detected pitch matches the direct O(n²) reference implementation to within **0.5 cents** for every signal
+**And** "same note name" is NOT a sufficient pass criterion — the cent deviation must be asserted numerically
+
+**Given** a zero-filled input buffer (silence)
+**When** `process(buf)` is called
+**Then** the function returns `{ frequencyHz: null, confidence: 0 }` without NaN, Infinity, or thrown errors
+**And** no division-by-zero occurs in the CMNDF step
+
+**Given** a noisy signal (440 Hz sine + Gaussian noise at SNR ≈ 20dB)
+**When** `process(buf)` is called
+**Then** `frequencyHz` is within ±5 Hz of 440 or `null` (noise may reduce confidence below threshold — both are acceptable)
+**And** no NaN or Infinity values are returned
+
+**Given** the `process()` method called 100 times with a 4096-sample 440 Hz sine buffer
+**When** total wall-clock time is measured via `performance.now()`
+**Then** average time per call is less than `5ms`
+
+**Given** all existing tests in `tests/unit/js/yin.test.js` and all Playwright E2E specs
+**When** run after this change
+**Then** all pass without modification
+
+**Given** `yin.test.js` structure after this story
+**When** inspected
+**Then** the file is organized into four `describe` blocks:
+- `'YIN - window size'` — B0 detection and 440 Hz regression (from Story 12-1)
+- `'YIN - tau bounds'` — boundary notes and arithmetic assertions (from Story 12-2)
+- `'YIN - FFT difference fn'` — cross-validation suite, d[tau] array comparison, silence, noise
+- `'YIN - integration'` — all three changes active together on the full note set (A0 through C7)
+
+**Implementation Notes:**
+- All FFT code is **hand-rolled Cooley-Tukey** inlined directly in `static/game/yin.js`. No external library, no CDN import, no vendored file — plain ES module, no bundler.
+- Constructor additions: `this._fftSize = nextPow2(2 * this.windowSize)` (where `nextPow2` is a pure function computing the next power of 2). Pre-allocate: `this._fftRe`, `this._fftIm`, `this._scratchRe`, `this._scratchIm` — all `Float32Array(this._fftSize)`.
+- `_difference(buf)` replacement: (1) copy `buf[0..windowSize]` into `_fftRe`, zero-pad `_fftRe[windowSize.._fftSize]`, zero `_fftIm`; (2) in-place FFT on `(_fftRe, _fftIm)`; (3) compute power spectrum: `re[k] = re[k]²+im[k]², im[k] = 0`; (4) in-place IFFT; (5) divide by `_fftSize`; (6) build `diff[tau]` using `d(τ) = 2·_fftRe[0] - 2·_fftRe[tau]` for `tau` in `[tauMin, tauMax]`.
+- Cooley-Tukey runtime assert: add `if ((n & (n - 1)) !== 0) throw new Error('FFT size must be power of 2')` at construction time.
+- `yin-worklet.js` is unchanged by this story — the worklet delegates entirely to `YinDetector.process()`.
+- Cross-validation test approach: keep the original O(n²) loop as a private `_differenceReference` method only present in test builds, or compute it inline in the test file for comparison. Do not ship the O(n²) reference in production code.
