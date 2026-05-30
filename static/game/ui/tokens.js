@@ -45,8 +45,8 @@ export const STRING_COLORS = [
   0x0066CC, // 2 — Blue
   0xCC6600, // 3 — Orange
   0x00CC66, // 4 — Green
-  0x9900CC, // 5 — Purple
-  0xCC00AA, // 6 — Magenta
+  0x6600AA, // 5 — Purple  (darkened for 7/8-string contrast vs Magenta)
+  0xFF33CC, // 6 — Magenta (brightened for 7/8-string contrast vs Purple)
   0x00CCCC, // 7 — Teal
 ];
 
@@ -60,8 +60,8 @@ export const STRING_SAFE_ZONE_FILLS = [
   0x001A33, // 2 — Blue   (darkened)
   0x331900, // 3 — Orange (darkened)
   0x003319, // 4 — Green  (darkened)
-  0x260033, // 5 — Purple (darkened)
-  0x330029, // 6 — Magenta(darkened)
+  0x1A0028, // 5 — Purple  (darkened, matches new 0x6600AA string colour)
+  0x400030, // 6 — Magenta (darkened, matches new 0xFF33CC string colour)
   0x003333, // 7 — Teal   (darkened)
 ];
 

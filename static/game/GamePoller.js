@@ -12,7 +12,6 @@ export class GamePoller {
     this._speedMultiplier = 1.0;
 
     // External refs set by main.js:
-    this.feedbackEl = null;
     this.run = null;
     this.pushGameEvent = null;
     this.debugLogger = null;
@@ -28,7 +27,6 @@ export class GamePoller {
 
       // Score update
       if (pollState.score !== undefined) {
-        if (this.feedbackEl) this.feedbackEl.textContent = `Score: ${pollState.score}`;
         if (window.__gameState) window.__gameState.score.current = pollState.score;
         this.scoreDisplay.update(pollState.score);
       }

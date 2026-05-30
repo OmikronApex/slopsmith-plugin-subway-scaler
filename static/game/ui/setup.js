@@ -54,6 +54,31 @@ function saveSettings(settings) {
   }
 }
 
+// ─── Instrument-kind + string-count helpers ───────────────────────────────────
+const _INSTRUMENT_ID_MAP = {
+  guitar: { 6: 'guitar-standard', 7: 'guitar-7-standard', 8: 'guitar-8-standard' },
+  bass:   { 4: 'bass-4-standard',  5: 'bass-5-standard' },
+};
+const _STRING_COUNT_OPTIONS = { guitar: [6, 7, 8], bass: [4, 5] };
+const _DEFAULT_STRING_COUNT  = { guitar: 6, bass: 4 };
+
+const _NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+function midiToNoteName(midi) { return _NOTE_NAMES[midi % 12]; }
+
+function resolveInstrumentId(kind, stringCount) {
+  return (_INSTRUMENT_ID_MAP[kind] ?? {})[stringCount] ?? 'guitar-standard';
+}
+
+function deriveKindAndCount(instrumentId) {
+  for (const [kind, counts] of Object.entries(_INSTRUMENT_ID_MAP)) {
+    for (const [count, id] of Object.entries(counts)) {
+      if (id === instrumentId) return { kind, stringCount: Number(count) };
+    }
+  }
+  return { kind: 'guitar', stringCount: 6 };
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 function computeRandomRootMidi(instrument) {
   if (!instrument || !instrument.tuning || !instrument.tuning[0]) return 60;
   const lowestString = instrument.tuning[0];
@@ -141,11 +166,12 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
 
   const defaultScaleId = stored.scale_id || scales[0].id;
   const defaultDifficulty = stored.difficulty || 'medium';
-  const defaultInstrumentId = stored.instrument_id || instruments[0].id;
+  const defaultInstrumentId = stored.instrument_id || 'guitar-standard';
 
   let currentScaleId = defaultScaleId;
   let currentDifficulty = defaultDifficulty;
-  let currentInstrumentId = defaultInstrumentId;
+  let { kind: currentKind, stringCount: currentStringCount } = deriveKindAndCount(defaultInstrumentId);
+  let currentInstrumentId = resolveInstrumentId(currentKind, currentStringCount);
 
   // Add title
   setupSection.appendChild(el('div', { class: 'game-title' }, 'SUBWAY SCALER'));
@@ -182,24 +208,84 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
   diffGroup.appendChild(diffToggle);
   form.appendChild(diffGroup);
 
-  // Instrument toggle
+  // Instrument kind toggle (Guitar / Bass)
   const instGroup = el('div', { class: 'form-group' });
   const instLabel = el('label', { id: 'label-instrument' }, 'Instrument');
   instGroup.appendChild(instLabel);
+  // String count slider — lives inside instGroup, below the kind toggle buttons
+  const stringSlider = el('input', {
+    type: 'range',
+    id: 'string-count-slider',
+    class: 'string-count-slider',
+    min: String(_STRING_COUNT_OPTIONS[currentKind][0]),
+    max: String(_STRING_COUNT_OPTIONS[currentKind][_STRING_COUNT_OPTIONS[currentKind].length - 1]),
+    value: String(currentStringCount),
+    step: '1',
+    'aria-label': 'Number of strings',
+    'aria-valuemin': String(_STRING_COUNT_OPTIONS[currentKind][0]),
+    'aria-valuemax': String(_STRING_COUNT_OPTIONS[currentKind][_STRING_COUNT_OPTIONS[currentKind].length - 1]),
+    'aria-valuenow': String(currentStringCount),
+  });
+  const stringSliderValue = el('span', { class: 'string-count-value' }, String(currentStringCount));
+
+  stringSlider.addEventListener('input', () => {
+    currentStringCount = Number(stringSlider.value);
+    currentInstrumentId = resolveInstrumentId(currentKind, currentStringCount);
+    stringSliderValue.textContent = String(currentStringCount);
+    stringSlider.setAttribute('aria-valuenow', String(currentStringCount));
+  });
+
+  function updateStringSlider(kind) {
+    const opts = _STRING_COUNT_OPTIONS[kind];
+    stringSlider.min = String(opts[0]);
+    stringSlider.max = String(opts[opts.length - 1]);
+    stringSlider.value = String(_DEFAULT_STRING_COUNT[kind]);
+    stringSlider.setAttribute('aria-valuemin', String(opts[0]));
+    stringSlider.setAttribute('aria-valuemax', String(opts[opts.length - 1]));
+    stringSlider.setAttribute('aria-valuenow', String(_DEFAULT_STRING_COUNT[kind]));
+    stringSliderValue.textContent = String(_DEFAULT_STRING_COUNT[kind]);
+  }
+
   const instToggle = createToggleGroup(
     'Instrument',
-    instruments.map(i => ({ id: i.id, name: i.name })),
-    defaultInstrumentId,
-    (val) => { currentInstrumentId = val; }
+    [{ id: 'guitar', name: 'Guitar' }, { id: 'bass', name: 'Bass' }],
+    currentKind,
+    (val) => {
+      currentKind = val;
+      currentStringCount = _DEFAULT_STRING_COUNT[val];
+      currentInstrumentId = resolveInstrumentId(val, currentStringCount);
+      updateStringSlider(val);
+      updateTuningLabel(currentInstrumentId);
+    }
   );
   instToggle.setAttribute('aria-labelledby', 'label-instrument');
   instGroup.appendChild(instToggle);
-  form.appendChild(instGroup);
 
-  // Root label
-  const rootLabel = el('div', { class: 'form-group' });
-  rootLabel.appendChild(el('label', {}, 'Root: 5th fret of lowest string'));
-  form.appendChild(rootLabel);
+  // Tuning display — note names for the selected instrument, low → high
+  const tuningLabel = el('div', { class: 'tuning-display', 'aria-label': 'Tuning' });
+
+  function updateTuningLabel(instrumentId) {
+    const inst = instruments.find(i => i.id === instrumentId);
+    tuningLabel.textContent = inst
+      ? inst.tuning.map(midiToNoteName).join('  ')
+      : '';
+  }
+  updateTuningLabel(currentInstrumentId);
+
+  // Wire tuning update into slider and kind toggle callbacks
+  const _origSliderInput = stringSlider.oninput;
+  stringSlider.addEventListener('input', () => {
+    updateTuningLabel(currentInstrumentId);
+  });
+
+  const stringCountRow = el('div', { class: 'string-count-row' },
+    el('label', { class: 'string-count-label', 'for': 'string-count-slider' }, 'Strings'),
+    stringSlider,
+    stringSliderValue,
+  );
+  instGroup.appendChild(stringCountRow);
+  instGroup.appendChild(tuningLabel);
+  form.appendChild(instGroup);
 
   // Debug logging checkbox
   const storedDebug = stored.debug_logging === true;
@@ -300,8 +386,7 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
     }
   });
 
-  // Tab order and keyboard handling
-  // Tab order: Scale → Difficulty → Instrument → START
+  // Tab order: Scale → Difficulty → Instrument (kind) → Number of Strings → START
   scaleSelect.addEventListener('keydown', (e) => {
     if (e.key === 'Tab' && !e.shiftKey) {
       e.preventDefault();
@@ -327,7 +412,7 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
   const diffBtns = Array.from(diffToggle.querySelectorAll('.toggle-button'));
   const lastDiffBtn = diffBtns[diffBtns.length - 1];
 
-  // Add Tab handlers to all difficulty buttons
+  // Difficulty buttons tab wiring
   diffBtns.forEach((btn, idx) => {
     btn.addEventListener('keydown', (e) => {
       if (e.key === 'Tab' && !e.shiftKey && idx === diffBtns.length - 1) {
@@ -341,16 +426,15 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
     });
   });
 
+  // Tab order: Instrument kind buttons → slider → START
   const instBtns = Array.from(instToggle.querySelectorAll('.toggle-button'));
-  const firstInstBtn = instBtns[0];
   const lastInstBtn = instBtns[instBtns.length - 1];
 
-  // Add Tab handlers to all instrument buttons
   instBtns.forEach((btn, idx) => {
     btn.addEventListener('keydown', (e) => {
       if (e.key === 'Tab' && !e.shiftKey && idx === instBtns.length - 1) {
         e.preventDefault();
-        startBtn.focus();
+        stringSlider.focus();
       } else if (e.key === 'Tab' && e.shiftKey && idx === 0) {
         e.preventDefault();
         const focusBtn = lastDiffBtn || firstDiffBtn;
@@ -359,10 +443,20 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
     });
   });
 
+  stringSlider.addEventListener('keydown', (e) => {
+    if (e.key === 'Tab' && !e.shiftKey) {
+      e.preventDefault();
+      startBtn.focus();
+    } else if (e.key === 'Tab' && e.shiftKey) {
+      e.preventDefault();
+      if (lastInstBtn) lastInstBtn.focus();
+    }
+  });
+
   startBtn.addEventListener('keydown', (e) => {
     if (e.key === 'Tab' && e.shiftKey) {
       e.preventDefault();
-      if (lastInstBtn) lastInstBtn.focus();
+      stringSlider.focus();
     }
   });
 

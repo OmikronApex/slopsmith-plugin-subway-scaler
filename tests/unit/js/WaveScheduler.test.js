@@ -226,11 +226,12 @@ describe('WaveScheduler', () => {
       const survivors = preIds.filter(id => nowIds.has(id));
       expect(survivors.length).toBeGreaterThan(0);
       expect(scheduler.queueingPaused).toBe(false);
-      // Tick to verify new waves spawn from cursor.
-      scheduler.tick(performance.now() + BASE_TIMING.wave_lookahead_ms, 1.0);
+      // Tick with a fixed game_now so pruning is deterministic regardless of wall-clock time.
+      // pruneThreshold = game_now - wave_lookahead_ms = 0, so no waves are pruned.
+      scheduler.tick(BASE_TIMING.wave_lookahead_ms, 1.0);
       const newWaves = scheduler.waves.filter(w => !preIds.includes(w.wave_id));
       expect(newWaves.length).toBeGreaterThan(0);
-      // First new wave note index should reflect the cursor offset.
+      // First new wave (lowest spawn_time_ms) must start at the cursor position.
       const firstNew = newWaves.sort((a, b) => a.spawn_time_ms - b.spawn_time_ms)[0];
       expect(firstNew.note_index).toBeGreaterThanOrEqual(cursor);
     });
