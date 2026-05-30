@@ -200,7 +200,7 @@ class GameEngine:
         if midi == expected_note.midi:
             _DIFFICULTY_MULTIPLIERS = {'easy': 1.0, 'medium': 2.0, 'hard': 3.0}
             multiplier = _DIFFICULTY_MULTIPLIERS.get(session.difficulty, 1.0)
-            session.current_score += round(100 * multiplier)
+            session.current_score += round(10 * multiplier)
             prev_idx = session.current_note_index
             session.total_notes_played += 1
             session.current_note_index = (session.current_note_index + 1) % len(session.notes)

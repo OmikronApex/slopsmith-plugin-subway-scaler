@@ -36,9 +36,9 @@ def _play_note(game_client, session_id, midi):
 
 
 @pytest.mark.parametrize("difficulty,expected_score", [
-    ("easy", 100),
-    ("medium", 200),
-    ("hard", 300),
+    ("easy", 10),
+    ("medium", 20),
+    ("hard", 30),
 ])
 def test_difficulty_multiplier_score(game_client, difficulty, expected_score):
     session_id, notes = _start_session(game_client, difficulty=difficulty)
