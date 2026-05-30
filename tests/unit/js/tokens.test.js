@@ -67,7 +67,7 @@ describe('Design Token System', () => {
     });
 
     it('STRING_COLORS[5] is Purple (highest pitch on 6-string)', () => {
-      expect(STRING_COLORS[5]).toBe(0x9900CC);
+      expect(STRING_COLORS[5]).toBe(0x6600AA);
     });
   });
 
@@ -77,7 +77,7 @@ describe('Design Token System', () => {
 
     it('returns the palette color at the given low→high index', () => {
       expect(colourForString(0, GUITAR)).toBe(0xCC0000);
-      expect(colourForString(5, GUITAR)).toBe(0x9900CC);
+      expect(colourForString(5, GUITAR)).toBe(0x6600AA);
     });
 
     it('clamps the index to instrument.stringCount - 1', () => {
@@ -89,7 +89,7 @@ describe('Design Token System', () => {
     });
 
     it('falls back to the full palette when instrument is null', () => {
-      expect(colourForString(5, null)).toBe(0x9900CC);
+      expect(colourForString(5, null)).toBe(0x6600AA);
     });
   });
 
