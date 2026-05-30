@@ -354,6 +354,11 @@ review
 ### File List
 
 - `static/game/main.js`
+- `static/game/ui/FretBox.js` �� removed `HUD_DETAIL_KEY`, `readDetailPref()`, `setDetailMode()`, `_applyDetailClass()` (Story 8-5 dead code, feature never shipped)
+- `static/game/ui/overlay.js` — removed HUD Detail toggle group from `PauseOverlay` (Story 8-5 dead code)
+- `static/game/ui/hud.css` — removed `.fret-detail-basic` / `.fret-detail-full` rules
+- `static/game/ui/overlays.css` — removed `.hud-detail-toggle` / `.hud-detail-btn` rules
+- `tests/unit/js/FretBox.test.js` — removed tests for `setDetailMode` / `_applyDetailClass`
 
 ---
 
@@ -361,3 +366,4 @@ review
 
 - 2026-05-29: Story created — implements MAIN-5 (duplicate promote paths consolidation) and MAIN-6 (dual pause UI cleanup) from refactor-findings.md, deferred from 9-10
 - 2026-05-29: Implementation complete — extracted `_applyPromoteResponse` shared helper, removed legacy `pauseBtn` DOM element, blur handler now uses `pauseGame()`
+- 2026-05-30: Extended cleanup — removed Story 8-5 (HUD Detail Toggle) dead code from FretBox, overlay, hud.css, overlays.css and its unit tests (feature was never implemented and e2e test was skipped)

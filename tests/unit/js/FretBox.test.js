@@ -152,30 +152,6 @@ describe('FretBox', () => {
     expect(fb._panel.classList.remove).toHaveBeenCalledWith('fretbox-hidden');
   });
 
-  it('default detail mode is "full" (reads localStorage)', () => {
-    const fb = new FretBox();
-    expect(fb._detailMode).toBe('full');
-  });
-
-  it('setDetailMode("basic") applies fret-detail-basic class', () => {
-    const fb = new FretBox();
-    fb.setDetailMode('basic');
-    expect(fb._detailMode).toBe('basic');
-    expect(fb._panel.classList.add).toHaveBeenCalledWith('fret-detail-basic');
-  });
-
-  it('setDetailMode("full") applies fret-detail-full class', () => {
-    const fb = new FretBox();
-    fb.setDetailMode('full');
-    expect(fb._panel.classList.add).toHaveBeenCalledWith('fret-detail-full');
-  });
-
-  it('setDetailMode persists to localStorage', () => {
-    const fb = new FretBox();
-    fb.setDetailMode('basic');
-    expect(localStorage.setItem).toHaveBeenCalledWith('subway-scaler-hud-detail', 'basic');
-  });
-
   it('destroy() removes panel', () => {
     const fb = new FretBox();
     fb.destroy();
