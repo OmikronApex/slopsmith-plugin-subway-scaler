@@ -591,17 +591,30 @@ export function createScene(canvas) {
 
   // Slide state (story 9-12)
   let _isSliding = false;
-  let _slideUntilMs = 0;
-  const SLIDE_DURATION_MS = 400;
+  let _slideWaveId = null; // wave ID of the requires_slide wave we're tracking
 
+  // Activate slide only when a requires_slide wave is within the safe-zone acceptance window.
+  // SafeZoneRenderer uses SAFE_ZONE_DEPTH=20 so notes are accepted when wave Z ∈ [-20, 0].
+  // Using -25 as the lower bound matches that window with a small buffer.
+  // Future requires_slide waves (e.g. Z=-80) are correctly excluded.
   function enterSlide(nowMs) {
-    _isSliding = true;
-    _slideUntilMs = nowMs + SLIDE_DURATION_MS;
+    for (const w of activeWaves.values()) {
+      if (!w.requiresSlide || w.ghost) continue;
+      const elapsed = Math.max(0, nowMs - gameStartTime - w.data.spawn_time_ms);
+      const waveZ = SPAWN_Z + elapsed * w.data.speed_px_per_ms * 0.5;
+      if (waveZ >= FRONT_Z - 25 && waveZ < FRONT_Z + 2.0) {
+        _isSliding = true;
+        _slideWaveId = w.data.wave_id;
+        return;
+      }
+    }
   }
 
-  function makeSlideBarrier() {
+  // centerX: world-space X of the barrier centre (baked into child positions).
+  // Width = 3 lanes (3 × LANE_X_SCALE). Posts sit at lane boundaries (between tracks).
+  function makeSlideBarrier(centerX) {
     const g = new THREE.Group();
-    const BARRIER_W = 10;
+    const BARRIER_W = 3 * LANE_X_SCALE;
     const BARRIER_H = 0.25;
     const BARRIER_D = 0.5;
     const beam = new THREE.Mesh(
@@ -613,14 +626,15 @@ export function createScene(canvas) {
         dithering: true,
       }))
     );
-    beam.position.y = 1.2;
+    beam.position.set(centerX, 1.2, 0);
     g.add(beam);
     const postMat = applyWorldCurve(new THREE.MeshStandardMaterial({
       color: 0x333333, roughness: 0.8, dithering: true,
     }));
+    const halfW = BARRIER_W / 2;
     for (const side of [-1, 1]) {
       const post = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.2, 0.12), postMat);
-      post.position.set(side * (BARRIER_W / 2 - 0.1), 0.6, 0);
+      post.position.set(centerX + side * halfW, 0.6, 0);
       g.add(post);
     }
     return g;
@@ -822,15 +836,25 @@ export function createScene(canvas) {
   function updateCharacterSprite(nowGameMs) {
     if (!_spriteFramesReady || !_spriteFrames || _spriteFrames.length === 0) return;
 
-    // Slide state: show powerslide pose for duration, then resume running
+    // Slide state: show powerslide pose while the barrier wave is near/passing.
+    // Expiry: recompute wave Z each frame; slide ends when wave has cleared the player.
     if (_isSliding) {
-      if (nowGameMs >= _slideUntilMs) {
+      const tracked = _slideWaveId ? activeWaves.get(_slideWaveId) : null;
+      if (!tracked) {
         _isSliding = false;
-      } else if (_powerslideTextures?.length) {
-        character.material.map = _powerslideTextures[0];
-        character.material.needsUpdate = true;
-        return;
+        _slideWaveId = null;
+      } else {
+        const wElapsed = Math.max(0, nowGameMs - gameStartTime - tracked.data.spawn_time_ms);
+        if (SPAWN_Z + wElapsed * tracked.data.speed_px_per_ms * 0.5 > FRONT_Z + 1.0) {
+          _isSliding = false;
+          _slideWaveId = null;
+        }
       }
+    }
+    if (_isSliding && _powerslideTextures?.length) {
+      character.material.map = _powerslideTextures[0];
+      character.material.needsUpdate = true;
+      return;
     }
 
     const elapsed = nowGameMs - gameStartTime;
@@ -1415,9 +1439,15 @@ export function createScene(canvas) {
           group.add(cart);
         }
         if (waveData.requires_slide) {
-          const barrier = makeSlideBarrier();
-          barrier.position.x = _worldOffsetX;
-          group.add(barrier);
+          // Centre barrier on safe track, clamped so posts stay within track set bounds.
+          // halfW = 1.5 * LANE_X_SCALE; post must be >= left-track-edge and <= right-track-edge.
+          const rawCenterX = laneX(waveData.safe_track, numLanes) + _worldOffsetX;
+          const minCenterX = laneX(0, numLanes) + _worldOffsetX + LANE_X_SCALE;
+          const maxCenterX = laneX(numLanes - 1, numLanes) + _worldOffsetX - LANE_X_SCALE;
+          const barrierCenterX = numLanes >= 3
+            ? Math.max(minCenterX, Math.min(maxCenterX, rawCenterX))
+            : rawCenterX;
+          group.add(makeSlideBarrier(barrierCenterX));
         }
         scene.add(group);
         // Capture offset + lane count at creation so collision uses the same

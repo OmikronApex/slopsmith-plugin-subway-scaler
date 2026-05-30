@@ -282,7 +282,7 @@ Implemented slide obstacle system for consecutive same-fret notes (Story 9-12).
 
 - **WaveScheduler.js**: Added `_prevSafeTrack` instance var (null in constructor, reset in `reset()` and `resumeQueueing()`). In `_buildWave`, computes `requiresSlide = (_prevSafeTrack !== null && safeTrack === _prevSafeTrack)`, updates `_prevSafeTrack`, and emits `requires_slide` field on wave objects.
 - **tokens.js**: Added `CHARACTER_POWERSLIDE_SPRITE_PATH` export pointing to the committed GIF asset.
-- **SceneManager.js**: Added `_isSliding`/`_slideUntilMs`/`SLIDE_DURATION_MS` slide state vars; `enterSlide(nowMs)` sets the slide state; `makeSlideBarrier()` builds orange construction-beam obstacle (full track width, y=1.2); `setWaves()` spawns barrier when `waveData.requires_slide`; `initSpriteFrames` loads powerslide GIF frames into `_powerslideTextures`; `updateCharacterSprite` switches to powerslide texture during active slide and reverts on expiry; `checkCollision` adds barrier check (character on safe lane but not sliding → collision); `enterSlide` exported in API.
+- **SceneManager.js**: Added `_isSliding`/`_slideWaveId` slide state vars; `enterSlide(nowMs)` activates slide only when a `requires_slide` wave is within the acceptance window (Z ∈ [-25, +2]) — no-ops for regular notes; barrier width = `3 × LANE_X_SCALE`, centred on the safe track and clamped to track bounds so posts land between lanes; `updateCharacterSprite` expiry tracks the wave's Z position rather than a fixed timer; `makeSlideBarrier(centerX)` bakes world-space X into child positions; `checkCollision` adds barrier check; `enterSlide` exported in API.
 - **NoteAcceptor.js**: Calls `this.scene.enterSlide?.(performance.now())` immediately on `result === 'accepted'`, before backend sync.
 - **Tests**: 4 new Vitest unit tests in `WaveScheduler.requires_slide.test.js` covering: same-fret consecutive (AC-1), different-fret (AC-2), mixed sequence (AC-1/AC-2), and reset clears state (AC-8).
 
@@ -299,6 +299,7 @@ All 4 new tests pass. 19 pre-existing test failures (SRGBColorSpace mock) unchan
 ## Change Log
 
 - 2026-05-30: Story 9-12 implemented — slide obstacle for consecutive same-fret notes
+- 2026-05-30: Refined slide behavior — barrier sized to 3 lanes centred on safe track; `enterSlide` gated to acceptance window to avoid triggering on non-slide notes; slide expiry tracks wave Z position instead of fixed timer
 
 ## Out of Scope
 
