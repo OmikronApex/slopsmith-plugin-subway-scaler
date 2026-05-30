@@ -191,23 +191,6 @@
   pointer-events: none;
 }
 
-/* ===== DETAIL MODE OVERRIDES (8-5) ===== */
-.subway-scaler .hud-fret-box.fret-detail-full .fret-scale-label {
-  display: block;
-}
-
-.subway-scaler .hud-fret-box.fret-detail-basic .fret-scale-label {
-  display: none;
-}
-
-.subway-scaler .hud-fret-box.fret-detail-full .fret-number {
-  color: var(--color-text-primary, #E8E8F0);
-}
-
-.subway-scaler .hud-fret-box.fret-detail-basic .fret-number {
-  color: var(--color-text-disabled, #555570);
-}
-
 
 /* ===== REDUCED MOTION (8-6) ===== */
 @media (prefers-reduced-motion: reduce) {

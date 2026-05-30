@@ -1,4 +1,4 @@
-const HUD_DETAIL_KEY = 'subway-scaler-hud-detail';
+import { stringToLaneIndex } from './tokens.js';
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
@@ -17,14 +17,6 @@ function midiToNoteName(midi) {
   return NOTE_NAMES[midi % 12];
 }
 
-function readDetailPref() {
-  try {
-    return localStorage.getItem(HUD_DETAIL_KEY) || 'full';
-  } catch (_) {
-    return 'full';
-  }
-}
-
 export class FretBox {
   constructor() {
     this._panel = document.createElement('div');
@@ -33,9 +25,6 @@ export class FretBox {
     this._panel.setAttribute('aria-label', 'Finger pattern');
 
     this._panel.style.position = 'absolute';
-
-    this._detailMode = readDetailPref();
-    this._applyDetailClass();
 
     this._lastPayload = null;
   }
@@ -111,7 +100,7 @@ export class FretBox {
     stringsLayer.style.gridAutoRows = '16px';
     for (let r = 0; r < stringCount; r++) {
       const backendString = r + 1;
-      const paletteIdx = stringCount - backendString;
+      const paletteIdx = stringToLaneIndex(backendString, stringCount);
       const line = document.createElement('div');
       line.className = 'fret-string-line';
       line.style.background = `var(--color-string-${paletteIdx})`;
@@ -126,7 +115,7 @@ export class FretBox {
 
     for (let r = 0; r < stringCount; r++) {
       const backendString = r + 1;
-      const paletteIdx = stringCount - backendString;
+      const paletteIdx = stringToLaneIndex(backendString, stringCount);
 
       for (let f = startFret; f <= endFret; f++) {
         const noteAtCell = noteMap.get(`${backendString}:${f}`);
@@ -172,8 +161,6 @@ export class FretBox {
     diagram.appendChild(wiresLayer);
 
     this._panel.appendChild(diagram);
-
-    this._applyDetailClass();
     return this;
   }
 
@@ -195,18 +182,6 @@ export class FretBox {
     return this._panel
       ? this._panel.classList.contains('fretbox-hidden') || this._panel.classList.contains('fretbox-visible')
       : false;
-  }
-
-  setDetailMode(mode) {
-    this._detailMode = mode === 'basic' ? 'basic' : 'full';
-    try { localStorage.setItem(HUD_DETAIL_KEY, this._detailMode); } catch (_) {}
-    this._applyDetailClass();
-  }
-
-  _applyDetailClass() {
-    if (!this._panel) return;
-    this._panel.classList.remove('fret-detail-basic', 'fret-detail-full');
-    this._panel.classList.add(this._detailMode === 'basic' ? 'fret-detail-basic' : 'fret-detail-full');
   }
 
   destroy() {

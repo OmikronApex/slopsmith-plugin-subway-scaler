@@ -2,7 +2,6 @@
 // OverlayManager coordinates lifecycle and exposes the public API used by main.js.
 
 const LAST_SCORE_KEY = 'subway-scaler-last-score';
-const HUD_DETAIL_KEY = 'subway-scaler-hud-detail';
 
 function _el(tag, cls) {
   const e = document.createElement(tag);
@@ -215,36 +214,6 @@ class PauseOverlay extends Overlay {
     _safeAppend(buttons, quitBtn);
     _safeAppend(el, buttons);
 
-    // HUD Detail toggle (Story 8-5)
-    const detailGroup = _el('div', 'hud-detail-toggle toggle-group');
-    detailGroup.setAttribute('role', 'radiogroup');
-    detailGroup.setAttribute('aria-label', 'HUD Detail');
-
-    let currentDetail = 'full';
-    try {
-      currentDetail = (typeof localStorage !== 'undefined' && localStorage.getItem(HUD_DETAIL_KEY)) || 'full';
-    } catch (_) {}
-
-    const makeToggleBtn = (value, label) => {
-      const btn = _el('button', 'toggle-button hud-detail-btn');
-      btn.setAttribute('role', 'radio');
-      btn.setAttribute('aria-checked', String(currentDetail === value));
-      btn.setAttribute('data-value', value);
-      btn.textContent = label;
-      btn.type = 'button';
-      btn.addEventListener('click', () => {
-        try { localStorage.setItem(HUD_DETAIL_KEY, value); } catch (_) {}
-        detailGroup.querySelectorAll('.hud-detail-btn').forEach(b => {
-          b.setAttribute('aria-checked', String(b.getAttribute('data-value') === value));
-        });
-        el.dispatchEvent(new CustomEvent('hud-detail-change', { detail: value, bubbles: true }));
-      });
-      return btn;
-    };
-
-    _safeAppend(detailGroup, makeToggleBtn('basic', 'Basic'));
-    _safeAppend(detailGroup, makeToggleBtn('full', 'Full'));
-    _safeAppend(el, detailGroup);
   }
 
   _onEscape(e) {

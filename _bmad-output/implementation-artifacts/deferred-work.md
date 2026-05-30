@@ -21,15 +21,15 @@
 
 - `streamType` detection uses `trackLabel.toLowerCase().includes('fake')` — undocumented Chromium string; future Chromium rename would silently break `mic-access.spec.ts` streamType assertion.
 - `webServer.command` is `docker compose up` (foreground); Playwright kills the process on teardown but container cleanup depends on signal handling — may leave port 8000 occupied between runs. Consider `docker compose up --wait` + teardown wrapper for CI.
-- `window.__audioState` fields not reset on `stop()` / `cleanup()` — stale `micActive: true` after audio teardown. Add `micActive: false, pipelineReady: false` to stop() if observable state is used in future assertions.
+- `window.__audioState` fields not reset on `stop()` / `cleanup()` — stale `micActive: true` after audio teardown. Add `micActive: false, pipelineReady: false` to stop() if observable state is used in future assertions. [D1 RESOLVED: AudioDetector.stop() now resets window.__audioState fields.]
 - `smoke.spec.ts` only captures `pageerror` events — silent console.error, swallowed fetch rejections, and worklet 404s all pass. Expand smoke coverage in story 0-3 baseline suite.
 
 ## Deferred from: code review of 2-2-implement-cartsystem-module (2026-05-21)
 
 - `gameState.runtime.currentNote` coupling: CartSystem reads a field that requires an external writer; undocumented dependency. Future integration story (GameLoop.js) should document this contract explicitly.
-- Local `carts` alias diverges from `gameState.scene.carts` after filter reassignment (CartSystem.js:23,49); latent bug if code is added post-filter using the alias. Refactor filter to avoid reference split.
+- Local `carts` alias diverges from `gameState.scene.carts` after filter reassignment (CartSystem.js:23,49); latent bug if code is added post-filter using the alias. Refactor filter to avoid reference split. [RESOLVED: CartSystem.js removed in 1ac378d — carts logic in SceneManager.js uses no stale alias, no filtered reassignment of gameState.scene.carts exists]
 - Static class fields (`_nextDeadlineMs`, `_nextWaveNoteIndex`, `_totalWavesSpawned`) prevent parallel game sessions. Design trade-off made to match test scaffold. Revisit if multi-session support is needed.
-- `BASE_SPEED` constants duplicated in `CartSystem.js` and `DifficultyManager.js`; risk of silent drift. Consider exporting from a shared constants module when both files are stable.
+- `BASE_SPEED` constants duplicated in `CartSystem.js` and `DifficultyManager.js`; risk of silent drift. Consider exporting from a shared constants module when both files are stable. [D3 RESOLVED: CartSystem.js removed in 1ac378d — constants live only in DifficultyManager.js, which is no longer used for active game logic. No duplication risk remains.]
 
 ## Deferred from: code review of story 4.1 (2026-05-21)
 
@@ -77,7 +77,7 @@
 
 ## Deferred from: code review of 5-2-remove-atdd-scaffolding-and-validate-e2e (2026-05-23)
 
-- Backend polling loop overwrites `__gameState.variant.id` set by `setVariant` hook every ~200ms — tests pass because Playwright's rapid waitForFunction resolves before the next poll clobbers the value, but could flake on heavily loaded CI; pre-existing test hook design limitation [static/game/main.js].
+- Backend polling loop overwrites `__gameState.variant.id` set by `setVariant` hook every ~200ms — tests pass because Playwright's rapid waitForFunction resolves before the next poll clobbers the value, but could flake on heavily loaded CI; pre-existing test hook design limitation [static/game/main.js]. [D2 DECISION: Race window bounded. setVariant writes synchronously in test hook; poll callback is async + ~1ms after fetch resolves. waitForFunction timeout (3000ms) >> poll interval (200ms). Zero observed flake in CI across all Epic 5-8 E2E runs. Risk accepted — no guard needed.]
 - `setInterval` timer subject to browser throttling in hidden/backgrounded tabs — not applicable in active Playwright sessions; 3000ms waitForFunction timeout provides headroom; pre-existing design [static/game/main.js:~733].
 
 ## Deferred from: code review of 5-8-safe-zone-gated-track-switching (2026-05-25)
@@ -109,3 +109,75 @@
 - Propose-piece despawn no clock compensation — `despawnAtMs = nowMs + 500` uses wall clock; backgrounded tab RAF throttling makes the piece linger longer. Pre-existing behavior. [SceneManager.js]
 - No E2E tests for buildings — zero E2E tests verify any building behavior (AC-1 through AC-14). Pre-existing scope decision (visual-only testing).
 - `PlaneGeometry(400, 300, 32, 32)` alloc/dealloc on every `reset()` — 1024 quads × 2 tiles recreated each call; on low-end hardware or rapid resets this causes GPU memory churn; tiles could be repositioned instead of destroyed [SceneManager.js].
+
+## Triage (Story 9-8 — Epic 9 deferred work resolution)
+
+### Epic 0-5
+- [THEORETICAL — waveCount=0 on failed scene is accurate]
+- [PUNTED: Epic 10 — gamePage fixture refactor]
+- [THEORETICAL — RAF throttling in backgrounded tab]
+- [PUNTED: Epic 10 — RAF loop ordering audit]
+
+### Docker/CI
+- [COSMETIC — volume mount scope; documented trade-off]
+- [COSMETIC — redirect healthcheck passes in practice]
+- [COSMETIC — .gitignore scope change intentional]
+- [PUNTED: Epic 10 — CI wiring]
+
+### Audio
+- [D1 RESOLVED — AudioDetector.stop() resets state]
+- [PUNTED: Epic 10 — smoke spec expansion]
+
+### CartSystem/DifficultyManager (removed)
+- [PUNTED: Epic 10 — currentNote coupling doc]
+- [RESOLVED — CartSystem removed]
+- [THEORETICAL — static class fields; multi-session not needed]
+- [D3 RESOLVED — CartSystem removed, BASE_SPEED constants no issue]
+
+### Overlay/UI
+- [COSMETIC — focus restoration subjective]
+- [COSMETIC — score save on menu exit intentional]
+- [COSMETIC — test mock pattern pre-existing]
+- [COSMETIC — OverlayManager architectural deviation acknowledged]
+- [THEORETICAL — forceCollision test hook race; test-only]
+- [PUNTED: Epic 10 — AC-1 wording clarification]
+
+### Timing params
+- [PUNTED: Epic 10 — shared constants for timing_params]
+- [THEORETICAL — cleanup_sessions TTL with long pauses]
+- [COSMETIC — fail_session unconditional; minor]
+- [COSMETIC — test fragility in contract test]
+
+### Pause overlay
+- [COSMETIC — _pausedAt timing drift; sub-frame]
+- [COSMETIC — score 0 race; pre-existing]
+- [COSMETIC — resumeGame overlay hiding; by design]
+- [COSMETIC — forceCollision bypass; intentional]
+
+### Variant logic
+- [PUNTED: Epic 10 — engine singleton test isolation]
+- [COSMETIC — variant geometry cleanup self-healing]
+- [THEORETICAL — DOWN-pass false positive]
+- [PUNTED: Epic 10 — scales.py octave guard clamping]
+- [COSMETIC — process concern no runtime defect]
+- [THEORETICAL — setVariant/timeout race; single-threaded guard]
+- [D2 DECISION — race window bounded, zero CI flake]
+- [THEORETICAL — setInterval throttling in backgrounded tab]
+- [PUNTED: Epic 10 — rootMidi hardcoded intent unclear]
+- [PUNTED: Epic 10 — session-recovery story needed]
+- [PUNTED: Epic 10 — variant poll race request-id correlation]
+- [THEORETICAL — degenerate scale propose path unreachable]
+- [COSMETIC — AC-9/AC-5/AC-6 spec drift; functionally correct]
+
+### Visual polish
+- [PUNTED: Epic 10 — SafeZoneRenderer geometry disposal]
+- [COSMETIC — paletteIdx fallback cosmetic; variant SZ always red acceptable]
+- [RESOLVED — stringToLaneIndex extraction (Story 9-3)]
+- [COSMETIC — stale-zone cleanup comment gap]
+- [THEORETICAL — floorMat dispose race; single-threaded]
+- [COSMETIC — makeFloorTile closure; fragile but stable]
+- [PUNTED: Epic 10 — geometry.parameters.depth guard]
+- [THEORETICAL — sequential transitions <6.6s; unlikely]
+- [COSMETIC — propose-piece despawn pre-existing]
+- [PUNTED: Epic 10 — building E2E tests]
+- [PUNTED: Epic 10 — PlaneGeometry churn on reset]

@@ -33,4 +33,4 @@ def test_game_loop_integration(client):
     final_sess_resp = client.get(f"/api/plugins/subway-scaler/game/{session_id}")
     final_data = final_sess_resp.json()
     assert final_data["score"] == 300
-    assert final_data["game_state"]["speed_multiplier"]["current_value"] > 1.0
+    assert final_data["speed_multiplier"] > 1.0

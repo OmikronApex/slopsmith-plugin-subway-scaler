@@ -4,6 +4,9 @@ export default defineConfig({
   testDir: './tests/e2e/specs',
   testIgnore: ['**/_template*'],
   outputDir: './tests/e2e/screenshots',
+  // Cap at 2 workers: each worker opens a full browser with Three.js rendering.
+  // More workers = GPU/CPU saturated; 2 keeps parallelism without the spike.
+  workers: process.env.CI ? 1 : 2,
   retries: process.env.CI ? 1 : 0,
   reporter: [
     ['list'],
@@ -30,6 +33,12 @@ export default defineConfig({
             '--use-fake-device-for-media-stream',
             '--use-fake-ui-for-media-stream',
             '--autoplay-policy=no-user-gesture-required',
+            // Enable real GPU rendering instead of SwiftShader software WebGL.
+            // Without these, Three.js runs entirely on CPU and saturates it.
+            '--enable-gpu',
+            '--use-angle=d3d11',          // Windows: ANGLE over Direct3D 11
+            '--ignore-gpu-blocklist',
+            '--enable-gpu-rasterization',
           ],
         },
       },

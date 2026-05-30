@@ -46,7 +46,7 @@ test.describe('Epic 4 Tier 1: pause button (currently implemented)', () => {
   test('pause button click transitions phase to paused', async ({ gamePage }) => {
     await startGame(gamePage);
 
-    const pauseBtn = gamePage.locator(`${ROOT} .hud button`).filter({ hasText: /pause/i });
+    const pauseBtn = gamePage.locator(`${ROOT} .hud-pause-btn`);
     await expect(pauseBtn).toBeVisible({ timeout: 3000 });
     await pauseBtn.click();
 
@@ -62,7 +62,7 @@ test.describe('Epic 4 Tier 1: pause button (currently implemented)', () => {
   test('pause button click again (resume) returns phase to playing', async ({ gamePage }) => {
     await startGame(gamePage);
 
-    const pauseBtn = gamePage.locator(`${ROOT} .hud button`).filter({ hasText: /pause/i });
+    const pauseBtn = gamePage.locator(`${ROOT} .hud-pause-btn`);
     await pauseBtn.click();
     await gamePage.waitForFunction(
       () => (window as any).__gameState?.session?.phase === 'paused',

@@ -1,5 +1,5 @@
 import * as THREE from '../vendor/three.module.js';
-import { STRING_COLORS, STRING_SAFE_ZONE_FILLS } from './tokens.js';
+import { STRING_COLORS, STRING_SAFE_ZONE_FILLS, stringToLaneIndex } from './tokens.js';
 import { SPAWN_Z } from '../TrackSystem.js';
 import { applyWorldCurve } from '../SceneManager.js';
 
@@ -53,6 +53,7 @@ export class SafeZoneRenderer {
     this.zones = new Map(); // wave_id -> { fill: Mesh, border: LineSegments }
     // Shared plane geometry reused for both fill and border EdgeGeometry source.
     this.geometry = new THREE.PlaneGeometry(1.2, SAFE_ZONE_DEPTH, 1, 16);
+    this._expectedNoteIndex = undefined; // Story 9-1: set by setExpectedNoteIndex()
   }
 
   // Build a { fill, border } zone pair for a given low→high palette index.
@@ -93,6 +94,11 @@ export class SafeZoneRenderer {
   }
 
   update(waves, currentTrack, laneXFn, nowMs, gameStartTime, instrument) {
+    // Store expectedNoteIndex for isAnyPrimarySafeZoneAdjacent.
+    // Waves with note_index matching expectedNoteIndex are considered primary.
+    // This prevents stale pre-spawned waves from being treated as primary
+    // when _nextWaveNoteIndex has drifted from Run.cursor (Story 9-1).
+    const expectedNoteIndex = this._expectedNoteIndex;
     // Clean up old waves — but only if they've visually passed the player.
     // Waves absent from the backend list but still in front of z=0 are kept alive
     // AND continue to be positioned each frame using their cached userData.
@@ -126,7 +132,7 @@ export class SafeZoneRenderer {
       if (!zone) {
         // Compute palette index for this wave's string.
         const stringCount = (instrument && instrument.stringCount) || 6;
-        const paletteIdx = wave.safe_string != null ? (stringCount - wave.safe_string) : 0;
+        const paletteIdx = stringToLaneIndex(wave.safe_string, stringCount);
         zone = this._makeZoneMeshes(paletteIdx);
         this.scene.add(zone.fill);
         this.scene.add(zone.border);
@@ -145,6 +151,7 @@ export class SafeZoneRenderer {
       fill.userData.speed_px_per_ms = wave.speed_px_per_ms;
       fill.userData.safe_midi = wave.safe_midi;
       fill.userData.safe_fret = wave.safe_fret;
+      fill.userData.note_index = wave.note_index;
       fill.userData.cachedX = cachedX;
 
       if (wave.safe_fret != null && wave.safe_fret !== prevFret) {
@@ -178,12 +185,20 @@ export class SafeZoneRenderer {
     });
   }
 
-  isAnyPrimarySafeZoneAdjacent(midi) {
+  isAnyPrimarySafeZoneAdjacent(midi, expectedNoteIndex) {
     for (const [, zone] of this.zones.entries()) {
       if (midi !== undefined && zone.fill.userData.safe_midi !== midi) continue;
+      // Story 9-1: Only consider waves whose note_index matches Run.cursor.
+      // This prevents stale pre-spawned waves (where _nextWaveNoteIndex has
+      // drifted from cursor) from being treated as the current primary zone.
+      if (expectedNoteIndex !== undefined && zone.fill.userData.note_index !== expectedNoteIndex) continue;
       if (Math.abs(zone.fill.position.z) <= SAFE_ZONE_DEPTH / 2) return true;
     }
     return false;
+  }
+
+  setExpectedNoteIndex(index) {
+    this._expectedNoteIndex = index;
   }
 
   reset() {

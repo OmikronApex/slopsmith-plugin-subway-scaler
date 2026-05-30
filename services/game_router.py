@@ -1,5 +1,4 @@
 from fastapi import APIRouter, HTTPException
-from services.schemas import Track, GameState, SpeedMultiplier, Note
 from services.game_engine import GameEngine, VARIANT_BREATHER_MS
 from services.scales import SCALES, midi_to_name
 from services.instruments import INSTRUMENTS
@@ -93,16 +92,6 @@ async def get_session_config(
     }
 
 
-@router.get("/notes/{note_id}")
-async def get_note_timing(note_id: str):
-    """Returns timing information for a specific note.
-    """
-    return {
-        "note_id": note_id,
-        "timer_window_ms": 2500.0,
-        "timer_window_tolerance_ms": 50.0
-    }
-
 @router.post("/start")
 async def start_game(payload: dict):
     """Initializes the game session with a note sequence.
@@ -126,20 +115,6 @@ async def start_game(payload: dict):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
         
-    track = Track(
-        length=20.0,
-        spawn_z=-50.0,
-        exit_boundary=0.0,
-        interaction_point_z=-5.0,
-        queue_positions=[-5.0, -10.0]
-    )
-    
-    game_state = GameState(
-        carts=[],
-        track=track,
-        speed_multiplier=SpeedMultiplier(current_value=session.speed_multiplier)
-    )
-    
     duration_map = {"easy": 4000, "medium": 2500, "hard": 1500}
     base_duration_ms = duration_map.get(session.difficulty, 2500)
     timing_params = {
@@ -159,7 +134,6 @@ async def start_game(payload: dict):
         "root_note": session.notes[0] if session.notes else None,
         "ascending_note_count": session.ascending_note_count,
         "timing_params": timing_params,
-        "game_state": game_state
     }
 
 @router.post("/{session_id}/play-note")
@@ -189,24 +163,9 @@ async def get_session_route(session_id: str):
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    track = Track(
-        length=20.0,
-        spawn_z=-50.0,
-        exit_boundary=0.0,
-        interaction_point_z=-5.0,
-        queue_positions=[-5.0, -10.0]
-    )
-    
-    game_state = GameState(
-        carts=[],
-        track=track,
-        speed_multiplier=SpeedMultiplier(current_value=session.speed_multiplier)
-    )
-    
     return {
         "session_id": session.session_id,
         "status": session.status,
-        "game_state": game_state.model_dump(),
         "score": session.current_score,
         "current_note_index": session.current_note_index,
         "next_expected_note": session.notes[session.current_note_index] if session.notes else None,
@@ -215,6 +174,7 @@ async def get_session_route(session_id: str):
         "last_pass_direction": session.last_pass_direction,
         "active_variant": session.active_variant.model_dump() if session.active_variant else None,
         "active_window": session.active_window.model_dump() if session.active_window else None,
+        "speed_multiplier": session.speed_multiplier,
     }
 
 @router.post("/{session_id}/pause")

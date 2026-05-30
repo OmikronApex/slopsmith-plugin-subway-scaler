@@ -16,4 +16,4 @@ def test_game_state_contract(client):
     data = response.json()
     assert "session_id" in data
     assert "status" in data
-    assert "game_state" in data
+    assert "score" in data

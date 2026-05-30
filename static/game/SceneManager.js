@@ -5,8 +5,8 @@
 // Character slides X-only between strings.
 
 import * as THREE from './vendor/three.module.js';
-import { laneX, cameraForPitch, SPAWN_Z, LANE_X_SCALE } from './TrackSystem.js';
-import { COLORS, colourForString, STRING_COLORS, STRING_SAFE_ZONE_FILLS, CURVED_WORLD, WORLD_CURVE_STRENGTH, CHARACTER_SPRITE_PATH, CHARACTER_FRAME_COUNT, CHARACTER_FRAME_W, CHARACTER_FRAME_H, CHARACTER_FPS } from './ui/tokens.js';
+import { laneX, cameraForPitch, SPAWN_Z, LANE_X_SCALE, LANE_W, DIAG_LEN } from './TrackSystem.js';
+import { COLORS, colourForString, stringToLaneIndex, STRING_COLORS, STRING_SAFE_ZONE_FILLS, CURVED_WORLD, WORLD_CURVE_STRENGTH, CHARACTER_SPRITE_PATH, CHARACTER_POWERSLIDE_SPRITE_PATH, CHARACTER_FRAME_COUNT, CHARACTER_FRAME_W, CHARACTER_FRAME_H, CHARACTER_FPS } from './ui/tokens.js';
 import { parseGifFrames } from './ui/gif-parser.js';
 
 const FRONT_Z = 0;
@@ -17,10 +17,8 @@ const TRACK_DEPTH = 120;
 const ROOF_COLOUR = 0x444444;
 const CHAR_FRAME_DURATION = 1000 / CHARACTER_FPS;  // ms per frame for sprite animation (story 7-6)
 const VARIANT_SZ_DEPTH = 20;      // Safe zone depth for variant lane (matches SafeZoneRenderer)
-const LANE_W = 1.4;               // Lane box width (matches BoxGeometry in rebuildTracks)
 const PIECE_H = 0.06;             // Track piece height
 const STRAIGHT_LEN = 60;          // Z length of variant parallel track = 3 wave spacings (story 5-7 adjustment)
-const DIAG_LEN = 45;              // Z length of diagonal section in bend piece (~3× to reach frame edge)
 // SEG_LEN = 25 removed — variant track uses fixed 3-piece group (story 5-7)
 
 // ─── Curved world vertex bend (story 7-5) ──────────────────────────────────
@@ -591,6 +589,57 @@ export function createScene(canvas) {
     return m;
   }
 
+  // Slide state (story 9-12)
+  let _isSliding = false;
+  let _slideWaveId = null; // wave ID of the requires_slide wave we're tracking
+
+  // Activate slide only when a requires_slide wave is within the safe-zone acceptance window.
+  // SafeZoneRenderer uses SAFE_ZONE_DEPTH=20 so notes are accepted when wave Z ∈ [-20, 0].
+  // Using -25 as the lower bound matches that window with a small buffer.
+  // Future requires_slide waves (e.g. Z=-80) are correctly excluded.
+  function enterSlide(nowMs) {
+    for (const w of activeWaves.values()) {
+      if (!w.requiresSlide || w.ghost) continue;
+      const elapsed = Math.max(0, nowMs - gameStartTime - w.data.spawn_time_ms);
+      const waveZ = SPAWN_Z + elapsed * w.data.speed_px_per_ms * 0.5;
+      if (waveZ >= FRONT_Z - 25 && waveZ < FRONT_Z + 2.0) {
+        _isSliding = true;
+        _slideWaveId = w.data.wave_id;
+        return;
+      }
+    }
+  }
+
+  // centerX: world-space X of the barrier centre (baked into child positions).
+  // Width = 3 lanes (3 × LANE_X_SCALE). Posts sit at lane boundaries (between tracks).
+  function makeSlideBarrier(centerX) {
+    const g = new THREE.Group();
+    const BARRIER_W = 3 * LANE_X_SCALE;
+    const BARRIER_H = 0.25;
+    const BARRIER_D = 0.5;
+    const beam = new THREE.Mesh(
+      new THREE.BoxGeometry(BARRIER_W, BARRIER_H, BARRIER_D),
+      applyWorldCurve(new THREE.MeshStandardMaterial({
+        color: 0xFFAA00,
+        roughness: 0.7,
+        metalness: 0.1,
+        dithering: true,
+      }))
+    );
+    beam.position.set(centerX, 1.2, 0);
+    g.add(beam);
+    const postMat = applyWorldCurve(new THREE.MeshStandardMaterial({
+      color: 0x333333, roughness: 0.8, dithering: true,
+    }));
+    const halfW = BARRIER_W / 2;
+    for (const side of [-1, 1]) {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.2, 0.12), postMat);
+      post.position.set(centerX + side * halfW, 0.6, 0);
+      g.add(post);
+    }
+    return g;
+  }
+
   function makeCart(bodyMat) {
     const g = new THREE.Group();
     const body = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.8, 1.3), bodyMat);
@@ -678,11 +727,24 @@ export function createScene(canvas) {
   // THIS FUNCTION IS CALLED ASYNCHRONOUSLY (CharacterSpriteFrames) — the sprite
   // renders a placeholder until the real asset loads.
   let _spriteFrames = null;   // Array<HTMLCanvasElement>
+  let _spriteTextures = null; // Array<THREE.CanvasTexture> — cached per frame
   let _spriteFrameDelays = null; // Array<number> — ms per frame (from GIF)
   let _spriteFramesReady = false;  // true once frames are loaded and drawable
+  let _powerslideTextures = null; // Array<THREE.CanvasTexture> for powerslide pose (story 9-12)
+
+  function _buildSpriteTextures(frames) {
+    return frames.map(f => {
+      const t = new THREE.CanvasTexture(f);
+      t.colorSpace = THREE.SRGBColorSpace;
+      t.minFilter = THREE.NearestFilter;
+      t.magFilter = THREE.NearestFilter;
+      return t;
+    });
+  }
 
   function initSpriteFrames() {
     _spriteFrames = generatePlaceholderFrames(CHARACTER_FRAME_COUNT, 24);
+    _spriteTextures = _buildSpriteTextures(_spriteFrames);
     _spriteFrameDelays = null;
     _spriteFramesReady = true;
 
@@ -698,9 +760,23 @@ export function createScene(canvas) {
           _spriteFrames = frames;
           _spriteFrameDelays = delays;
           _frameTimelineFn = _frameTimeline(delays);
+          if (_spriteTextures) _spriteTextures.forEach(t => t.dispose());
+          _spriteTextures = _buildSpriteTextures(_spriteFrames);
         }
       })
       .catch(() => { /* fallback: keep placeholder */ });
+
+    // Load powerslide GIF (single-frame static pose). Graceful fallback — slide
+    // state will use running frame[0] if this fails.
+    fetch(CHARACTER_POWERSLIDE_SPRITE_PATH)
+      .then(res => { if (!res.ok) throw new Error(); return res.arrayBuffer(); })
+      .then(buf => {
+        const { frames } = parseGifFrames(buf);
+        if (frames.length >= 1) {
+          _powerslideTextures = _buildSpriteTextures(frames);
+        }
+      })
+      .catch(() => {});
   }
   initSpriteFrames();
 
@@ -759,15 +835,34 @@ export function createScene(canvas) {
   // Called from render() each tick — only triggers texture upload on frame change.
   function updateCharacterSprite(nowGameMs) {
     if (!_spriteFramesReady || !_spriteFrames || _spriteFrames.length === 0) return;
+
+    // Slide state: show powerslide pose while the barrier wave is near/passing.
+    // Expiry: recompute wave Z each frame; slide ends when wave has cleared the player.
+    if (_isSliding) {
+      const tracked = _slideWaveId ? activeWaves.get(_slideWaveId) : null;
+      if (!tracked) {
+        _isSliding = false;
+        _slideWaveId = null;
+      } else {
+        const wElapsed = Math.max(0, nowGameMs - gameStartTime - tracked.data.spawn_time_ms);
+        if (SPAWN_Z + wElapsed * tracked.data.speed_px_per_ms * 0.5 > FRONT_Z + 1.0) {
+          _isSliding = false;
+          _slideWaveId = null;
+        }
+      }
+    }
+    if (_isSliding && _powerslideTextures?.length) {
+      character.material.map = _powerslideTextures[0];
+      character.material.needsUpdate = true;
+      return;
+    }
+
     const elapsed = nowGameMs - gameStartTime;
     const frameIdx = _frameTimelineFn(elapsed, _spriteFrames.length);
     if (frameIdx !== _charLastFrameIdx) {
       _charLastFrameIdx = frameIdx;
-      const tex = new THREE.CanvasTexture(_spriteFrames[frameIdx]);
-      tex.colorSpace = THREE.SRGBColorSpace; // canvas pixels are sRGB — correct identity pipeline
-      tex.minFilter = THREE.NearestFilter;
-      tex.magFilter = THREE.NearestFilter;
-      character.material.map = tex;
+      if (!_spriteTextures) return;
+      character.material.map = _spriteTextures[frameIdx];
       character.material.needsUpdate = true;
     }
   }
@@ -804,10 +899,6 @@ export function createScene(canvas) {
   const CAMERA_RESET_DURATION_MS = 500;
 
   // Cinematic refinement constants (Story 6.8 rewrite)
-  const MAX_BEND_YAW = Math.PI / 4;          // 45° — character snap & camera target
-  const DIAG_CROSS_MS = 1200;                // X crossing duration (breather window)
-  const FIRST_WAVE_ARRIVAL_DELAY_MS = 500;   // ms after landing before first new-scale wave
-  const REPOSITION_SLIDE_MS = 200;           // quick slide to variant note fret after landing
   const CAMERA_YAW_RATE = 0.02;              // rad/frame camera ease rate
 
   let _cameraMode = 'default';
@@ -1197,7 +1288,7 @@ export function createScene(canvas) {
     // Palette index for variant safe zone colours (story 7-0).
     // Uses STRING_SAFE_ZONE_FILLS for fill and STRING_COLORS for the neon border.
     const stringCount = instrument?.stringCount ?? 6;
-    const paletteIdx = anchorString != null ? (stringCount - anchorString) : 0;
+    const paletteIdx = stringToLaneIndex(anchorString, stringCount);
     // Safe zone fill — dim translucent plane using STRING_SAFE_ZONE_FILLS (story 7-0).
     const szGeo = new THREE.PlaneGeometry(1.2, VARIANT_SZ_DEPTH, 1, 16);
     const fillColor = paletteIdx < STRING_SAFE_ZONE_FILLS.length
@@ -1347,11 +1438,22 @@ export function createScene(canvas) {
           cart.position.x = laneX(i, numLanes) + _worldOffsetX;
           group.add(cart);
         }
+        if (waveData.requires_slide) {
+          // Centre barrier on safe track, clamped so posts stay within track set bounds.
+          // halfW = 1.5 * LANE_X_SCALE; post must be >= left-track-edge and <= right-track-edge.
+          const rawCenterX = laneX(waveData.safe_track, numLanes) + _worldOffsetX;
+          const minCenterX = laneX(0, numLanes) + _worldOffsetX + LANE_X_SCALE;
+          const maxCenterX = laneX(numLanes - 1, numLanes) + _worldOffsetX - LANE_X_SCALE;
+          const barrierCenterX = numLanes >= 3
+            ? Math.max(minCenterX, Math.min(maxCenterX, rawCenterX))
+            : rawCenterX;
+          group.add(makeSlideBarrier(barrierCenterX));
+        }
         scene.add(group);
         // Capture offset + lane count at creation so collision uses the same
         // world geometry the carts were positioned in (post-variant lanes/offset
         // changes must not retro-warp in-flight waves).
-        w = { mesh: group, data: waveData, offsetX: _worldOffsetX, numLanes };
+        w = { mesh: group, data: waveData, offsetX: _worldOffsetX, numLanes, requiresSlide: waveData.requires_slide };
         activeWaves.set(waveData.wave_id, w);
       }
       w.data = waveData; // Update data (speed might change)
@@ -1427,6 +1529,21 @@ export function createScene(canvas) {
             waveNoteIndex: w.data.note_index,
             numLanes: w.numLanes,
             baseFret,
+          };
+          return true;
+        }
+        // Barrier collision: character is on the safe lane but not sliding
+        if (w.requiresSlide && !_isSliding) {
+          _lastCollisionDebug = {
+            charX: Math.round(charX * 100) / 100,
+            charZ: Math.round(charZ * 100) / 100,
+            safeX: Math.round(safeX * 100) / 100,
+            safeTrack: w.data.safe_track,
+            waveId: w.data.wave_id,
+            waveNoteIndex: w.data.note_index,
+            numLanes: w.numLanes,
+            baseFret,
+            reason: 'barrier_no_slide',
           };
           return true;
         }
@@ -1832,7 +1949,7 @@ export function createScene(canvas) {
   }
 
   function getVariantInfo() {
-    return variantInfo ? { variantX: variantInfo.variantX, side: variantInfo.side } : null;
+    return variantInfo ? { variantX: variantInfo.variantX, side: variantInfo.side, speedPxMs: variantInfo.speedPxMs } : null;
   }
 
   function setCameraMode(mode) {
@@ -2054,6 +2171,7 @@ export function createScene(canvas) {
     setBaseFret,
     setLaneGeometry,
     checkCollision,
+    enterSlide,
     getWaveCount() { return activeWaves.size; },
     getActiveWaveCount() { return activeWaves.size; },
     getLastCollisionDebug,
@@ -2123,8 +2241,6 @@ export function createScene(canvas) {
     },
   };
 }
-
-// ===== SceneManager — Story 3.1: static class owning renderer, camera, scene =====
 
 export class SceneManager {
   static _instances = new WeakMap(); // Per-container instance storage
@@ -2205,7 +2321,7 @@ export class SceneManager {
     if (!instance._scene || !THREE.RingGeometry) return;
     // stringIndex is 1-based from HIGH (tabulator); convert to low→high palette index.
     const stringCount = instrument?.stringCount ?? 6;
-    const color = colourForString(stringCount - stringIndex, instrument);
+    const color = colourForString(stringToLaneIndex(stringIndex, stringCount), instrument);
     const geometry = new THREE.RingGeometry(0.1, 0.3, 16);
     const material = new THREE.MeshBasicMaterial({
       color,

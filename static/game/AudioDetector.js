@@ -11,7 +11,7 @@ export class AudioDetectorError extends Error {
   }
 }
 
-// ===== Base class — no GameState coupling =====
+// ===== Base class -- no GameState coupling =====
 
 export class AudioDetector {
   async detect() {
@@ -44,7 +44,7 @@ export class YinDetector extends AudioDetector {
   async detect() {
     try {
       if (!this._detectionReady || !this._audioHandle) {
-        throw new Error('Audio detection not started — call init() first');
+        throw new Error('Audio detection not started -- call init() first');
       }
       return await this._runDetection();
     } catch (err) {
@@ -58,7 +58,7 @@ export class YinDetector extends AudioDetector {
       const timeout = setTimeout(() => {
         if (!resolved) {
           resolved = true;
-          reject(new Error('Detection timeout — no audio detected'));
+          reject(new Error('Detection timeout -- no audio detected'));
         }
       }, 500);
 
@@ -83,6 +83,11 @@ export class YinDetector extends AudioDetector {
     }
     this._audioHandle = null;
     this._detectionReady = false;
+    // Reset observable state for test assertions (D1 -- Story 9-8).
+    if (window.__audioState) {
+      window.__audioState.micActive = false;
+      window.__audioState.pipelineReady = false;
+    }
   }
 
   pause() {

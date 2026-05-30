@@ -205,7 +205,7 @@ export async function renderSetupScreen(root, scales, instruments, onGameStart) 
   const storedDebug = stored.debug_logging === true;
   let currentDebugLogging = storedDebug;
   const debugGroup = el('div', { class: 'form-group full-width' });
-  const debugLabel = el('label', {}, 'Debug logging');
+  const debugLabel = el('label', { for: 'debug-logging' }, 'Debug logging');
   const debugCheckbox = el('input', {
     type: 'checkbox',
     id: 'debug-logging',
