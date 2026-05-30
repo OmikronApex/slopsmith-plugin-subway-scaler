@@ -9,7 +9,7 @@
     "tagline": "Dodge obstacles by playing the right notes on your instrument",
     "type": "chart-free",
     "scoring": "pitch-continuous",
-    "thumbnail": "/plugins/subway-scaler/static/assets/mg_thumbnail.png"
+    "thumbnail": "mg_thumbnail.png"
   },
   "script": "screen.js",
   "routes": "routes.py"
