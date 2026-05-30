@@ -152,12 +152,6 @@ export const SdkBridge = {
     _notesPlayed = 0;
     _sessionStartTime = performance.now();
 
-    // Start SDK pitch detection before bootstrap so audio handle is ready
-    const rootMidi = 60; // will be updated once session config is available; game re-starts after setup
-    if (sdk?.scoring?.createContinuous) {
-      await startPitchDetection(rootMidi);
-    }
-
     // Dynamically import bootstrap to avoid circular deps at registration time
     const { bootstrap } = await import('./main.js');
     await bootstrap(container);
