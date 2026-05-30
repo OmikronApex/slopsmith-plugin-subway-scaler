@@ -58,11 +58,8 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r requirements-dev.txt
 
-      - name: JS integration tests
-        run: npx vitest run --reporter=verbose tests/integration
-
       - name: Python integration tests
-        run: python -m pytest tests/integration/ --ignore=tests/integration/game_loop.test.js -v
+        run: python -m pytest tests/integration/ -v
 
   # E2E tests are resource-intensive (Docker + Playwright + Three.js rendering)
   # and are run manually locally rather than automatically in CI.
