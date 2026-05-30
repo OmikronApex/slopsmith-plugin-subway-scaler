@@ -3,6 +3,9 @@
 A guitar/bass scale trainer plugin for [Slopsmith](https://github.com/byrongamatos/slopsmith).
 Play correct scale notes to keep your character running and avoid the carts — Subway Surfers style.
 
+<img width="2162" height="1158" alt="grafik" src="https://github.com/user-attachments/assets/0ad2bc2c-a857-460e-896d-105d22f538b8" />
+
+
 ## What It Is
 
 Subway Scaler displays a scrolling 3D track whose lanes map directly to the strings of your instrument. Safe zones appear in sequence, colour-coded by string. Play the matching note in time and your character moves onto that lane; miss and you collide with a cart and the session ends. Speed increases with every correct note.
