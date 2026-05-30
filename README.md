@@ -57,9 +57,9 @@ Every few octave loops a parallel track appears beside the current one, offering
 | Bass (4-string)   | 4 | E1 A1 D2 G2 |
 | Bass (5-string)   | 5 | B0 E1 A1 D2 G2 |
 
-## String Colours (Rocksmith convention)
+## String Colours (Slopsmith convention)
 
-Track lanes are colour-coded from lowest to highest pitch, matching Rocksmith's string palette:
+Track lanes are colour-coded from lowest to highest pitch, matching Slopsmith's string palette:
 
 | String (low → high) | Colour |
 |---|---|
