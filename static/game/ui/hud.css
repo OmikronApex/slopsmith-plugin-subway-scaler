@@ -8,9 +8,15 @@
 }
 
 /* ===== SCORE DISPLAY (8-1) ===== */
-.subway-scaler .hud-score {
+.subway-scaler .hud-score-wrapper {
   top: 1rem;
   right: 1rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+}
+
+.subway-scaler .hud-score {
   font-family: 'Space Mono', monospace;
   font-size: 1.5rem;
   font-weight: 700;
@@ -25,6 +31,15 @@
 .subway-scaler .hud-score.score-increment {
   color: var(--color-accent, #FFB800);
   transition: color 150ms ease-out;
+}
+
+.subway-scaler .score-multiplier {
+  font-family: 'Space Mono', monospace;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--color-accent, #FFB800);
+  user-select: none;
+  line-height: 1;
 }
 
 /* ===== PAUSE BUTTON (8-2) ===== */

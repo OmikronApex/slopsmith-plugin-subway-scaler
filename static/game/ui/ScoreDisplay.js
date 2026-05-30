@@ -13,7 +13,6 @@ export class ScoreDisplay {
 
     this._multEl = document.createElement('span');
     this._multEl.className = 'score-multiplier';
-    this._multEl.style.color = 'var(--color-accent)';
     this._multEl.textContent = 'x1.0';
 
     const wrapper = document.createElement('span');
