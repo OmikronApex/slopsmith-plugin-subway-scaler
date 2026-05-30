@@ -37,19 +37,15 @@ test.describe('Epic 6: transition phase state machine', () => {
     );
     expect(initialPhase).toBe('idle');
 
-    // Use fast-transition hooks: shorten breather + clear waves so gate fires immediately.
-    // Without these the test would need 15s+ for waves to prune, exceeding CI timeout.
+    // Trigger phase machine. After Story 9-11 the path is accepted→riding→promoting→active;
+    // breather is no longer part of the triggerVariantAccept test path.
     await gamePage.evaluate(() => {
-      const t = (window as any).__gameState._test;
-      t.setBreatherMs(50);
-      t.clearSceneWaves();
-      t.triggerVariantAccept(null);
+      (window as any).__gameState._test.triggerVariantAccept(null);
     });
 
-    // accepted→riding→breather are synchronous; wait for the first durable async phase.
     await gamePage.waitForFunction(
       () => (window as any).__gameState?.variant?.transitionPhase === 'active',
-      { timeout: 20000 }
+      { timeout: 10000 }
     );
 
     const finalPhase = await gamePage.evaluate(

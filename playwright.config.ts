@@ -4,6 +4,9 @@ export default defineConfig({
   testDir: './tests/e2e/specs',
   testIgnore: ['**/_template*'],
   outputDir: './tests/e2e/screenshots',
+  // Cap at 2 workers: each worker opens a full browser with Three.js rendering.
+  // More workers = GPU/CPU saturated; 2 keeps parallelism without the spike.
+  workers: process.env.CI ? 1 : 2,
   retries: process.env.CI ? 1 : 0,
   reporter: [
     ['list'],

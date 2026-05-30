@@ -39,10 +39,13 @@ export class VariantController {
     this.activeWindow = null;
     this.variantPendingSpawn = null;
     this.variantSpawnedForWave = null;
-    if (window.__gameState) {
-      window.__gameState.variant = {
-        id: null, timerMs: 0, timerRunning: false, timerExpired: false,
-      };
+    if (window.__gameState?.variant) {
+      // Patch fields individually to preserve transitionPhase and other fields
+      // added by TransitionPhases module — replacing the whole object clobbers them.
+      window.__gameState.variant.id = null;
+      window.__gameState.variant.timerMs = 0;
+      window.__gameState.variant.timerRunning = false;
+      window.__gameState.variant.timerExpired = false;
     }
   }
 

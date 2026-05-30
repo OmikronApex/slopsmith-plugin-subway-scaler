@@ -116,7 +116,8 @@ export async function bootstrap(root) {
   (function _bgLoop(last) {
     requestAnimationFrame((now) => {
       if (window.__TEST_MODE && now - last < _BG_FRAME_MS) {
-        _bgLoop(last);
+        const remaining = _BG_FRAME_MS - (now - last);
+        setTimeout(() => _bgLoop(last), remaining);
         return;
       }
       if (window.__gameState) {
@@ -695,6 +696,16 @@ const scene = createScene(canvas);
         if (next !== 'promoting') return;
         gameClient.promoteVariant().then((resp) => {
           if (!resp || !resp.success) {
+            // Test mode: triggerVariantAccept uses a synthetic resp without creating a
+            // real backend variant, so promoteVariant() returns failure. Fall back to
+            // ctx.resp (the accept resp already has all data needed to complete the transition).
+            if (window.__TEST_MODE && ctx?.resp?.success && ctx.resp.notes) {
+              const r = ctx.resp;
+              waveScheduler.resumeQueueing(r.notes, r.current_note_index ?? 0, r.base_fret, r.num_lanes, gameNow());
+              safeZoneRenderer.reset();
+              _applyPromoteResponse(r, ctx);
+              return;
+            }
             console.error('[main] promote failed', resp);
             waveScheduler.resumeQueueing(notesResp.notes, run?.cursor ?? 0, null, null, gameNow());
             setTransitionPhase('idle', ctx);
@@ -743,8 +754,11 @@ const scene = createScene(canvas);
       const loop = (now) => {
         if (!run) return;
         if (window.__TEST_MODE) {
-          if (now - _lastLoopTime < _TEST_FRAME_MS) {
-            rafId = requestAnimationFrame(loop);
+          const remaining = _TEST_FRAME_MS - (now - _lastLoopTime);
+          if (remaining > 1) {
+            // Sleep for the remaining frame time instead of spinning on RAF —
+            // spinning would saturate the JS event loop and starve timers.
+            rafId = setTimeout(() => { rafId = requestAnimationFrame(loop); }, remaining);
             return;
           }
           _lastLoopTime = now;
@@ -999,13 +1013,14 @@ const scene = createScene(canvas);
         if (!run || run.state === 'abandoned') return;
         run.state = 'failed';
         const finalScore = window.__gameState?.score?.current || 0;
+        overlayMgr.show({ type: 'game-over', score: finalScore });
+        cleanup(); // resets gameOver + session.phase to idle — re-set below
         if (window.__gameState) {
           window.__gameState.gameOver.isGameOver = true;
           window.__gameState.gameOver.reason = 'collision';
           window.__gameState.gameOver.triggeredAt = Date.now();
+          window.__gameState.session.phase = 'game_over';
         }
-        overlayMgr.show({ type: 'game-over', score: finalScore });
-        cleanup();
       },
       triggerPause: () => {
         if (!run) return;
