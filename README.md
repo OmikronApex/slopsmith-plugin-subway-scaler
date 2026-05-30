@@ -8,7 +8,7 @@ Play correct scale notes to keep your character running and avoid the carts — 
 
 ## What It Is
 
-Subway Scaler displays a scrolling 3D track whose lanes map directly to the strings of your instrument. Safe zones appear in sequence, colour-coded by string. Play the matching note in time and your character moves onto that lane; miss and you collide with a cart and the session ends. Speed increases with every correct note.
+Subway Scaler displays a scrolling 3D track whose lanes map directly to the frets of your instrument. Safe zones appear in sequence, colour-coded by string. Play the matching note in time and your character moves onto that lane; miss and you collide with a cart and the session ends. Speed increases with every correct note.
 
 ## Requirements
 
