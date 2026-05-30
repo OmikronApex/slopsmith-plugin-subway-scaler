@@ -218,7 +218,7 @@ function _doRegister() {
     id: 'subway-scaler',
     title: 'Subway Scaler',
     tagline: 'Dodge obstacles by playing the right notes on your instrument',
-    thumbnail: '/plugins/subway-scaler/static/thumbnail.png',
+    thumbnail: '/plugins/subway-scaler/static/assets/mg_thumbnail.png',
     start: (opts) => SdkBridge.start(opts),
     stop: () => SdkBridge.stop(),
   });
