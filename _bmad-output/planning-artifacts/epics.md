@@ -1,5 +1,6 @@
 ---
 stepsCompleted: [1, 2, 3, 4]
+epic13Amendment: true
 epic12Amendment: true
 epic11Amendment: true
 epic10Amendment: true
@@ -161,6 +162,9 @@ Register Subway Scaler as a minigame via SDK (plugin.json + register()), own set
 
 ### Epic 12: YIN Pitch Detector Correctness & Performance
 Fix silent B0 detection bug (windowSize 2048→4096), bound tau search to playable frequency range, and replace O(n²) difference function with FFT-based O(n log n) implementation — keeping pitch detection within the 5ms real-time budget.
+
+### Epic 13: Asset Route Compatibility Fix — Slopsmith V0.2.9-alpha.7
+Since Slopsmith V0.2.9-alpha.7 the core predefined `/api/plugins/{id}/assets/` to serve from `plugin-root/assets/`; our custom route conflict broke hub thumbnail discovery and sprite loading. Move `mg_thumbnail.png` to a new `assets/` directory and add a dedicated game-sprites route.
 
 ---
 
@@ -1747,3 +1751,134 @@ So that pitch detection with `windowSize=4096` stays within the real-time 5ms pr
 - Cooley-Tukey runtime assert: add `if ((n & (n - 1)) !== 0) throw new Error('FFT size must be power of 2')` at construction time.
 - `yin-worklet.js` is unchanged by this story — the worklet delegates entirely to `YinDetector.process()`.
 - Cross-validation test approach: keep the original O(n²) loop as a private `_differenceReference` method only present in test builds, or compute it inline in the test file for comparison. Do not ship the O(n²) reference in production code.
+
+---
+
+## Epic 13: Asset Route Compatibility Fix — Slopsmith V0.2.9-alpha.7
+
+Since Slopsmith V0.2.9-alpha.7 the host core predefined `/api/plugins/{id}/assets/` to serve from `plugin-root/assets/`. The plugin's custom route at that path no longer registers (core route wins), so the hub cannot find `mg_thumbnail.png` and in-game sprites fail to load. This epic moves the thumbnail to a proper `assets/` directory and adds an explicit game-sprites route that is independent of the core-owned assets path.
+
+**User Outcomes:**
+- The Minigames Hub tile displays the correct Subway Scaler thumbnail — loaded by Slopsmith core from `plugin-root/assets/mg_thumbnail.png`
+- In-game character sprites (running animation, powerslide) load correctly via a dedicated route that will not conflict with future Slopsmith core route additions
+- The plugin starts without route registration errors on Slopsmith ≥ V0.2.9-alpha.7
+
+**Depends on:** None (self-contained fix to `routes.py`, `tokens.js`, and file layout)
+
+**Stories:**
+
+| Story | Title | Status | Depends on |
+|---|---|---|---|
+| 13-1 | Move Thumbnail to `assets/` and Remove Conflicting Route | todo | — |
+| 13-2 | Dedicated Game-Sprites Route and Update Sprite Paths | todo | 13-1 |
+
+### FR Coverage Map (Epic 13)
+
+| Requirement | Story | Coverage |
+|---|---|---|
+| FR-E13-01 (Thumbnail discoverable by hub) | 13-1 | `assets/mg_thumbnail.png` served by Slopsmith core route |
+| FR-E13-02 (Sprites load in-game) | 13-2 | `/api/plugins/subway-scaler/sprites/{filename}` serves GIFs from `static/assets/` |
+| FR-E13-03 (No conflicting custom route) | 13-1 | Custom `/api/plugins/subway-scaler/assets/{filename}` removed from `routes.py` |
+
+---
+
+### Story 13-1: Move Thumbnail to `assets/` and Remove Conflicting Route
+
+As the **Slopsmith plugin system**, I want `mg_thumbnail.png` located in `plugin-root/assets/` and the conflicting custom route removed, so that the Minigames Hub can find the tile image via the Slopsmith core assets route without a route registration conflict.
+
+**Acceptance Criteria:**
+
+**Given** the plugin directory is scanned on Slopsmith ≥ V0.2.9-alpha.7
+**When** the Slopsmith core registers the predefined `/api/plugins/subway-scaler/assets/` route
+**Then** no route conflict or registration error occurs
+**And** `GET /api/plugins/subway-scaler/assets/mg_thumbnail.png` returns the thumbnail image with status 200
+
+**Given** the `plugin-root/assets/` directory
+**When** inspected after this story lands
+**Then** it contains `mg_thumbnail.png` (copied from `static/assets/mg_thumbnail.png`)
+**And** `static/assets/mg_thumbnail.png` is removed (thumbnail lives only in `assets/`)
+
+**Given** `routes.py`
+**When** inspected after this story lands
+**Then** the `@app.get("/api/plugins/subway-scaler/assets/{filename}")` handler and its `get_asset` function are absent
+**And** `ASSETS_DIR = STATIC_DIR / "assets"` and `_ALLOWED_EXTENSIONS` / `_MIME_MAP` constants are removed if no longer referenced
+**And** the StaticFiles mount at `/plugins/subway-scaler/static` is unchanged
+
+**Given** `plugin.json`
+**When** the hub reads the `minigame.thumbnail` field
+**Then** the value is still `"mg_thumbnail.png"` (no change needed — Slopsmith resolves it via its own assets route)
+
+**Given** `SdkBridge.js` registration call
+**When** `register()` is called
+**Then** `thumbnail: 'mg_thumbnail.png'` is unchanged (Slopsmith hub resolves this to the core assets route automatically)
+
+**Given** all existing Playwright E2E specs
+**When** run after this change
+**Then** all pass — no test references the removed custom route directly
+
+**Implementation Notes:**
+- File operations: create `assets/` at plugin root; copy `static/assets/mg_thumbnail.png` → `assets/mg_thumbnail.png`; delete `static/assets/mg_thumbnail.png`
+- `routes.py`: delete lines 9 (`ASSETS_DIR`), 11–15 (`_ALLOWED_EXTENSIONS`, `_MIME_MAP`), and 27–42 (the `get_asset` endpoint and its comment)
+- No changes to `plugin.json`, `SdkBridge.js`, or any frontend file in this story
+- Verify: `assets/` directory is committed (add a `.gitkeep` if the directory would otherwise be empty without the thumbnail, but since `mg_thumbnail.png` is there, no `.gitkeep` needed)
+
+---
+
+### Story 13-2: Dedicated Game-Sprites Route and Update Sprite Paths
+
+As the **game engine**, I want in-game character sprites served via a dedicated `/api/plugins/subway-scaler/sprites/{filename}` route, so that sprite loading is explicit, path-conflict-safe, and independent of the StaticFiles mount surviving future Slopsmith path changes.
+
+**Acceptance Criteria:**
+
+**Given** the plugin registers its routes on startup
+**When** `routes.py` `setup()` runs
+**Then** a `GET /api/plugins/subway-scaler/sprites/{filename}` endpoint is registered
+**And** the endpoint serves files from `static/assets/` with the same extension allowlist and path-traversal guard as the previous `get_asset` handler
+**And** `GET /api/plugins/subway-scaler/sprites/Character_running_north.gif` returns the running GIF with status 200 and `Content-Type: image/gif`
+**And** `GET /api/plugins/subway-scaler/sprites/Character_powerslide_north.gif` returns the powerslide GIF with status 200 and `Content-Type: image/gif`
+
+**Given** a request to `/api/plugins/subway-scaler/sprites/../routes.py` (path traversal attempt)
+**When** the endpoint processes the request
+**Then** it returns 400 (invalid path) — the traversal guard rejects it
+
+**Given** a request to `/api/plugins/subway-scaler/sprites/nonexistent.gif`
+**When** the endpoint processes the request
+**Then** it returns 404
+
+**Given** `static/game/ui/tokens.js`
+**When** inspected after this story lands
+**Then** `CHARACTER_SPRITE_PATH` equals `'/api/plugins/subway-scaler/sprites/Character_running_north.gif'`
+**And** `CHARACTER_POWERSLIDE_SPRITE_PATH` equals `'/api/plugins/subway-scaler/sprites/Character_powerslide_north.gif'`
+
+**Given** the game is running and a session starts
+**When** `SceneManager.js` loads the character sprite
+**Then** the sprite loads without network error (200 response)
+**And** the running and powerslide animations display correctly in the Three.js scene
+
+**Given** all existing Playwright E2E specs
+**When** run after this change
+**Then** all pass — character sprite animations render correctly in gameplay
+
+**Implementation Notes:**
+- `routes.py`: add `SPRITES_DIR = STATIC_DIR / "assets"` constant; add endpoint:
+  ```python
+  @app.get("/api/plugins/subway-scaler/sprites/{filename}")
+  def get_sprite(filename: str):
+      if "/" in filename or "\\" in filename or ".." in filename:
+          raise HTTPException(status_code=400, detail="invalid path")
+      ext = Path(filename).suffix.lower()
+      if ext not in {".gif", ".png", ".svg", ".webp"}:
+          raise HTTPException(status_code=404, detail="not found")
+      target = (SPRITES_DIR / filename).resolve()
+      try:
+          target.relative_to(SPRITES_DIR)
+      except ValueError:
+          raise HTTPException(status_code=400, detail="invalid path")
+      if not target.is_file():
+          raise HTTPException(status_code=404, detail="not found")
+      mime = {".gif": "image/gif", ".png": "image/png", ".svg": "image/svg+xml", ".webp": "image/webp"}
+      return FileResponse(str(target), media_type=mime[ext])
+  ```
+- `static/game/ui/tokens.js`: update `CHARACTER_SPRITE_PATH` and `CHARACTER_POWERSLIDE_SPRITE_PATH` to the new `/api/plugins/subway-scaler/sprites/` base path
+- `static/assets/Character_running_north.gif` and `static/assets/Character_powerslide_north.gif` remain in place — only the serving route changes
+- The `StaticFiles` mount at `/plugins/subway-scaler/static` may remain for other static files (JS modules, CSS, fonts); this story does not remove it
