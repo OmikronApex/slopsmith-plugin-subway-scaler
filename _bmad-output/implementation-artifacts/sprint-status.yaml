@@ -144,5 +144,5 @@ development_status:
 
   # Epic 13 — Asset Route Compatibility Fix (Slopsmith V0.2.9-alpha.7)
   epic-13: in-progress
-  13-1-move-thumbnail-remove-conflicting-route: in-progress
-  13-2-dedicated-game-sprites-route: ready-for-dev
+  13-1-move-thumbnail-remove-conflicting-route: review
+  13-2-dedicated-game-sprites-route: review
