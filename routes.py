@@ -6,12 +6,13 @@ from fastapi.staticfiles import StaticFiles
 
 PLUGIN_DIR = Path(__file__).resolve().parent
 STATIC_DIR = PLUGIN_DIR / "static"
-ASSETS_DIR = STATIC_DIR / "assets"
+SPRITES_DIR = STATIC_DIR / "assets"
 
-_ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"}
-_MIME_MAP = {
-    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-    ".webp": "image/webp", ".gif": "image/gif", ".svg": "image/svg+xml",
+_SPRITE_MIME = {
+    ".gif": "image/gif",
+    ".png": "image/png",
+    ".svg": "image/svg+xml",
+    ".webp": "image/webp",
 }
 
 
@@ -24,22 +25,22 @@ def setup(app: FastAPI, context: dict):
             name="subway-scaler-static",
         )
 
-    # Asset route for minigame hub thumbnail (SDK fetches /api/plugins/{id}/assets/{file})
-    @app.get("/api/plugins/subway-scaler/assets/{filename}")
-    def get_asset(filename: str):
+    # Dedicated route for in-game sprites (served from static/assets/)
+    @app.get("/api/plugins/subway-scaler/sprites/{filename}")
+    def get_sprite(filename: str):
         if "/" in filename or "\\" in filename or ".." in filename:
             raise HTTPException(status_code=400, detail="invalid path")
         ext = Path(filename).suffix.lower()
-        if ext not in _ALLOWED_EXTENSIONS:
+        if ext not in _SPRITE_MIME:
             raise HTTPException(status_code=404, detail="not found")
-        target = (ASSETS_DIR / filename).resolve()
+        target = (SPRITES_DIR / filename).resolve()
         try:
-            target.relative_to(ASSETS_DIR)
+            target.relative_to(SPRITES_DIR)
         except ValueError:
             raise HTTPException(status_code=400, detail="invalid path")
         if not target.is_file():
             raise HTTPException(status_code=404, detail="not found")
-        return FileResponse(str(target), media_type=_MIME_MAP[ext])
+        return FileResponse(str(target), media_type=_SPRITE_MIME[ext])
 
     # Initialise settings with config_dir from host context (Story 10-6)
     if "config_dir" in context:

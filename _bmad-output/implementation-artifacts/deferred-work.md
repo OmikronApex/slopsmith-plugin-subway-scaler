@@ -1,5 +1,11 @@
 # Deferred Work
 
+## Deferred from: code review of 13-2-dedicated-game-sprites-route (2026-06-04)
+
+- `SPRITES_DIR` variable name doesn't match physical directory `static/assets/` — rename variable to `STATIC_ASSETS_DIR` or rename directory when it becomes the sole sprite source; pre-existing layout.
+- No `SPRITES_DIR.exists()` check in `setup()` — if `static/assets/` is absent, all sprite requests silently return 404 with no startup warning; pre-existing pattern inherited from old `get_asset`.
+
+
 ## Deferred from: code review of epic-0-5 stories (2026-05-21)
 
 - `waveCount=0` persists if `scene` creation fails silently — pre-existing game init behavior; waveCount=0 is actually accurate for a failed scene so no immediate fix needed.

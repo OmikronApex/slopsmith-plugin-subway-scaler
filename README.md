@@ -109,6 +109,11 @@ routes.py          Slopsmith plugin entry point
 
 ## Changelog
 
+### v1.0.2
+
+- **Fix:** Thumbnail (`mg_thumbnail.png`) moved to `assets/` at plugin root — compatible with Slopsmith ≥ V0.2.9-alpha.7, which serves the predefined `/api/plugins/{id}/assets/` route from that directory
+- **Fix:** In-game sprites now served via a dedicated `/api/plugins/subway-scaler/sprites/` route instead of the static file mount path
+
 ### v1.0.1
 
 - **Fix:** Pitch detector now correctly detects notes down to B0 (30.87 Hz) — previously the YIN window size was too small to detect any note below ~43 Hz, silently missing the lowest strings on 5-string bass, 7-string and 8-string guitar
