@@ -15,7 +15,14 @@ def test_powerslide_sprite_ok(client):
 
 
 def test_path_traversal_rejected(client):
+    # Starlette normalises `..` at routing layer → 404; either is safe
     r = client.get("/api/plugins/subway-scaler/sprites/../routes.py")
+    assert r.status_code in (400, 404)
+
+
+def test_path_traversal_encoded_rejected(client):
+    # Starlette also normalises %2f-encoded traversal attempts before routing
+    r = client.get("/api/plugins/subway-scaler/sprites/..%2froutes.py")
     assert r.status_code in (400, 404)
 
 

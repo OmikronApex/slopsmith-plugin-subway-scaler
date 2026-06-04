@@ -1,6 +1,6 @@
 # Story 13.2: Dedicated Game-Sprites Route and Update Sprite Paths
 
-Status: review
+Status: done
 
 ## Story
 
@@ -163,6 +163,12 @@ subway-scaler/
 - [SceneManager sprite consumer]: `static/game/SceneManager.js` ~line 800 comment
 - [routes.py current state after 13-1]: remove custom `get_asset`, StaticFiles mount intact
 - [Story 13-1]: `_bmad-output/implementation-artifacts/13-1-move-thumbnail-remove-conflicting-route.md`
+
+### Review Findings
+
+- [x] [Review][Patch] Traversal handler guard lacks direct test coverage — `test_path_traversal_rejected` sends `sprites/../routes.py` which Starlette normalises before routing (returns 404 at router, never reaches `get_sprite`). Add a second test with URL-encoded payload `sprites/%2e%2e%2froutes.py` to exercise the handler's own `".." in filename` check and assert 400. [`tests/contract/test_sprites.py`]
+- [x] [Review][Defer] `SPRITES_DIR` variable name vs physical directory `assets/` — naming mismatch is a future maintenance trap if the directory is ever renamed. [`routes.py`] — deferred, pre-existing directory layout
+- [x] [Review][Defer] No `SPRITES_DIR.exists()` guard in `setup()` — missing directory causes silent 404 on all sprite requests; no startup warning. [`routes.py`] — deferred, pre-existing pattern (old `get_asset` also had no guard)
 
 ## Dev Agent Record
 

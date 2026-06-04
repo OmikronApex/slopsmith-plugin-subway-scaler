@@ -1,6 +1,6 @@
 # Story 13.1: Move Thumbnail to `assets/` and Remove Conflicting Route
 
-Status: review
+Status: done
 
 ## Story
 
